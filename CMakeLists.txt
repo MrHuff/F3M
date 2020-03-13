@@ -9,4 +9,4 @@ set_target_properties(
         CUDA_SEPARABLE_COMPILATION ON
         POSITION_INDEPENDENT_CODE ON
 )
-target_link_libraries(cuda_n_body cublas.lib)
+target_link_libraries(cuda_n_body cublas) #remember to add .lib for windows etc
