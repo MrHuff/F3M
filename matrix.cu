@@ -19,12 +19,84 @@ return: none
 #pragma once
 #include <iostream>
 #include <ostream>
-#include <cuda_runtime.h>
 #include <cublas_v2.h>
 #include <random>
 #include <stdexcept>
+#include <stdio.h>
 #define BLOCK_SIZE 32
 
+template<typename T>
+void host_to_cuda(T *cuda_pointer, T* const host_pointer ,int N,int M){
+    cudaMemcpy(cuda_pointer, host_pointer, sizeof(T)*N*M, cudaMemcpyHostToDevice);
+};
+template<typename T>
+void cuda_to_host(T* const cuda_pointer, T *host_pointer ,int N,int M){
+    cudaMemcpy(cuda_pointer, host_pointer, sizeof(T)*N*M, cudaMemcpyDeviceToHost);
+};
+
+template<typename T>
+T* allocate_cuda_mat(int N,int M){
+    T *d;
+    cudaMalloc((void **) &d, sizeof(T)*N*M);
+    return d;
+};
+
+void print_mat(std::ostream& out,float* const mat, int N, int M){
+    for (int i = 0; i < N; i++) {
+        for (int j = 0; j < M; j++) {
+            printf("i: %i, j: %i, val: %f \n",i,j,mat[i * M + j]);
+//            out << " " << mat[i * M + j]; //Most cancer thing about C++ and cuda. Row major and column major matrices. Imagine tensors rip.
+//            out << " " << i * M + j;
+//            printf("i: %i, j: %i ",i,j);
+        }
+    }
+};
+template <typename T>
+__global__ void print_mat_cuda(T* const mat, int M,int N){
+    int i = threadIdx.x;
+    int I = threadIdx.x + BLOCK_SIZE * blockIdx.x;
+    __shared__ T shared_floats[BLOCK_SIZE*BLOCK_SIZE]; //Needs to be non-variying, must be "compiler defined, i.e. #define BLOCK_SIZE..."
+    if (I>M*N-1){return;}
+    shared_floats[i] = mat[I];
+    __syncthreads();
+    printf("row: %i, col: %i = %f \n",threadIdx.y,threadIdx.x,shared_floats[i]);
+}
+
+
+
+float* generate_row_major_random_matrix(int const N, int const M){
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::normal_distribution<float> dis(0, 2);
+    auto *mat = new float[N*M];
+    for (int i = 0; i < N; i++) {
+        for (int j = 0; j < M; j++) {
+            mat[i * M + j] = dis(gen);
+//            printf("i: %i, j: %i, val: %f \n",i,j,mat[i * M + j]);
+        }
+    }
+    return mat;
+}
+
+__device__ float square(float x){
+    int n=2;
+    return powf(x,n);
+};
+
+//blockDim,gridDim = give dim of block, grid
+//blockIdx,threadIdx = is specific index of thread and block. Grid have no idx obv
+
+__global__ void square_1_d(const float *input, float *output , int const N, int const D){
+    int bI = blockIdx.x + blockIdx.y * gridDim.x; //global blockId, cardinal
+    int tI = bI * (blockDim.x * blockDim.y)
+                   + (threadIdx.y * blockDim.x) + threadIdx.x; //global threadId, cardinal
+    __shared__ float shared_floats[BLOCK_SIZE*BLOCK_SIZE];
+    if (tI>N*D-1){return;}
+    shared_floats[tI] = input[tI];
+    __syncthreads();
+    output[bI] = expf(-square(shared_floats[tI]));
+};
+//
 
 #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
 inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort = true) {
