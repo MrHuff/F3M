@@ -23,7 +23,20 @@ return: none
 #include <random>
 #include <stdexcept>
 #include <stdio.h>
-#define BLOCK_SIZE 32
+#define BLOCK_SIZE 1024
+#define nx 10
+#define ny 10
+#define nd 3
+#define square_int 2
+//struct get_data_dims{
+//  const int nx;
+//  const int ny;
+//  const int d;
+//  constexpr int get_nx(){return nx;};
+//  constexpr int get_ny(){return ny;};
+//  constexpr int get_d(){return d;};
+//
+//};
 
 template<typename T>
 void host_to_cuda(T *cuda_pointer, T* const host_pointer ,int N,int M){
@@ -31,7 +44,13 @@ void host_to_cuda(T *cuda_pointer, T* const host_pointer ,int N,int M){
 };
 template<typename T>
 void cuda_to_host(T* const cuda_pointer, T *host_pointer ,int N,int M){
-    cudaMemcpy(cuda_pointer, host_pointer, sizeof(T)*N*M, cudaMemcpyDeviceToHost);
+    cudaMemcpy(host_pointer,cuda_pointer, sizeof(T)*N*M, cudaMemcpyDeviceToHost);
+};
+template<typename T>
+T* cuda_to_host_and_pointer(T* const cuda_pointer ,int N,int M){
+    T *host_pointer = new T[N*M];
+    cudaMemcpy(host_pointer,cuda_pointer, sizeof(T)*N*M, cudaMemcpyDeviceToHost);
+    return host_pointer;
 };
 
 template<typename T>
@@ -41,27 +60,59 @@ T* allocate_cuda_mat(int N,int M){
     return d;
 };
 
+void print_row_mat(float ** mat, int N, int M){
+    for (int i = 0; i < N; i++) {
+        printf("row %i :",i);
+//        float * tmp = mat[i];
+        for (int j = 0; j < M; j++) {
+            printf(" %f ",mat[i][j]);
+            }
+        printf("\n");
+        }
+}
+
 void print_mat(std::ostream& out,float* const mat, int N, int M){
     for (int i = 0; i < N; i++) {
+        printf("row %i :",i);
         for (int j = 0; j < M; j++) {
-            printf("i: %i, j: %i, val: %f \n",i,j,mat[i * M + j]);
+            printf(" %f ",mat[i * M + j]);
+            if (j==(M-1)){
+                printf("\n");
+            }
+
+//            printf("i: %i, j: %i, val: %f \n",i,j,mat[i * M + j]);
 //            out << " " << mat[i * M + j]; //Most cancer thing about C++ and cuda. Row major and column major matrices. Imagine tensors rip.
 //            out << " " << i * M + j;
 //            printf("i: %i, j: %i ",i,j);
         }
     }
 };
-template <typename T>
-__global__ void print_mat_cuda(T* const mat, int M,int N){
-    int i = threadIdx.x;
-    int I = threadIdx.x + BLOCK_SIZE * blockIdx.x;
-    __shared__ T shared_floats[BLOCK_SIZE*BLOCK_SIZE]; //Needs to be non-variying, must be "compiler defined, i.e. #define BLOCK_SIZE..."
-    if (I>M*N-1){return;}
-    shared_floats[i] = mat[I];
-    __syncthreads();
-    printf("row: %i, col: %i = %f \n",threadIdx.y,threadIdx.x,shared_floats[i]);
-}
 
+//Stare at keops code, think idea is to do 1d block calculations and let each block "iterate over the data" in y direction
+//
+template <typename T>
+__global__ void print_mat_cuda(T* const mat){
+    int i = threadIdx.x+blockIdx.x*blockDim.x;
+    if (i>nx*nd-1){return;}
+    printf("%i: %f \n",i,mat[i]);
+}
+float** generate_row_random_matrix(int const N, int const M){
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::normal_distribution<float> dis(0, 1);
+    auto ** A = new float*[N];
+    A[0] = new float[N * M];
+    for (int i = 1; i < N; ++i) A[i] = A[i-1] + M;
+
+    for (int i = 0; i < N; ++i) {
+        for (int j = 0; j < M; ++j) {
+//            A[i][j] = i*M+j;
+            A[i][j] = dis(gen);
+
+        }
+    }
+    return A;
+}
 
 
 float* generate_row_major_random_matrix(int const N, int const M){
@@ -69,32 +120,65 @@ float* generate_row_major_random_matrix(int const N, int const M){
     std::mt19937 gen(rd());
     std::normal_distribution<float> dis(0, 2);
     auto *mat = new float[N*M];
-    for (int i = 0; i < N; i++) {
-        for (int j = 0; j < M; j++) {
+    for (int i = 0; i < N; i++) { //for rows
+        for (int j = 0; j < M; j++) { //for columns, M = width
             mat[i * M + j] = dis(gen);
 //            printf("i: %i, j: %i, val: %f \n",i,j,mat[i * M + j]);
         }
     }
     return mat;
 }
-
 __device__ float square(float x){
-    int n=2;
-    return powf(x,n);
+    return powf(x,square_int);
 };
+
+__device__ float rbf_simple(float x[],float y[]){
+    float tmp=0;
+    for (int k=0;k<nd;k++){
+//        printf("%f",square(x[k]-y[k]));
+//        printf("%f\n",x[k]-y[k]);
+
+        tmp -= square(x[k]-y[k]);
+    };
+//    printf("%f \n",tmp);
+
+    return expf(tmp);
+};
+
 
 //blockDim,gridDim = give dim of block, grid
 //blockIdx,threadIdx = is specific index of thread and block. Grid have no idx obv
+//The execution configuration (of a global function call) is specified by inserting an expression of the form <<<Dg,Db,Ns,S>>>, where:
+//
+//Dg (dim3) specifies the dimension and size of the grid.
+//Db (dim3) specifies the dimension and size of each block
+//Ns (size_t) specifies the number of bytes in shared memory that is dynamically allocated per block for this call in addition to the statically allocated memory.
+//S (cudaStream_t) specifies the associated stream, is an optional parameter which defaults to 0.
+// figure out way to provide constant dimensions
+// Compute on device : grid and block are both 1d
+//GpuConv1D_ranges.cu block sparse version
+//GpuConv1D.cu regular
+//Maybe start with naive global memory loop
+//Do simulated 2-d, flatten is the way to go.
 
-__global__ void square_1_d(const float *input, float *output , int const N, int const D){
-    int bI = blockIdx.x + blockIdx.y * gridDim.x; //global blockId, cardinal
-    int tI = bI * (blockDim.x * blockDim.y)
-                   + (threadIdx.y * blockDim.x) + threadIdx.x; //global threadId, cardinal
-    __shared__ float shared_floats[BLOCK_SIZE*BLOCK_SIZE];
-    if (tI>N*D-1){return;}
-    shared_floats[tI] = input[tI];
+__global__ void rbf_1d_kernel(const float *input_x,const float *input_y, float *output){
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    if (i>nx-1){return;}
+    float x_i[nd];
+    float y_j[nd];
+    printf("thread% i \n",i);
+
+    for (int k=0;k<nd;k++){
+        x_i[k] = input_x[i*nd+k];
+    }
+
+    for (int p=0;p<ny;p++){
+        for (int k=0;k<nd;k++){
+            y_j[k] = input_y[p*nd+k];
+        };
+        output[i*ny+p] = rbf_simple(x_i,y_j);
+    };
     __syncthreads();
-    output[bI] = expf(-square(shared_floats[tI]));
 };
 //
 

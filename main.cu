@@ -21,20 +21,34 @@ return: none
 
 int main(int argc, char const *argv[])
 {
-    int N=64;
-    int M =2;
-    auto mat = generate_row_major_random_matrix(N, M);
+    auto mat = generate_row_random_matrix(nx, nd); //matrix but contigous in the first element!
+    print_row_mat(mat,nx,nd); //figure out how to move pointer of pointer to device!
 //    print_mat(std::cout,mat,N,M);
-    auto cuda_mat = allocate_cuda_mat<float>(N,M);
-    auto cuda_kernel_mat = allocate_cuda_mat<float>(N,N);
-    int grid_X = max((int)ceil((float)N/(float)BLOCK_SIZE),1);
+    auto cuda_mat_x = allocate_cuda_mat<float>(nx,nd);
+    host_to_cuda(cuda_mat_x,mat[0],nx,nd); //moves row major matrix to cuda memory
+    auto cuda_mat_res = allocate_cuda_mat<float>(nx,ny);
+    float * cpu_res = new float[nx*ny];
+    host_to_cuda(cuda_mat_res,cpu_res,nx,nd); //moves row major matrix to cuda memory
 
-    std::cout<< grid_X<<std::endl;
-    dim3 grid(grid_X,grid_X);
-    dim3 block_dim(BLOCK_SIZE,BLOCK_SIZE);
-    host_to_cuda(cuda_mat,mat,N,M);
-    print_mat_cuda<float><<<N,BLOCK_SIZE>>>(cuda_mat,M,N);
+    int grid_X = max((int)ceil((float)nx/(float)BLOCK_SIZE),1);
+//    print_mat_cuda<float><<<grid_X,BLOCK_SIZE>>>(cuda_mat_x);
+//    cudaDeviceSynchronize();
+    rbf_1d_kernel<<<grid_X,BLOCK_SIZE>>>(cuda_mat_x,cuda_mat_x,cuda_mat_res);
     cudaDeviceSynchronize();
+    cuda_to_host(cuda_mat_res,cpu_res,nx,ny);
+    print_mat(std::cout,cpu_res,nx,nx); //ok does something but very incorrectly
+
+
+//    auto cuda_kernel_mat = allocate_cuda_mat<float>(N,N);
+//
+//    std::cout<< grid_Y<<std::endl;
+//    std::cout<< grid_X<<std::endl;
+//
+//    dim3 grid(grid_Y,grid_X);
+//    dim3 block_dim(BLOCK_SIZE,BLOCK_SIZE);
+//    host_to_cuda(cuda_mat,mat,N,M);
+//    print_mat_cuda<float><<<grid,block_dim>>>(cuda_mat,M,N);
+//    cudaDeviceSynchronize();
 
 
 //    int n = 10;
