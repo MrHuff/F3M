@@ -23,20 +23,14 @@ return: none
 #include <random>
 #include <stdexcept>
 #include <stdio.h>
-#define BLOCK_SIZE 1024
-#define nx 10
-#define ny 10
+#define BLOCK_SIZE 192
+#define MAXTHREADSPERBLOCK 1024
+#define SHAREDMEMPERBLOCK 49152
+#define nx 1000
+#define ny 1000
 #define nd 3
 #define square_int 2
-//struct get_data_dims{
-//  const int nx;
-//  const int ny;
-//  const int d;
-//  constexpr int get_nx(){return nx;};
-//  constexpr int get_ny(){return ny;};
-//  constexpr int get_d(){return d;};
-//
-//};
+#include <assert.h>
 
 template<typename T>
 void host_to_cuda(T *cuda_pointer, T* const host_pointer ,int N,int M){
@@ -161,12 +155,128 @@ __device__ float rbf_simple(float x[],float y[]){
 //Maybe start with naive global memory loop
 //Do simulated 2-d, flatten is the way to go.
 
+__device__ static void load(int c, float *xi, const float *px) {
+    assert(xi != nullptr);
+    assert(px != nullptr);
+    /*
+     * px is an "array" of pointers to data arrays of appropriate sizes.
+     * That is, px[0] = *px     is a pointer to a TYPE array of size Ni * FIRST
+     * Then,    px[1] = *(px+1) is a pointer to a TYPE array of size Ni * NEXT::FIRST; etc.
+     *
+     * (where Ni is the max value of "i" you should expect)
+     * Obviously, we do not make any sanity check... so beware of illicit memory accesses !
+     */
+#pragma unroll
+    for (int k = 0; k < nd; k++) {
+        //assert(&((*px)[i * FIRST + k]) != nullptr);
+        xi[nd*threadIdx.x+k] = px[c*nd + k]; // First, load the i-th line of px[0]  -> xi[ 0 : FIRST ].
+    }
+}
+
+
+__global__ void rbf_1d_kernel_shared(const float *input_x,const float *input_y, float *output) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    float x_i[nd];
+    extern __shared__ float yj[];
+    for (int k = 0; k < nd; k++) {
+        x_i[k] = input_x[i * nd + k];
+    }
+    for (int jstart = 0, tile = 0; jstart < ny; jstart += blockDim.x, tile++) {
+        // get the current column
+        int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass.
+        printf("%i\n",j);
+        if (j < ny) { // we load yj from device global memory only if j<ny
+            load(j,yj,input_y);
+        }
+        __syncthreads();
+
+//                printf("%f %f %f \n",yj[0],yj[1],yj[2]);
+//        printf("%f %f %f \n",yj[3],yj[4],yj[5]);
+        if (i < nx) { // we compute x1i only if needed
+            float *yjrel = yj; // Loop on the columns of the current block.
+            for (int jrel = 0; (jrel < blockDim.x) && (jrel < ny - jstart); jrel++, yjrel += nd) {
+                output[i*ny+jrel+tile*blockDim.x] = rbf_simple(x_i,yjrel);
+//                printf(" %f \n",yjrel[0]);
+            }
+            __syncthreads();
+        }
+    };
+}
+
+
+__global__ void rbf_1d_reduce_shared(const float *input_x, const float *input_y, const float *b, float *output) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    float x_i[nd];
+    float acc = 0.0;
+    extern __shared__ float yj[];
+//    printf("thread% i \n",i);
+    for (int k = 0; k < nd; k++) {
+        x_i[k] = input_x[i * nd + k];
+    }
+    for (int jstart = 0, tile = 0; jstart < ny; jstart += blockDim.x, tile++) {
+        // get the current column
+//        printf("%i \n",jstart); //Sums incorrectly!
+        int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
+//        printf("%i \n",j); //a subset of y_data is not loaded for two threads!
+
+        if (j < ny) { // we load yj from device global memory only if j<ny
+            load(j,yj,input_y);
+        }
+        __syncthreads();
+
+
+        if (i < nx) { // we compute x1i only if needed
+            float *yjrel = yj; // Loop on the columns of the current block.
+            for (int jrel = 0; (jrel < blockDim.x) && (jrel < ny - jstart); jrel++, yjrel += nd) {
+                acc+= rbf_simple(x_i,yjrel)*b[jrel+jstart]; //sums incorrectly cause pointer is fucked not sure if allocating properly
+            if (i==960){
+//                printf("%f %f %f  \n",yjrel[0],yjrel[1],yjrel[2]); //For some reason gives incorrect
+////                printf("%f %f %f  \n",x_i[0],x_i[1],x_i[2]);
+//                printf("k=%f  b=%f  \n",rbf_simple(x_i,yjrel),b[jrel+jstart]);
+                printf("%i: %f y: %f  %f  %f  \n",jrel+jstart,acc,yjrel[0],yjrel[1],yjrel[2]); //pointer yjrel acting funny, not pointing to right place in data! Remember 64 + 192 = 256!
+
+            }
+
+            }
+            __syncthreads();
+        }
+        if (i < nx) {
+            output[i] = acc;
+        }
+    };
+}
+
+__global__ void rbf_1d_reduce_simple(const float *input_x, const float *input_y, const float *b, float *output){
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    if (i>nx-1){return;}
+    float x_i[nd];
+    float y_j[nd];
+    float acc=0.0;
+//    printf("thread% i \n",i);
+    for (int k=0;k<nd;k++){
+        x_i[k] = input_x[i*nd+k];
+    }
+    for (int p=0;p<ny;p++){
+        for (int k=0;k<nd;k++){
+            y_j[k] = input_y[p*nd+k];
+        };
+        acc+= rbf_simple(x_i,y_j)*b[p];
+        if (i==960){
+//            printf("%f %f %f  \n",y_j[0],y_j[1],y_j[2]);
+////            printf("%f %f %f  \n",x_i[0],x_i[1],x_i[2]);
+//            printf("k=%f  b=%f  \n",rbf_simple(x_i,y_j),b[p]); //k is being weird...
+            printf("%i: %f y:  %f  %f  %f  \n",p,acc,y_j[0],y_j[1],y_j[2]);
+
+        }
+    };
+    output[i] = acc;
+};
 __global__ void rbf_1d_kernel(const float *input_x,const float *input_y, float *output){
     int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
     if (i>nx-1){return;}
     float x_i[nd];
     float y_j[nd];
-    printf("thread% i \n",i);
+//    printf("thread% i \n",i);
 
     for (int k=0;k<nd;k++){
         x_i[k] = input_x[i*nd+k];
@@ -178,7 +288,6 @@ __global__ void rbf_1d_kernel(const float *input_x,const float *input_y, float *
         };
         output[i*ny+p] = rbf_simple(x_i,y_j);
     };
-    __syncthreads();
 };
 //
 
