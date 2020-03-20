@@ -28,7 +28,7 @@ int main(int argc, char const *argv[])
 //    auto cuda_mat_res = allocate_cuda_mat<float>(nx,ny);
 
     auto mat = generate_row_random_matrix(nx, nd); //matrix but contigous in the first element!
-    print_row_mat(mat,nx,nd);
+//    print_row_mat(mat,nx,nd);
     auto cuda_mat_x = allocate_cuda_mat<float>(nx,nd);
     host_to_cuda(cuda_mat_x,mat[0],nx,nd); //moves row major matrix to cuda memory
 
@@ -53,17 +53,17 @@ int main(int argc, char const *argv[])
     blockSize.x = min(BLOCK_SIZE,min(MAXTHREADSPERBLOCK,(int) ( (float)SHAREDMEMPERBLOCK / float(denonminator))));
     dim3 gridSize;
     gridSize.x = nx / blockSize.x + (nx % blockSize.x == 0 ? 0 : 1);
-    printf("%i \n",blockSize.x);
+    printf("%i \n",gridSize.x );
 
     rbf_1d_reduce_shared<<<gridSize, blockSize,blockSize.x * (nd) * sizeof(float)>>>(cuda_mat_x, cuda_mat_x, cuda_b, cuda_b_res);
     cudaDeviceSynchronize();
-//    auto cpu_res = cuda_to_host_and_pointer(cuda_b_res,nx,1);
-//    print_mat(std::cout,cpu_res,nx,1); //ok does something but very incorrectly
+    auto cpu_res = cuda_to_host_and_pointer(cuda_b_res,nx,1);
+    print_mat(std::cout,cpu_res,nx,1); //ok does something but very incorrectly
     printf("--------------------------------------------------------------------------------------------\n");
     rbf_1d_reduce_simple<<<gridSize, blockSize,blockSize.x * (nd) * sizeof(float)>>>(cuda_mat_x, cuda_mat_x, cuda_b, cuda_b_res_2);
     cudaDeviceSynchronize();
-//    auto cpu_res_2 = cuda_to_host_and_pointer(cuda_b_res_2,nx,1);
-//    print_mat(std::cout,cpu_res_2,nx,1); //ok does something but very incorrectly
+    auto cpu_res_2 = cuda_to_host_and_pointer(cuda_b_res_2,nx,1);
+    print_mat(std::cout,cpu_res_2,nx,1); //ok does something but very incorrectly
 
 
 //    rbf_1d_kernel_shared<<<gridSize, blockSize,blockSize.x * (nd) * sizeof(float)>>>(cuda_mat_x, cuda_mat_x, cuda_kernel_mat);
