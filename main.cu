@@ -7,8 +7,8 @@
  *
  */
 //#include <stdio.h>
-#include "matrix.cu"
-
+#include "1_d_conv.cu"
+#include "n_roon.cuh"
 /*
 *********************************************************************
 function name: main
