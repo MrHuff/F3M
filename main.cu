@@ -18,10 +18,18 @@ parameters:
 return: none
 *********************************************************************
 */
+#include <ATen/ATen.h> //hardcore lib
+#include <torch/torch.h> //for n00bs like me, direct translation to python rofl
 
 int main(int argc, char const *argv[])
 {
+    torch::Tensor tensor = torch::rand({2, 3});
+    std::cout << tensor << std::endl;
+//    float data[] = { 1, 2, 3,
+//                     4, 5, 6 };
+//    torch::Tensor f = torch::from_blob(data, {2, 3});
 
+    /** 1-d conv chunk of code
 
 //    print_row_mat(mat,nx,nd); //figure out how to move pointer of pointer to device!
 //    print_mat(std::cout,mat,N,M);
@@ -64,7 +72,7 @@ int main(int argc, char const *argv[])
     cudaDeviceSynchronize();
     auto cpu_res_2 = cuda_to_host_and_pointer(cuda_b_res_2,nx,1);
     print_mat(std::cout,cpu_res_2,nx,1); //ok does something but very incorrectly
-
+**/
 
 //    rbf_1d_kernel_shared<<<gridSize, blockSize,blockSize.x * (nd) * sizeof(float)>>>(cuda_mat_x, cuda_mat_x, cuda_kernel_mat);
 //    cudaDeviceSynchronize();

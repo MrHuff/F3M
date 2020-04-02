@@ -8,6 +8,31 @@ import numpy as np
 # e = time.time()
 # print(e-s)
 
+# def get_near_and_far_interactions(interactions,edge,box_X,box_Y):
+
+class box:
+    def __init__(self,index,indices):
+        self.index = index
+        self.indices = indices
+        self.nr_of_points = len(self.indices)
+
+def calculate_distances(interactions,box_X,box_Y):
+    X_centers = torch.stack([box_X.centers[key] for key in interactions[:,0]])
+    Y_centers = torch.stack([box_Y.centers[key] for key in interactions[:,1]])
+    distances = torch.pairwise_distance(X_centers,Y_centers,p=2)
+    return distances
+
+def get_far_and_close_interactions(interactions,distances,edge):
+    far_field = distances >=2*edge-1e-6
+    near_field = ~far_field
+    return interactions[far_field],interactions[near_field]
+
+
+
+def generate_interactions(box_X,box_Y):
+    interactions =[[x,y] for x in box_X.centers.keys() for y in box_Y.centers.keys()]
+    return np.array(interactions)
+
 def del_none_keys(dict):
     for elem in list(dict):
         if dict[elem] is None:
@@ -93,23 +118,35 @@ class n_roon():
 
 if __name__ == '__main__':
     d=3
-    X= torch.rand(int(1e4),d)
-    Y= torch.rand(int(1e4),d)
+    X= torch.rand(int(1e3),d)
+    Y= torch.rand(int(1e3),d)
     edg,x_min,y_min = calculate_edge(X,Y)
     octaroon_X = n_roon(d=d,X=X,X_min=x_min,edg=edg)
-    print(octaroon_X.box_nr_points)
-    print(octaroon_X.centers)
-    # print(octaroon_X.box_indices)
     octaroon_X.subdivide()
-    print(octaroon_X.box_nr_points)
-    print(octaroon_X.centers)
-    # print(octaroon_X.box_indices)
     octaroon_X.subdivide()
+    octaroon_Y = n_roon(d=d,X=Y,X_min=y_min,edg=edg)
+    octaroon_Y.subdivide()
+    octaroon_Y.subdivide()
+    interactions = generate_interactions(box_X=octaroon_X,box_Y=octaroon_Y)
+    distances = calculate_distances(interactions,octaroon_X,octaroon_Y)
+    far, near = get_far_and_close_interactions(interactions,distances,octaroon_X.edg)
+    print(far)
+    print(near)
 
-    print(octaroon_X.box_nr_points)
-    print(octaroon_X.centers)
-    octaroon_X.subdivide()
 
-    print(octaroon_X.box_nr_points)
-    print(octaroon_X.centers)
+    # print(octaroon_X.box_nr_points)
+    # print(octaroon_X.centers)
+    # # print(octaroon_X.box_indices)
+    # octaroon_X.subdivide()
+    # print(octaroon_X.box_nr_points)
+    # print(octaroon_X.centers)
+    # # print(octaroon_X.box_indices)
+    # octaroon_X.subdivide()
+    #
+    # print(octaroon_X.box_nr_points)
+    # print(octaroon_X.centers)
+    # octaroon_X.subdivide()
+    #
+    # print(octaroon_X.box_nr_points)
+    # print(octaroon_X.centers)
     # print(octaroon_X.box_indices)
