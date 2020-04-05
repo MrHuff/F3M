@@ -11,10 +11,11 @@ import numpy as np
 # def get_near_and_far_interactions(interactions,edge,box_X,box_Y):
 
 class box:
-    def __init__(self,index,indices):
+    def __init__(self,index,indices,center):
         self.index = index
         self.indices = indices
         self.nr_of_points = len(self.indices)
+        self.center = center
 
 def calculate_distances(interactions,box_X,box_Y):
     X_centers = torch.stack([box_X.centers[key] for key in interactions[:,0]])
@@ -27,8 +28,6 @@ def get_far_and_close_interactions(interactions,distances,edge):
     near_field = ~far_field
     return interactions[far_field],interactions[near_field]
 
-
-
 def generate_interactions(box_X,box_Y):
     interactions =[[x,y] for x in box_X.centers.keys() for y in box_Y.centers.keys()]
     return np.array(interactions)
@@ -38,6 +37,7 @@ def del_none_keys(dict):
         if dict[elem] is None:
             del dict[elem]
     return dict
+
 def recursive_center_coordinate(input=[], memory=[]):
     if not input:
         return memory
@@ -86,6 +86,7 @@ class n_roon():
         self.box_indices = {0: torch.tensor(list(range(X.shape[0])))}
         self.box_nr_points = {0:X.shape[0]}
         self.depth = 0
+        self.center_coordinates = torch.tensor(recursive_center_coordinate(self.d*[-1]))
 
     def get_mean_points_per_box(self):
         return np.array(list(self.box_nr_points.values())).mean()
@@ -97,17 +98,14 @@ class n_roon():
         box_nr_points = {i:None for i in range(current_nr_boxes*2**self.d)}
         for i in range(current_nr_boxes):
             current_points = self.data[self.box_indices[i],:]
-            cuts = []
-            for j in range(self.d):
-                cuts.append(current_points[:,j]<=self.centers[i][j])
+            cuts = list((current_points<=self.centers[i]).unbind(dim=1))
             divisions = recursive_divide(cuts)
             nr_of_points_boxes = [el.sum() for el in divisions]
-            center_coordinates = torch.tensor(recursive_center_coordinate(self.d*[-1]))
             for j in range(2**self.d):
                 key = i*2**self.d
                 if nr_of_points_boxes[j]>0:
                     box_nr_points[key+j] = nr_of_points_boxes[j].item()
-                    centers[key+j] = self.centers[i]+0.25*self.edg*center_coordinates[j,:]
+                    centers[key+j] = self.centers[i]+0.25*self.edg*self.center_coordinates[j,:]
                     box_indices[key+j] = self.box_indices[i][divisions[j]]
         self.box_nr_points = del_none_keys(box_nr_points)
         self.centers = del_none_keys(centers)
