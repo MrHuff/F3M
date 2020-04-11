@@ -21,31 +21,37 @@ return: none
 */
 
 
-int main(int argc, char const *argv[])
-{
-// Python: tensor[:,i] <-> tensor.slice(1,i,i+1)
+int main(int argc, char const *argv[]){
+
+    const std::string device_cuda = "cuda:0"; //officially retarded
+    const std::string device_cpu = "cpu";
+//    std::cout<<X<<std::endl;
+//    X = X.to(device_cuda); // needs to do the double op...
+//    std::cout<<X<<std::endl;
+//    X = X.to(device_cpu); // needs to do the double op...
+//    std::cout<<X<<std::endl;
+
+    // Python: tensor[:,i] <-> tensor.slice(1,i,i+1)
     torch::Tensor X = torch::rand({nx, nd});
+
     torch::Tensor b = torch::randn({nx,1});
     torch::Tensor output = torch::zeros_like(b);
 
     torch::Tensor edge,xmin,ymin;
     std::tie(edge,xmin,ymin) = calculate_edge(X,X);
     n_roon_big octaroon_X = n_roon_big{edge,X,xmin};
-//    std::cout<<octaroon_X;
     octaroon_X.divide();
-//    std::cout<<octaroon_X;
     octaroon_X.divide();
-//    std::cout<<octaroon_X;
     n_roon_big octaroon_Y = octaroon_X;
     torch::Tensor interactions =  octaroon_X*octaroon_Y;
-//    std::cout<<interactions<<std::endl;
+    std::cout<<interactions<<std::endl;
     torch::Tensor square_dist,l_1_dist;
     std::tie(square_dist,l_1_dist) = octaroon_X.distance(octaroon_Y,interactions);
     torch::Tensor far_field,near_field;
     std::tie(far_field,near_field) = octaroon_X.far_and_near_field(square_dist,interactions);
     //Idea is to find all X boxes and understand which are needed for interactions. Then remember each x-axis box's y-interactions. almost like matrix...
+    near_field_compute(near_field,octaroon_X,octaroon_Y,output,b,device_cuda);
 
-    near_field_compute(near_field,octaroon_X,octaroon_Y,output,b);
 //    std::cout<<far_field<<std::endl;
 //    std::cout<<near_field<<std::endl;
 

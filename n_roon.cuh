@@ -178,12 +178,66 @@ std::ostream& operator<<(std::ostream& os, const n_roon_big& v)
     return os;
 }
 
-void near_field_compute(torch::Tensor & near_field_interactions, n_roon_big & x_box,n_roon_big & y_box,torch::Tensor &output,torch::Tensor &b){
-    torch::Tensor unique_box_indices_X,_inverse_indices_X,_counts_X;
-    std::tie(unique_box_indices_X,_inverse_indices_X,_counts_X) = torch::unique_consecutive(near_field_interactions.slice(1,0,1));
+torch::Tensor concat_X_box_indices(n_roon_big &x_box,torch::Tensor & box_indices){
+    std::vector<torch::Tensor> cat = {};
+    for (int i=0; i<box_indices.numel();i++){
+        cat.push_back(x_box.n_roons[box_indices.accessor<long,1>()[i]].row_indices.to(torch::kInt32));
+    }
+    return torch::cat(cat,0);
+}
+
+void replace_box_index_with_data_index_X(std::vector<torch::Tensor> &job_vector,n_roon_big & x_box){
+    for (auto & el : job_vector){
+        el =concat_X_box_indices(x_box,el);
+    }
+}
+
+std::vector<int[]> long_indices_to_int_pointers_X(std::vector<torch::Tensor> &job_vector){
+    std::vector<int[]> tmp = {};
+    for (auto & el : job_vector){
+        auto * ptr = el.data_ptr();
+        tmp.push_back((int*)ptr); //figure out data pointer aspect ot tensors... 
+    }
+
+}
+
+
+void near_field_compute(torch::Tensor & near_field_interactions,
+        n_roon_big & x_box,
+        n_roon_big & y_box,
+        torch::Tensor &output,
+        torch::Tensor &b,
+        const std::string & device_gpu){
     torch::Tensor unique_box_indices_Y,_inverse_indices_Y,_counts_Y;
-    std::tie(unique_box_indices_Y,_inverse_indices_Y,_counts_Y) = torch::unique_consecutive(near_field_interactions.slice(1,1,2),false,true);
-    //Have a look at cooperative groups!
+    std::tie(unique_box_indices_Y,_inverse_indices_Y,_counts_Y) = torch::_unique2(near_field_interactions.slice(1,1,2),true,true);
+    std::vector<torch::Tensor> job_vector;
+    auto unique_box_indices_Y_accessor = unique_box_indices_Y.accessor<long,1>();
+    for (int i=0; i<unique_box_indices_Y.numel();i++){
+        job_vector.push_back(near_field_interactions.slice(1,0,1).index({_inverse_indices_Y==unique_box_indices_Y_accessor[i]}));
+    }
+    replace_box_index_with_data_index_X(job_vector,x_box);
+    cudaStream_t streams[MAX_STREAMS];
+
+    torch::Tensor X_data = x_box.data;
+    torch::Tensor & Y_data = y_box.data;
+    X_data = X_data.to(device_gpu);
+    auto X_data_accessor = X_data.packed_accessor32<float,2,torch::RestrictPtrTraits>();
+    dim3 blockSize,gridSize;
+    int memory;
+    for (int i=0; i<unique_box_indices_Y.numel();i++){
+        torch::Tensor & Y_inds_job = y_box.n_roons[unique_box_indices_Y_accessor[i]].row_indices;
+        torch::Tensor cuda_Y_job = Y_data.index({Y_inds_job}).to(device_gpu);
+        auto cuda_Y_job_accessor = cuda_Y_job.packed_accessor32<float,2,torch::RestrictPtrTraits>();
+        torch::Tensor cuda_b_job = b.index({Y_inds_job}).to(device_gpu);
+        auto cuda_b_job_accessor = cuda_b_job.packed_accessor32<float,2,torch::RestrictPtrTraits>();
+
+        std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<float>(nd, job_vector[0].size(0));
+        near_field_rbf<<<gridSize,blockSize,memory>>>(X_data_accessor,cuda_Y_job_accessor,cuda_b_job_accessor,);
+    }
+
+
+
+    //Have a look at streams is the answer!
 //    auto * data_ptr = unique_box_indices_X.data_ptr();
 //    std::cout<<unique_box_indices_X<<std::endl;
 //    std::cout<<_inverse_indices<<std::endl;

@@ -1,20 +1,4 @@
-/*
-*********************************************************************
-function name: gpu_matrix_mult
-description: dot product of two matrix (not only square)
-parameters:
-            &a GPU device pointer to a m X n matrix (A)
-            &b GPU device pointer to a n X k matrix (B)
-            &c GPU device output purpose pointer to a m X k matrix (C)
-            to store the result
-Note:
-    grid and block should be configured as:
-        dim3 dimGrid((k + BLOCK_SIZE - 1) / BLOCK_SIZE, (m + BLOCK_SIZE - 1) / BLOCK_SIZE);
-        dim3 dimBlock(BLOCK_SIZE, BLOCK_SIZE);
-    further sppedup can be obtained by using shared memory to decrease global memory access times
-return: none
-*********************************************************************
-*/
+
 
 #pragma once
 #include <iostream>
@@ -33,20 +17,17 @@ return: none
 #define ny 1000
 #define nd 3
 #define square_int 2
+#define MAX_STREAMS 32
 
-
-
-dim3 get_blocksize(){
+template<typename T>
+std::tuple<dim3,dim3,int> get_kernel_launch_params(int cols,int height){
     dim3 blockSize;
-    int denonminator = std::max(1,(int) (nd*sizeof(float)));
-    blockSize.x = min(BLOCK_SIZE,min(MAXTHREADSPERBLOCK,(int) ( (float)SHAREDMEMPERBLOCK / float(denonminator))));
-    return blockSize;
-};
-dim3 get_gridsize(dim3 blockSize){
     dim3 gridSize;
-    gridSize.x = nx / blockSize.x + (nx % blockSize.x == 0 ? 0 : 1);
-    return gridSize;
-}
+    int denonminator = std::max(1,(int) (cols*sizeof(T)));
+    blockSize.x = min(BLOCK_SIZE,min(MAXTHREADSPERBLOCK,(int) ( (float)SHAREDMEMPERBLOCK / float(denonminator))));
+    gridSize.x = height / blockSize.x + (height % blockSize.x == 0 ? 0 : 1);
+    return std::make_tuple(blockSize,gridSize,blockSize.x * (cols+1) * sizeof(T));
+};
 
 __device__ float square(float x){
     return powf(x,square_int);
@@ -70,14 +51,18 @@ __global__ void print_torch_cuda_1D(const torch::PackedTensorAccessor32<scalar_t
     }
 }
 template <typename scalar_t>
-__device__ static void torch_load(int c, scalar_t *xi, const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> y){
+__device__ static void torch_load_y(int index, scalar_t *shared_mem, const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> y){
 #pragma unroll
     for (int k = 0; k < nd; k++) {
         //assert(&((*px)[i * FIRST + k]) != nullptr);
-        xi[nd*threadIdx.x+k] = y[c][k]; // First, load the i-th line of px[0]  -> xi[ 0 : FIRST ].
+        shared_mem[nd * threadIdx.x + k] = y[index][k]; // First, load the i-th line of px[0]  -> shared_mem[ 0 : FIRST ].
         // Don't use thread id -> nvidia-chips doesn't work like that! It only got a third of the way
         // Some weird memory allocation issue
     }
+}
+template <typename scalar_t>
+__device__ static void torch_load_b(int col_index ,int index, scalar_t *shared_mem, const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b){
+    shared_mem[threadIdx.x] = b[index][col_index];
 }
 
 template <typename scalar_t>
@@ -88,24 +73,27 @@ __global__ void conv_1d_torch_rbf(const torch::PackedTensorAccessor32<scalar_t,2
     int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
     float x_i[nd];
     float acc = 0.0;
-    extern __shared__ float yj[];
+    extern __shared__ float buffer[];
+    float *yj = &buffer[0];
+    float *bj = &buffer[blockDim.x*nd];
     if (i<nx) {
         for (int k = 0; k < nd; k++) {
             x_i[k] = X_data[i][k];
         }
     }
     for (int b_ind=0; b_ind<output.size(1); b_ind++) {
-        for (int jstart = 0, tile = 0; jstart < ny; jstart += blockDim.x, tile++) {
-            int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
+        for (int jstart = 0; jstart < ny; jstart += blockDim.x) {
+            int j = jstart + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
             if (j < ny) { // we load yj from device global memory only if j<ny
-                torch_load<scalar_t>(j, yj, Y_data);
+                torch_load_y<scalar_t>(j, yj, Y_data);
+                torch_load_b<scalar_t>(b_ind ,j, bj, b);
             }
             __syncthreads();
             //ok maybe its not top prio to fix this, maybe just use even threads for good reference...
             if (i < nx) { // we compute x1i only if needed
                 float *yjrel = yj; // Loop on the columns of the current block.
                 for (int jrel = 0; (jrel < blockDim.x) && (jrel < ny - jstart); jrel++, yjrel += nd) {
-                    acc += rbf_simple(x_i, yjrel) * b[jrel + jstart][b_ind]; //sums incorrectly cause pointer is fucked not sure if allocating properly
+                    acc += rbf_simple(x_i, yjrel) *  bj[jrel]; //sums incorrectly cause pointer is fucked not sure if allocating properly
                 }
             }
             __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
@@ -140,4 +128,73 @@ __global__ void rbf_1d_reduce_simple_torch(const torch::PackedTensorAccessor32<s
     }
 };
 
+template <typename scalar_t>
+__global__ void near_field_rbf_shared(const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
+                               const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> Y_data,
+                               const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data, //also put b's in shared mem for maximum perform.
+                               const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_indices,
+                               torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output){
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    unsigned int y_n = Y_data.size(0);
+    unsigned int x_n = X_indices.size(0);
+    int x_ind = X_indices[i];
+    float x_i[nd];
+    float acc = 0.0;
+    extern __shared__ float buffer[];
+    float *yj = &buffer[0];
+    float *bj = &buffer[blockDim.x*nd];
+    if (i<x_n) {
+        for (int k = 0; k < nd; k++) {
+            x_i[k] = X_data[x_ind][k];
+        }
+    }
+    for (int b_ind=0; b_ind<output.size(1); b_ind++) {
+        for (int jstart = 0, tile = 0; jstart < y_n; jstart += blockDim.x, tile++) {
+            int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
+            if (j < y_n) { // we load yj from device global memory only if j<ny
+                torch_load_y<scalar_t>(j, yj, Y_data);
+                torch_load_b<scalar_t>(b_ind ,j, bj, b_data);
+            }
+            __syncthreads();
+            //ok maybe its not top prio to fix this, maybe just use even threads for good reference...
+            if (i < x_n) { // we compute x1i only if needed
+                float *yjrel = yj; // Loop on the columns of the current block.
+                for (int jrel = 0; (jrel < blockDim.x) && (jrel < y_n - jstart); jrel++, yjrel += nd) {
+                    acc += rbf_simple(x_i, yjrel) * bj[jrel]; //sums incorrectly cause pointer is fucked not sure if allocating properly
+                }
+            }
+            __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
+        };
+        if (i < x_n) {
+            atomicAdd(output[x_ind][b_ind],acc);
+        }
+        __syncthreads();
+    };
+}
+
+template <typename scalar_t>
+__global__ void near_field_rbf(const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
+                                      const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> Y_data,
+                                      const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data, //also put b's in shared mem for maximum perform.
+                                      const int * X_indices,
+                                      torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output){
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    unsigned int y_n = Y_data.size(0);
+    int x_ind = X_indices[i];
+    float x_i[nd];
+    float y_j[nd];
+    float acc=0.0;
+    for (int k=0;k<nd;k++){
+        x_i[k] = X_data[x_ind][k];
+    }
+    for (int b_size=0; b_size<b_data.size(1);b_size++){
+        for (int p=0;p<y_n;p++){
+            for (int k=0;k<nd;k++){
+                y_j[k] = Y_data[p][k];
+            };
+            acc+= rbf_simple(x_i,y_j)*b_data[p][b_size];
+        };
+        atomicAdd(output[x_ind][b_size],acc);
+    }
+};
 
