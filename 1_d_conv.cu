@@ -41,6 +41,12 @@ __device__ float rbf_simple(float x[],float y[]){
     return expf(tmp);
 };
 
+template <typename scalar_t>
+__global__ void print_test(const scalar_t * data) {
+    int i = threadIdx.x + blockIdx.x * blockDim.x;
+    if (i > nx) { return; }
+    printf("%i: %f \n", i, data[i]);
+}
 
 template <typename scalar_t>
 __global__ void print_torch_cuda_1D(const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data) {
@@ -132,22 +138,24 @@ template <typename scalar_t>
 __global__ void near_field_rbf_shared(const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
                                const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> Y_data,
                                const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data, //also put b's in shared mem for maximum perform.
-                               const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_indices,
-                               torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output){
+                               const int * X_indices,
+                               torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output,
+                               const int & x_n){
     int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
-    unsigned int y_n = Y_data.size(0);
-    unsigned int x_n = X_indices.size(0);
-    int x_ind = X_indices[i];
+    int x_ind  = i<x_n ? X_indices[i] : 0;
     float x_i[nd];
-    float acc = 0.0;
-    extern __shared__ float buffer[];
-    float *yj = &buffer[0];
-    float *bj = &buffer[blockDim.x*nd];
     if (i<x_n) {
         for (int k = 0; k < nd; k++) {
             x_i[k] = X_data[x_ind][k];
         }
     }
+    unsigned int y_n = Y_data.size(0);
+    extern __shared__ float buffer[];
+    float *yj = &buffer[0];
+    float *bj = &buffer[blockDim.x*nd];
+    float acc = 0.0;
+
+
     for (int b_ind=0; b_ind<output.size(1); b_ind++) {
         for (int jstart = 0, tile = 0; jstart < y_n; jstart += blockDim.x, tile++) {
             int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
@@ -177,8 +185,12 @@ __global__ void near_field_rbf(const torch::PackedTensorAccessor32<scalar_t,2,to
                                       const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> Y_data,
                                       const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data, //also put b's in shared mem for maximum perform.
                                       const int * X_indices,
-                                      torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output){
+                                      torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output,
+                                      const int x_n){
+
     int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+//    printf("%i: %i \n", i, x_n);
+    if (i>x_n-1){return;}
     unsigned int y_n = Y_data.size(0);
     int x_ind = X_indices[i];
     float x_i[nd];
@@ -194,7 +206,7 @@ __global__ void near_field_rbf(const torch::PackedTensorAccessor32<scalar_t,2,to
             };
             acc+= rbf_simple(x_i,y_j)*b_data[p][b_size];
         };
-        atomicAdd(output[x_ind][b_size],acc);
+        atomicAdd(&output[x_ind][b_size],acc);
     }
 };
 

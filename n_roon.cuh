@@ -186,26 +186,17 @@ torch::Tensor concat_X_box_indices(n_roon_big &x_box,torch::Tensor & box_indices
     return torch::cat(cat,0);
 }
 
-void replace_box_index_with_data_index_X(std::vector<torch::Tensor> &job_vector,n_roon_big & x_box){
-    for (auto & el : job_vector){
-        el =concat_X_box_indices(x_box,el);
+void replace_box_index_with_data_index_X(std::vector<torch::Tensor> &job_vector,n_roon_big & x_box) {
+    for (auto &el : job_vector) {
+        el = concat_X_box_indices(x_box, el);
     }
 }
 
-std::vector<int[]> long_indices_to_int_pointers_X(std::vector<torch::Tensor> &job_vector){
-    std::vector<int[]> tmp = {};
-    for (auto & el : job_vector){
-        auto * ptr = el.data_ptr();
-        tmp.push_back((int*)ptr); //figure out data pointer aspect ot tensors... 
-    }
-
-}
-
-
+template <typename scalar_t>
 void near_field_compute(torch::Tensor & near_field_interactions,
         n_roon_big & x_box,
         n_roon_big & y_box,
-        torch::Tensor &output,
+        torch::Tensor & output,
         torch::Tensor &b,
         const std::string & device_gpu){
     torch::Tensor unique_box_indices_Y,_inverse_indices_Y,_counts_Y;
@@ -216,30 +207,31 @@ void near_field_compute(torch::Tensor & near_field_interactions,
         job_vector.push_back(near_field_interactions.slice(1,0,1).index({_inverse_indices_Y==unique_box_indices_Y_accessor[i]}));
     }
     replace_box_index_with_data_index_X(job_vector,x_box);
-    cudaStream_t streams[MAX_STREAMS];
-
+//    cudaStream_t streams[MAX_STREAMS];
     torch::Tensor X_data = x_box.data;
     torch::Tensor & Y_data = y_box.data;
     X_data = X_data.to(device_gpu);
-    auto X_data_accessor = X_data.packed_accessor32<float,2,torch::RestrictPtrTraits>();
+    output = output.to(device_gpu);
+    auto X_data_accessor = X_data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>();
+    auto output_accessor = output.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>();
     dim3 blockSize,gridSize;
     int memory;
+    torch::Tensor Y_inds_job;
+    torch::Tensor cuda_Y_job;
+    torch::Tensor cuda_b_job;
+    torch::Tensor X_indices_torch; //use same strat for output and X?
     for (int i=0; i<unique_box_indices_Y.numel();i++){
-        torch::Tensor & Y_inds_job = y_box.n_roons[unique_box_indices_Y_accessor[i]].row_indices;
-        torch::Tensor cuda_Y_job = Y_data.index({Y_inds_job}).to(device_gpu);
-        auto cuda_Y_job_accessor = cuda_Y_job.packed_accessor32<float,2,torch::RestrictPtrTraits>();
-        torch::Tensor cuda_b_job = b.index({Y_inds_job}).to(device_gpu);
-        auto cuda_b_job_accessor = cuda_b_job.packed_accessor32<float,2,torch::RestrictPtrTraits>();
-
-        std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<float>(nd, job_vector[0].size(0));
-        near_field_rbf<<<gridSize,blockSize,memory>>>(X_data_accessor,cuda_Y_job_accessor,cuda_b_job_accessor,);
+        Y_inds_job = y_box.n_roons[unique_box_indices_Y_accessor[i]].row_indices;
+        cuda_Y_job = Y_data.index({Y_inds_job}).to(device_gpu); //breaks on seccond iteration...
+        auto cuda_Y_job_accessor = cuda_Y_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>();
+        cuda_b_job = b.index({Y_inds_job}).to(device_gpu);
+        auto cuda_b_job_accessor = cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>();
+        X_indices_torch = job_vector[unique_box_indices_Y_accessor[i]].to(device_gpu);
+        auto * X_indices_ptr = (int *) X_indices_torch.data_ptr();
+        std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(nd, job_vector[0].size(0));
+        near_field_rbf<scalar_t><<<gridSize,blockSize>>>(X_data_accessor,cuda_Y_job_accessor,cuda_b_job_accessor,X_indices_ptr,output_accessor,X_indices_torch.size(0));
+        cudaDeviceSynchronize();
+        std::cout<<output<<std::endl;
     }
-
-
-
-    //Have a look at streams is the answer!
-//    auto * data_ptr = unique_box_indices_X.data_ptr();
-//    std::cout<<unique_box_indices_X<<std::endl;
-//    std::cout<<_inverse_indices<<std::endl;
-//    std::cout<<_counts<<std::endl;
 };
+//Make smarter implementation for tmrw using pointers to X and b rather than accessing the entire thing

@@ -89,7 +89,7 @@ template<typename T>
 //    return mat;
 //}
 
-
+//REMEMBER TO ALWAYS CHECK EVERYTHING IS ACTUALLY ON CUDA!
 //blockDim,gridDim = give dim of block, grid
 //blockIdx,threadIdx = is specific index of thread and block. Grid have no idx obv
 //The execution configuration (of a global function call) is specified by inserting an expression of the form <<<Dg,Db,Ns,S>>>, where:
