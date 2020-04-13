@@ -5,9 +5,25 @@
 #pragma once
 #include "1_d_conv.cu"
 #include <vector>
+
 //template<typename T>
 
-
+template <typename scalar_t>
+void update_2d_rows_cpu(
+        torch::Tensor &original,
+        torch::Tensor &update,
+        torch::Tensor &rows){
+    int col = original.size(1);
+    int n = rows.size(0);
+    auto o_accessor = original.accessor<scalar_t,2>();
+    auto row_accessor = rows.accessor<long,1>();
+    auto u_accessor = update.accessor<scalar_t,2>();
+    for (int i = 0;i<n;i++){
+        for (int j=0; j<col;j++) {
+            o_accessor[row_accessor[i]][j]+=u_accessor[i][j];
+        }
+    }
+}
 
 
 std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> calculate_edge(const torch::Tensor &X,const torch::Tensor &Y){
@@ -181,7 +197,7 @@ std::ostream& operator<<(std::ostream& os, const n_roon_big& v)
 torch::Tensor concat_X_box_indices(n_roon_big &x_box,torch::Tensor & box_indices){
     std::vector<torch::Tensor> cat = {};
     for (int i=0; i<box_indices.numel();i++){
-        cat.push_back(x_box.n_roons[box_indices.accessor<long,1>()[i]].row_indices.to(torch::kInt32));
+        cat.push_back(x_box.n_roons[box_indices.accessor<long,1>()[i]].row_indices);
     }
     return torch::cat(cat,0);
 }
@@ -208,30 +224,38 @@ void near_field_compute(torch::Tensor & near_field_interactions,
     }
     replace_box_index_with_data_index_X(job_vector,x_box);
 //    cudaStream_t streams[MAX_STREAMS];
-    torch::Tensor X_data = x_box.data;
+    torch::Tensor & X_data = x_box.data;
     torch::Tensor & Y_data = y_box.data;
-    X_data = X_data.to(device_gpu);
-    output = output.to(device_gpu);
-    auto X_data_accessor = X_data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>();
-    auto output_accessor = output.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>();
     dim3 blockSize,gridSize;
     int memory;
     torch::Tensor Y_inds_job;
     torch::Tensor cuda_Y_job;
     torch::Tensor cuda_b_job;
-    torch::Tensor X_indices_torch; //use same strat for output and X?
+    torch::Tensor cuda_X_job;
+    torch::Tensor X_inds_job;
+    torch::Tensor output_job;
+    std::vector<torch::Tensor> results = {};
     for (int i=0; i<unique_box_indices_Y.numel();i++){
         Y_inds_job = y_box.n_roons[unique_box_indices_Y_accessor[i]].row_indices;
         cuda_Y_job = Y_data.index({Y_inds_job}).to(device_gpu); //breaks on seccond iteration...
-        auto cuda_Y_job_accessor = cuda_Y_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>();
         cuda_b_job = b.index({Y_inds_job}).to(device_gpu);
-        auto cuda_b_job_accessor = cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>();
-        X_indices_torch = job_vector[unique_box_indices_Y_accessor[i]].to(device_gpu);
-        auto * X_indices_ptr = (int *) X_indices_torch.data_ptr();
+        X_inds_job = job_vector[unique_box_indices_Y_accessor[i]];
+        cuda_X_job = X_data.index(X_inds_job).to(device_gpu);
+        output_job = torch::zeros({X_inds_job.size(0),output.size(1)}).to(device_gpu);
         std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(nd, job_vector[0].size(0));
-        near_field_rbf<scalar_t><<<gridSize,blockSize>>>(X_data_accessor,cuda_Y_job_accessor,cuda_b_job_accessor,X_indices_ptr,output_accessor,X_indices_torch.size(0));
+        rbf_1d_reduce_shared_torch<scalar_t><<<gridSize,blockSize,memory>>>(cuda_X_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                     cuda_Y_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                     cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                     output_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>());
+//        rbf_1d_reduce_simple_torch<scalar_t><<<gridSize,blockSize>>>(cuda_X_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+//                                                         cuda_Y_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+//                                                         cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+//                                                         output_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>());
         cudaDeviceSynchronize();
-        std::cout<<output<<std::endl;
+        results.push_back(output_job.to("cpu"));
     }
+    torch::Tensor update = torch::cat({results});
+    torch::Tensor rows = torch::cat({job_vector});
+    update_2d_rows_cpu<float>(output,update,rows);
 };
 //Make smarter implementation for tmrw using pointers to X and b rather than accessing the entire thing
