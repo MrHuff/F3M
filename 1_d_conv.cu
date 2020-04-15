@@ -18,7 +18,7 @@
 #define nd 3
 #define square_int 2
 #define MAX_STREAMS 32
-
+#define laplace_nodes 5
 template<typename T>
 std::tuple<dim3,dim3,int> get_kernel_launch_params(int cols,int height){
     dim3 blockSize;
@@ -82,46 +82,6 @@ __device__ static void torch_load_b(
         const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b){
     shared_mem[threadIdx.x] = b[index][col_index];
 }
-
-//template <typename scalar_t>
-//__global__ void conv_1d_torch_rbf(const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
-//                                  const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> Y_data,
-//                                  const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b,
-//                                  torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output){
-//    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
-//    float x_i[nd];
-//    float acc = 0.0;
-//    extern __shared__ float buffer[];
-//    float *yj = &buffer[0];
-//    float *bj = &buffer[blockDim.x*nd];
-//    if (i<nx) {
-//        for (int k = 0; k < nd; k++) {
-//            x_i[k] = X_data[i][k];
-//        }
-//    }
-//    for (int b_ind=0; b_ind<output.size(1); b_ind++) {
-//        for (int jstart = 0; jstart < ny; jstart += blockDim.x) {
-//            int j = jstart + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
-//            if (j < ny) { // we load yj from device global memory only if j<ny
-//                torch_load_y<scalar_t>(j, yj, Y_data);
-//                torch_load_b<scalar_t>(b_ind ,j, bj, b);
-//            }
-//            __syncthreads();
-//            //ok maybe its not top prio to fix this, maybe just use even threads for good reference...
-//            if (i < nx) { // we compute x1i only if needed
-//                float *yjrel = yj; // Loop on the columns of the current block.
-//                for (int jrel = 0; (jrel < blockDim.x) && (jrel < ny - jstart); jrel++, yjrel += nd) {
-//                    acc += rbf_simple(x_i, yjrel) *  bj[jrel]; //sums incorrectly cause pointer is fucked not sure if allocating properly
-//                }
-//            }
-//            __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
-//        };
-//        if (i < nx) {
-//            output[i][b_ind] = acc;
-//        }
-//        __syncthreads();
-//    };
-//}
 
 template <typename scalar_t>
 __global__ void rbf_1d_reduce_shared_torch(
@@ -191,4 +151,37 @@ __global__ void rbf_1d_reduce_simple_torch(const torch::PackedTensorAccessor32<s
         output[i][b_ind]=acc;
     }
 };
+
+template <typename scalar_t>
+__global__ void laplace_interpolation(const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
+                                      const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data, //also put b's in shared mem for maximum perform.
+                                      const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> lap_nodes,
+                                      const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> combinations,
+                                      torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output
+){
+    float x_i[nd];
+    float l_p[laplace_nodes];
+    float y_j[nd];
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    unsigned int x_n = X_data.size(0);
+    if (i>x_n-1){return;}
+    float acc=1.0;
+    for (int k=0;k<nd;k++){
+        x_i[k] = X_data[i][k];
+    }
+    unsigned int y_n = combinations.size(0);
+
+    for (int b_ind=0; b_ind < b_data.size(1); b_ind++){
+        for (int p=0;p<y_n;p++){
+            for (int k=0;k<nd;k++){
+                y_j[k] = combinations[p][k];
+            };
+            
+            atomicAdd(&output[b_ind][p],acc);
+
+        };
+    }
+
+};
+
 

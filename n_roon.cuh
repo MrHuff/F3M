@@ -5,7 +5,6 @@
 #pragma once
 #include "1_d_conv.cu"
 #include <vector>
-
 //template<typename T>
 
 template <typename scalar_t>
@@ -118,6 +117,7 @@ struct n_roon_big {
     float avg_nr_points;
     int dim;
     int number_of_divisions;
+    int largest_box_n;
     std::vector<torch::Tensor> output_coord = {};
     std::vector<torch::Tensor> ones = {};
     n_roon_big(torch::Tensor &e, torch::Tensor &d, torch::Tensor &xm){
@@ -133,6 +133,7 @@ struct n_roon_big {
         current_nr_boxes= n_roons.size();
         avg_nr_points = data.size(0);
         number_of_divisions = (int) pow(2,dim);
+        largest_box_n = data.size(0);
     };
     void divide(){
         int _new_nr_of_boxes = 0;
@@ -159,7 +160,14 @@ struct n_roon_big {
         n_roons = _new_n_roons;
         avg_nr_points = sum_points/(float) current_nr_boxes;
         edge = edge*0.5;
-
+        largest_box_n = get_largest_box();
+    };
+    int get_largest_box(){
+        std::vector<int> box_sizes = {};
+        for (auto el:n_roons){
+            box_sizes.push_back(el.n_elems);
+        }
+        return *std::max_element(box_sizes.begin(),box_sizes.end());
     };
     torch::Tensor operator*(const n_roon_big& other){ //give all interactions, i.e. cartesian product of indices
         std::vector<torch::Tensor> tl = {};
@@ -247,10 +255,7 @@ void near_field_compute(torch::Tensor & near_field_interactions,
                                                                      cuda_Y_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                                      cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                                      output_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>());
-//        rbf_1d_reduce_simple_torch<scalar_t><<<gridSize,blockSize>>>(cuda_X_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-//                                                         cuda_Y_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-//                                                         cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-//                                                         output_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>());
+
         cudaDeviceSynchronize();
         results.push_back(output_job.to("cpu"));
     }
@@ -259,3 +264,120 @@ void near_field_compute(torch::Tensor & near_field_interactions,
     update_2d_rows_cpu<float>(output,update,rows);
 };
 //Make smarter implementation for tmrw using pointers to X and b rather than accessing the entire thing
+
+int get_RFF_dim(n_roon_big & x_box,n_roon_big & y_box){
+    auto biggest = (float) max(x_box.largest_box_n,y_box.largest_box_n);
+    return (int) round(sqrt(biggest)*log(biggest));
+}
+
+torch::Tensor chebyshev_nodes_1D(const int & nodes){
+    float PI = atan(1.)*4.;
+    torch::Tensor chebyshev_nodes = torch::arange(1, nodes).toType(torch::kFloat32);
+    chebyshev_nodes = cos((chebyshev_nodes*2.-1.)*PI/chebyshev_nodes.size(0));
+    return chebyshev_nodes;
+};
+
+
+void recursive_indices(
+        const int nodes,
+        int d, std::vector<int> & container_small,
+        std::vector< std::vector<int> > & container_big){
+    if (d==1){
+        for (int i =0;i<nodes;i++){
+            std::vector<int> tmp = container_small;
+            tmp.push_back(i);
+            container_big.push_back(tmp);
+        }
+        return;
+    }else{
+        for (int i =0;i<nodes;i++){
+            std::vector<int> tmp = container_small;
+            tmp.push_back(i);
+            recursive_indices(nodes,d-1,tmp,container_big);
+        }
+    }
+}
+
+torch::Tensor get_recursive_indices(const int nodes,
+                                    int d){
+    std::vector< std::vector<int> > indices = {};
+    std::vector<int> init = {};
+    std::vector<torch::Tensor> cat = {};
+    recursive_indices(nodes,d,init,indices);
+    for ( auto &row : indices )
+    {
+        cat.push_back(torch::from_blob(row.data(),{1,3},torch::kInt32));
+    }
+    return torch::cat(cat,0);
+}
+
+torch::Tensor apply_laplace_interpolation(
+        n_roon_big& y_box,
+        torch::Tensor &b,
+        int i ,
+        const std::string & device_gpu,
+        torch::Tensor & nodes,
+        torch::Tensor & laplace_indices){
+    torch::Tensor y_data = y_box.data.index({y_box.n_roons[i].row_indices}).to(device_gpu);
+    torch::Tensor b_data = b.index({y_box.n_roons[i].row_indices}).to(device_gpu);
+    torch::Tensor nodes_gpu = nodes.to(device_gpu);
+    torch::Tensor laplace_indices_gpu = laplace_indices.to(device_gpu);
+
+
+
+}
+
+template <typename scalar_t>
+void far_field_compute(torch::Tensor & near_field_interactions,
+                        n_roon_big & x_box,
+                        n_roon_big & y_box,
+                        torch::Tensor & output,
+                        torch::Tensor &b,
+                        const std::string & device_gpu,
+                        const int & nodes){
+    torch::Tensor unique_box_indices_Y,_inverse_indices_Y,_counts_Y;
+    std::tie(unique_box_indices_Y,_inverse_indices_Y,_counts_Y) = torch::_unique2(near_field_interactions.slice(1,1,2),true,true);
+    int dimensions = x_box.dim;
+    torch::Tensor chebnodes_1D = chebyshev_nodes_1D(nodes);
+    torch::Tensor laplace_combinations = get_recursive_indices(nodes,dimensions);
+//    auto unique_box_indices_Y_accessor = unique_box_indices_Y.accessor<long,1>(); //Get centers instead, think about n-dim chebyshev polynomials...
+
+
+
+    //    std::vector<torch::Tensor> job_vector;
+//    for (int i=0; i<unique_box_indices_Y.numel();i++){
+//        job_vector.push_back(near_field_interactions.slice(1,0,1).index({_inverse_indices_Y==unique_box_indices_Y_accessor[i]}));
+//    }
+//    replace_box_index_with_data_index_X(job_vector,x_box);
+////    cudaStream_t streams[MAX_STREAMS] ;
+//    torch::Tensor & X_data = x_box.data;
+//    torch::Tensor & Y_data = y_box.data;
+//    dim3 blockSize,gridSize;
+//    int memory;
+//    torch::Tensor Y_inds_job;
+//    torch::Tensor cuda_Y_job;
+//    torch::Tensor cuda_b_job;
+//    torch::Tensor cuda_X_job;
+//    torch::Tensor X_inds_job;
+//    torch::Tensor output_job;
+//    std::vector<torch::Tensor> results = {};
+//    for (int i=0; i<unique_box_indices_Y.numel();i++){
+//        Y_inds_job = y_box.n_roons[unique_box_indices_Y_accessor[i]].row_indices;
+//        cuda_Y_job = Y_data.index({Y_inds_job}).to(device_gpu); //breaks on seccond iteration...
+//        cuda_b_job = b.index({Y_inds_job}).to(device_gpu);
+//        X_inds_job = job_vector[unique_box_indices_Y_accessor[i]];
+//        cuda_X_job = X_data.index(X_inds_job).to(device_gpu);
+//        output_job = torch::zeros({X_inds_job.size(0),output.size(1)}).to(device_gpu);
+//        std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(nd, job_vector[0].size(0));
+//        rbf_1d_reduce_shared_torch<scalar_t><<<gridSize,blockSize,memory>>>(cuda_X_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+//                                                                            cuda_Y_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+//                                                                            cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+//                                                                            output_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>());
+//
+//        cudaDeviceSynchronize();
+//        results.push_back(output_job.to("cpu"));
+//    }
+//    torch::Tensor update = torch::cat({results});
+//    torch::Tensor rows = torch::cat({job_vector});
+//    update_2d_rows_cpu<float>(output,update,rows);
+};
