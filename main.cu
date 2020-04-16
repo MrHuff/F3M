@@ -40,26 +40,26 @@ int main(int argc, char const *argv[]){
 //    X = X.to(device_cuda); // needs to do the double op...
 
     // Python: tensor[:,i] <-> tensor.slice(1,i,i+1)
-    torch::Tensor indices_tensor = get_recursive_indices(5,3);
-    std::cout<<indices_tensor<<std::endl;
+//    torch::Tensor laplace_combinations = get_recursive_indices(laplace_nodes,3).to(device_cuda);
+//    std::cout<<laplace_combinations<<std::endl;
 
-//    torch::Tensor X = torch::rand({nx, nd});
-//    torch::Tensor b = torch::randn({X.size(0),2});
-//    torch::Tensor output = torch::zeros_like(b);
-//
-//    torch::Tensor edge,xmin,ymin;
-//    std::tie(edge,xmin,ymin) = calculate_edge(X,X);
-//    n_roon_big octaroon_X = n_roon_big{edge,X,xmin};
-//    octaroon_X.divide();
-//    octaroon_X.divide();
-//    n_roon_big octaroon_Y = octaroon_X;
-//    torch::Tensor interactions =  octaroon_X*octaroon_Y;
-//    torch::Tensor square_dist,l_1_dist;
-//    std::tie(square_dist,l_1_dist) = octaroon_X.distance(octaroon_Y,interactions);
-//    torch::Tensor far_field,near_field;
-//    std::tie(far_field,near_field) = octaroon_X.far_and_near_field(square_dist,interactions);
-//    //Idea is to find all X boxes and understand which are needed for interactions. Then remember each x-axis box's y-interactions. almost like matrix...
-//    far_field_compute<float>(far_field,octaroon_X,octaroon_Y,output,b,device_cuda);
+    torch::Tensor X = torch::rand({nx, nd});
+    torch::Tensor b = torch::randn({X.size(0),2});
+    torch::Tensor output = torch::zeros_like(b);
+
+    torch::Tensor edge,xmin,ymin;
+    std::tie(edge,xmin,ymin) = calculate_edge(X,X);
+    n_roon_big octaroon_X = n_roon_big{edge,X,xmin};
+    octaroon_X.divide();
+    octaroon_X.divide();
+    n_roon_big octaroon_Y = octaroon_X;
+    torch::Tensor interactions =  octaroon_X*octaroon_Y;
+    torch::Tensor square_dist,dist;
+    std::tie(square_dist, dist) = octaroon_X.distance(octaroon_Y, interactions);
+    torch::Tensor far_field,near_field,dist_far_field;
+    std::tie(far_field, near_field, dist_far_field) = octaroon_X.far_and_near_field(square_dist, interactions, dist);
+    //Idea is to find all X boxes and understand which are needed for interactions. Then remember each x-axis box's y-interactions. almost like matrix...
+    far_field_compute<float>(far_field, octaroon_X, octaroon_Y, output, b, device_cuda, dist_far_field);
 
 //    std::cout<<output<<std::endl;
 

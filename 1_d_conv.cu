@@ -153,21 +153,54 @@ __global__ void rbf_1d_reduce_simple_torch(const torch::PackedTensorAccessor32<s
 };
 
 template <typename scalar_t>
+__device__ scalar_t calculate_laplace(
+        scalar_t l_p[],
+        scalar_t & x_ij,
+        int & feature_num
+        ){
+    scalar_t res=1.0;
+    for (int i=0; i<laplace_nodes;i++){
+        if (i!=feature_num){ //Calculate the Laplace feature if i!=m...
+            res = res * (x_ij-l_p[i])/(l_p[i]-l_p[feature_num]);
+        }
+    }
+    return res;
+}
+
+template <typename scalar_t>
+__device__ void calculate_laplace_product(
+        scalar_t l_p[],
+        scalar_t x_i[],
+        int y_j[],
+        float &acc){
+    acc = 1.0;
+    for (int i=0; i<nd;i++){
+        acc = acc*calculate_laplace(l_p,x_i[i],y_j[i]);
+    }
+}
+
+template <typename scalar_t>
 __global__ void laplace_interpolation(const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
                                       const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data, //also put b's in shared mem for maximum perform.
-                                      const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> lap_nodes,
+                                      const torch::PackedTensorAccessor32<scalar_t,1,torch::RestrictPtrTraits> lap_nodes,
                                       const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> combinations,
                                       torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output
 ){
-    float x_i[nd];
-    float l_p[laplace_nodes];
-    float y_j[nd];
+
     int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
     unsigned int x_n = X_data.size(0);
     if (i>x_n-1){return;}
+    float x_i[nd];
+    float l_p[laplace_nodes];
+    int y_j[nd];
     float acc=1.0;
     for (int k=0;k<nd;k++){
         x_i[k] = X_data[i][k];
+//        printf("x: %f\n",x_i[k]);
+    }
+    for (int k=0;k<laplace_nodes;k++){
+        l_p[k] = lap_nodes[k];
+//        printf("l_p: %f\n",l_p[k]);
     }
     unsigned int y_n = combinations.size(0);
 
@@ -175,13 +208,12 @@ __global__ void laplace_interpolation(const torch::PackedTensorAccessor32<scalar
         for (int p=0;p<y_n;p++){
             for (int k=0;k<nd;k++){
                 y_j[k] = combinations[p][k];
+//                printf("y_j: %i\n",y_j[k]);
             };
-            
+            calculate_laplace_product(l_p,x_i,y_j,acc);
             atomicAdd(&output[b_ind][p],acc);
-
         };
     }
-
 };
 
 
