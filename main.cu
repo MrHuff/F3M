@@ -37,7 +37,7 @@ int main(int argc, char const *argv[]){
     X = X.to(device_cuda);
     b = b.to(device_cuda);
     output_ref = output_ref.to(device_cuda);
-    rbf_shared_call<float>(X,X,b,output_ref);
+    rbf_call<float>(X, X, b, output_ref,false);
     output_ref = output_ref.to("cpu");
     std::cout<<output<<std::endl;
     printf("--------------------------------------\n");

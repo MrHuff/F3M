@@ -223,20 +223,29 @@ void replace_box_index_with_data_index_X(std::vector<torch::Tensor> &job_vector,
 }
 
 template <typename scalar_t>
-void rbf_shared_call(
+void rbf_call(
         torch::Tensor & cuda_X_job,
         torch::Tensor & cuda_Y_job,
         torch::Tensor & cuda_b_job,
-        torch::Tensor & output_job
+        torch::Tensor & output_job,
+        bool shared = true
         ){
     dim3 blockSize,gridSize;
     int memory;
     std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(nd, cuda_X_job.size(0));
 
-    rbf_1d_reduce_shared_torch<scalar_t><<<gridSize,blockSize,memory>>>(cuda_X_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                        cuda_Y_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                        cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                        output_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>());
+    if(shared){
+        rbf_1d_reduce_shared_torch<scalar_t><<<gridSize,blockSize,memory>>>(cuda_X_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                            cuda_Y_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                            cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                            output_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>());
+    }else{
+        rbf_1d_reduce_simple_torch<scalar_t><<<gridSize,blockSize,memory>>>(cuda_X_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                            cuda_Y_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                            cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                            output_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>());
+    }
+
     cudaDeviceSynchronize();
 
 }
@@ -270,7 +279,7 @@ void near_field_compute(torch::Tensor & near_field_interactions,
         X_inds_job = job_vector[unique_box_indices_Y_accessor[i]];
         cuda_X_job = X_data.index(X_inds_job).to(device_gpu);
         output_job = torch::zeros({X_inds_job.size(0),output.size(1)}).to(device_gpu);
-        rbf_shared_call<scalar_t>(cuda_X_job,cuda_Y_job,cuda_b_job,output_job);
+        rbf_call<scalar_t>(cuda_X_job, cuda_Y_job, cuda_b_job, output_job);
         results.push_back(output_job.to("cpu"));
     }
     torch::Tensor update = torch::cat({results});
@@ -390,7 +399,7 @@ torch::Tensor low_rank_exact(torch::Tensor & cuda_X_job,
     distance = distance.to(device_gpu);
     torch::Tensor output_job = torch::zeros_like(cuda_b_job).toType(torch::kFloat32);
     torch::Tensor cuda_Y_job = cuda_X_job + distance;
-    rbf_shared_call<scalar_t>(cuda_X_job,cuda_Y_job,cuda_b_job,output_job);
+    rbf_call<scalar_t>(cuda_X_job, cuda_Y_job, cuda_b_job, output_job);
     return output_job;
 }
 
