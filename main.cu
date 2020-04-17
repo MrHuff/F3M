@@ -46,6 +46,7 @@ int main(int argc, char const *argv[]){
     torch::Tensor X = torch::rand({nx, nd});
     torch::Tensor b = torch::randn({X.size(0),2});
     torch::Tensor output = torch::zeros_like(b);
+    torch::Tensor output_ref = torch::zeros_like(output);
 
     torch::Tensor edge,xmin,ymin;
     std::tie(edge,xmin,ymin) = calculate_edge(X,X);
@@ -60,8 +61,14 @@ int main(int argc, char const *argv[]){
     std::tie(far_field, near_field, dist_far_field) = octaroon_X.far_and_near_field(square_dist, interactions, dist);
     //Idea is to find all X boxes and understand which are needed for interactions. Then remember each x-axis box's y-interactions. almost like matrix...
     far_field_compute<float>(far_field, octaroon_X, octaroon_Y, output, b, device_cuda, dist_far_field);
+    near_field_compute<float>(near_field,octaroon_X, octaroon_Y, output, b, device_cuda);
 
-//    std::cout<<output<<std::endl;
+    X = X.to(device_cuda);
+    b = b.to(device_cuda);
+    output_ref = output_ref.to(device_cuda);
+    rbf_shared_call<float>(X,X,b,output_ref);
+    std::cout<<output<<std::endl;
+    std::cout<<output_ref<<std::endl;
 
 //    printf("--------------------------------------\n");
 //    torch::Tensor output_2 = torch::zeros_like(b).to(device_cuda);
