@@ -101,8 +101,9 @@ __global__ void rbf_1d_reduce_shared_torch(
     extern __shared__ float buffer[];
     float *yj = &buffer[0];
     float *bj = &buffer[blockDim.x*nd];
-    float acc = 0.0;
+    float acc;
     for (int b_ind=0; b_ind<output.size(1); b_ind++) {
+        acc=0.0;
         for (int jstart = 0, tile = 0; jstart < y_n; jstart += blockDim.x, tile++) {
             int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
             if (j < y_n) { // we load yj from device global memory only if j<ny
@@ -137,11 +138,12 @@ __global__ void rbf_1d_reduce_simple_torch(const torch::PackedTensorAccessor32<s
     unsigned int y_n = Y_data.size(0);
     float x_i[nd];
     float y_j[nd];
-    float acc=0.0;
+    float acc;
     for (int k=0;k<nd;k++){
         x_i[k] = X_data[i][k];
     }
     for (int b_ind=0; b_ind < b_data.size(1); b_ind++){
+        acc=0.0;
         for (int p=0;p<y_n;p++){
             for (int k=0;k<nd;k++){
                 y_j[k] = Y_data[p][k];
