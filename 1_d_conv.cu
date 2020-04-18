@@ -152,6 +152,8 @@ __global__ void rbf_1d_reduce_simple_torch(const torch::PackedTensorAccessor32<s
         };
         output[i][b_ind]=acc;
     }
+    __syncthreads();
+
 };
 
 template <typename scalar_t>
@@ -214,6 +216,7 @@ __global__ void laplace_interpolation(const torch::PackedTensorAccessor32<scalar
             atomicAdd(&output[b_ind][p],calculate_laplace_product(l_p, x_i, comb_j, b_data[i][b_ind]));
         };
     }
+    __syncthreads();
 };
 
 template <typename scalar_t>
@@ -227,7 +230,7 @@ __global__ void laplace_interpolation_transpose(const torch::PackedTensorAccesso
     int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
     unsigned int x_n = X_data.size(0);
     if (i>x_n-1){return;}
-    float acc = 0;
+    float acc;
     float x_i[nd];
     float l_p[laplace_nodes];
     int comb_j[nd];
@@ -242,6 +245,7 @@ __global__ void laplace_interpolation_transpose(const torch::PackedTensorAccesso
     unsigned int y_n = combinations.size(0);
 
     for (int b_ind=0; b_ind < b_data.size(1); b_ind++){
+        acc=0.0;
         for (int p=0;p<y_n;p++){
             for (int k=0;k<nd;k++){
                 comb_j[k] = combinations[p][k];
@@ -251,6 +255,7 @@ __global__ void laplace_interpolation_transpose(const torch::PackedTensorAccesso
         };
         output[i][b_ind] = acc;
     }
+    __syncthreads();
 };
 
 

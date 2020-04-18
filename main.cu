@@ -27,10 +27,11 @@ int main(int argc, char const *argv[]){
     const std::string device_cpu = "cpu";
 //    torch::manual_seed(0);
 
-    torch::Tensor X = read_csv<float>("X.csv",1000,3);
-    torch::Tensor b = read_csv<float>("V.csv",1000,2);
-    std::cout<<X<<std::endl;
-    std::cout<<b<<std::endl;
+//    torch::Tensor X = read_csv<float>("X.csv",1000,3);
+//    torch::Tensor b = read_csv<float>("V.csv",1000,2);
+    torch::Tensor X = torch::rand({1000,nd});
+    torch::Tensor b = torch::randn({1000,2});
+
 
     torch::Tensor output = FFM(X,X,b,device_cuda);
     torch::Tensor output_ref = torch::zeros_like(output);

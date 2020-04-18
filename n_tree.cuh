@@ -184,7 +184,7 @@ struct n_tree_big {
         std::vector<torch::Tensor> dist = {};
         auto interaction_accessor = interactions.accessor<long,2>();
         for (int i = 0; i < interactions.size(0); i++) {
-            dist.push_back((n_roons[interaction_accessor[i][0]].center - n_roons[interaction_accessor[i][1]].center).unsqueeze(0));
+            dist.push_back((n_roons[interaction_accessor[i][1]].center - n_roons[interaction_accessor[i][0]].center).unsqueeze(0));
         }
         torch::Tensor l1_distances = torch::cat(dist);
         return std::make_tuple(l1_distances.pow(2).sum(1).sqrt() ,l1_distances);
@@ -487,8 +487,8 @@ torch::Tensor FFM(
         ntree_Y.divide();
         interactions =  ntree_X*ntree_Y;
         std::tie(square_dist, dist) = ntree_X.distance(ntree_Y, interactions);
-        std::cout<<square_dist<<std::endl;
-        std::cout<<dist<<std::endl;
+//        std::cout<<square_dist<<std::endl;
+//        std::cout<<dist<<std::endl;
         std::tie(far_field, near_field, dist_far_field) = ntree_X.far_and_near_field(square_dist, interactions, dist);
         if(far_field.numel()>0){
             far_field_compute<float>(far_field, ntree_X, ntree_Y, output, b, gpu_device, dist_far_field); //Something is up here!
