@@ -228,8 +228,15 @@ void rbf_call(
         torch::Tensor & cuda_Y_job,
         torch::Tensor & cuda_b_job,
         torch::Tensor & output_job,
+        scalar_t & ls,
+        rbf_pointer<scalar_t> & op,
         bool shared = true
         ){
+
+    scalar_t *d_ls;
+    cudaMalloc((void **)&d_ls, sizeof(scalar_t));
+    cudaMemcpy(d_ls, &ls, sizeof(scalar_t), cudaMemcpyHostToDevice);
+
     dim3 blockSize,gridSize;
     int memory;
     std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(nd, cuda_X_job.size(0));
@@ -238,12 +245,18 @@ void rbf_call(
         rbf_1d_reduce_shared_torch<scalar_t><<<gridSize,blockSize,memory>>>(cuda_X_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                                             cuda_Y_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                                             cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                            output_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>());
+                                                                            output_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                            d_ls,
+                                                                            op
+                                                                            );
     }else{
         rbf_1d_reduce_simple_torch<scalar_t><<<gridSize,blockSize,memory>>>(cuda_X_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                                             cuda_Y_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                                             cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                            output_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>());
+                                                                            output_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                            d_ls,
+                                                                            op
+                                                                            );
     }
 
     cudaDeviceSynchronize();
@@ -256,7 +269,9 @@ void near_field_compute(torch::Tensor & near_field_interactions,
                         n_tree_big & y_box,
                         torch::Tensor & output,
                         torch::Tensor &b,
-                        const std::string & device_gpu){
+                        const std::string & device_gpu,
+                        scalar_t & ls,
+                        rbf_pointer<scalar_t> & op){
     torch::Tensor unique_box_indices_Y,_inverse_indices_Y,_counts_Y;
     std::tie(unique_box_indices_Y,_inverse_indices_Y,_counts_Y) = torch::_unique2(near_field_interactions.slice(1,1,2),true,true);
     std::vector<torch::Tensor> job_vector;
@@ -279,7 +294,7 @@ void near_field_compute(torch::Tensor & near_field_interactions,
         X_inds_job = job_vector[unique_box_indices_Y_accessor[i]];
         cuda_X_job = X_data.index(X_inds_job).to(device_gpu);
         output_job = torch::zeros({X_inds_job.size(0),output.size(1)}).to(device_gpu);
-        rbf_call<scalar_t>(cuda_X_job, cuda_Y_job, cuda_b_job, output_job);
+        rbf_call<scalar_t>(cuda_X_job, cuda_Y_job, cuda_b_job, output_job,ls,op);
         results.push_back(output_job.to("cpu"));
     }
     torch::Tensor update = torch::cat({results});
@@ -395,11 +410,14 @@ template <typename scalar_t>
 torch::Tensor low_rank_exact(torch::Tensor & cuda_X_job,
                     torch::Tensor & cuda_b_job,
                     torch::Tensor & distance,
-                     const std::string & device_gpu){
+                     const std::string & device_gpu,
+                     scalar_t & ls,
+                     rbf_pointer<scalar_t> & op
+                     ){
     distance = distance.to(device_gpu);
     torch::Tensor output_job = torch::zeros_like(cuda_b_job).toType(torch::kFloat32);
     torch::Tensor cuda_Y_job = cuda_X_job + distance;
-    rbf_call<scalar_t>(cuda_X_job, cuda_Y_job, cuda_b_job, output_job);
+    rbf_call<scalar_t>(cuda_X_job, cuda_Y_job, cuda_b_job, output_job,ls,op);
     return output_job;
 }
 
@@ -410,7 +428,9 @@ void far_field_compute(torch::Tensor & far_field_interactions,
                        torch::Tensor & output,
                        torch::Tensor &b,
                        const std::string & device_gpu,
-                       torch::Tensor &dist){
+                       torch::Tensor &dist,
+                       scalar_t & ls,
+                       rbf_pointer<scalar_t> & op){
     torch::Tensor chebnodes_1D = chebyshev_nodes_1D(laplace_nodes);
     torch::Tensor laplace_combinations = get_recursive_indices(laplace_nodes,nd);
     torch::Tensor cheb_data_X = (get_cheb_data<scalar_t>(chebnodes_1D,laplace_combinations)*x_box.edge/2+x_box.edge/2).to(device_gpu);
@@ -448,7 +468,12 @@ void far_field_compute(torch::Tensor & far_field_interactions,
         n = far_field_accessor[i][0];
         results[unique_box_indices_X_accessor[n]]+=low_rank_exact<scalar_t>(
                 cheb_data_X,
-                Y_box_transforms[unique_box_indices_Y_accessor[m]],xy,device_gpu);
+                Y_box_transforms[unique_box_indices_Y_accessor[m]],
+                xy,
+                device_gpu,
+                ls,
+                op
+                );
     }
     std::vector<torch::Tensor> final_res = {};
     std::vector<torch::Tensor> final_indices = {};
@@ -468,12 +493,14 @@ void far_field_compute(torch::Tensor & far_field_interactions,
     torch::Tensor rows = torch::cat({final_indices});
     update_2d_rows_cpu<scalar_t>(output,update,rows);
 };
-
+template <typename scalar_t>
 torch::Tensor FFM(
         torch::Tensor &X_data,
         torch::Tensor &Y_data,
         torch::Tensor &b,
-        const std::string & gpu_device
+        const std::string & gpu_device,
+        scalar_t & ls,
+        rbf_pointer<scalar_t> & op
         ) {
     torch::Tensor output = torch::zeros({X_data.size(0),b.size(1)});
     torch::Tensor edge,xmin,ymin;
@@ -491,11 +518,118 @@ torch::Tensor FFM(
 //        std::cout<<dist<<std::endl;
         std::tie(far_field, near_field, dist_far_field) = ntree_X.far_and_near_field(square_dist, interactions, dist);
         if(far_field.numel()>0){
-            far_field_compute<float>(far_field, ntree_X, ntree_Y, output, b, gpu_device, dist_far_field); //Something is up here!
+            far_field_compute<scalar_t>(far_field, ntree_X, ntree_Y, output, b, gpu_device, dist_far_field,ls,op); //Something is up here!
         }
     }
     if (near_field.numel()>0){
-        near_field_compute<float>(near_field,ntree_X, ntree_Y, output, b, gpu_device);
+        near_field_compute<scalar_t>(near_field,ntree_X, ntree_Y, output, b, gpu_device,ls,op);
     }
     return output;
+}
+template <typename scalar_t>
+struct FMM_obj{
+    torch::Tensor & X_data;
+    torch::Tensor & Y_data;
+    scalar_t & ls;
+    rbf_pointer<scalar_t> & op;
+    scalar_t &lambda;
+    const std::string & gpu_device;
+
+    FMM_obj(
+            torch::Tensor & X_data,
+    torch::Tensor & Y_data,
+    scalar_t & ls,
+    rbf_pointer<scalar_t> & op,
+    scalar_t &lambda,
+    const std::string & gpu_device): X_data(X_data), Y_data(Y_data),ls(ls),op(op),lambda(lambda),gpu_device(gpu_device){};
+    virtual torch::Tensor operator* (torch::Tensor & b){
+        return FFM<scalar_t>(
+                X_data,
+                Y_data,
+                b,
+                gpu_device,
+                ls,
+                op
+        )+b*lambda;
+    };
+};
+template <typename scalar_t>
+struct exact_MV : FMM_obj<scalar_t>{
+    exact_MV(torch::Tensor & X_data,
+                         torch::Tensor & Y_data,
+                         scalar_t & ls,
+                         rbf_pointer<scalar_t> & op,
+                         scalar_t &lambda,
+                         const std::string & gpu_device):FMM_obj<scalar_t>(X_data,Y_data,ls,op,lambda,gpu_device){};
+    torch::Tensor operator* (torch::Tensor & b){
+        torch::Tensor output = torch::zeros({FMM_obj<scalar_t>::X_data.size(0),b.size(1)}).to(FMM_obj<scalar_t>::gpu_device);
+        b = b.to(FMM_obj<scalar_t>::gpu_device);
+        torch::Tensor gpu_X = FMM_obj<scalar_t>::X_data.to(FMM_obj<scalar_t>::gpu_device);
+        torch::Tensor gpu_Y = FMM_obj<scalar_t>::Y_data.to(FMM_obj<scalar_t>::gpu_device);
+
+        rbf_call<scalar_t>(
+                gpu_X,
+                gpu_Y,
+                b,
+                output,
+                FMM_obj<scalar_t>::ls,
+                FMM_obj<scalar_t>::op,
+                true
+        );
+        output = output+b*FMM_obj<scalar_t>::lambda;
+        b = b.to("cpu");
+        output = output.to("cpu");
+        return output;
+    };
+};
+
+template<typename scalar_t>
+std::tuple<torch::Tensor,torch::Tensor> CG(FMM_obj<scalar_t> MV, torch::Tensor &b, float tol, int max_its,bool tridiag){
+    int h = b.size(0);
+    scalar_t delta = tol*(float)h;
+    auto a = torch::zeros_like(b);
+    torch::Tensor r = b;
+    torch::Tensor nr2 = (torch::pow(r,2)).sum();
+    if (nr2.item<scalar_t>()<delta){
+        return std::make_tuple(a,torch::zeros(1));
+    }
+    torch::Tensor p = r;
+    std::vector<torch::Tensor> lanczos_vals_list = {};
+    torch::Tensor Mp,alp,beta,alp_old,beta_old,nr2new,lanczos_append,tridiag_output,tridiag_cat,z,o;
+    z = torch::zeros(1);
+    o = torch::ones(1);
+    for (int i=0;i<max_its;i++){
+        Mp = MV*p;
+        alp = nr2/(p*Mp).sum();
+        a = a + alp*p;
+        r = r - alp*Mp;
+        nr2new = (torch::pow(r,2)).sum();
+        if (nr2new.item<scalar_t>()<delta){
+            break;
+        }
+        beta = nr2new/nr2;
+        p = r + beta*p;
+        nr2=nr2new;
+        if (tridiag){
+            if (i==0){
+                lanczos_append = torch::stack({z.squeeze(),(o/alp).squeeze(),(beta.sqrt()/alp).squeeze()}).unsqueeze(0);
+            }else{
+                lanczos_append = torch::stack({(beta_old.sqrt()/alp_old).squeeze(),
+                                               (o/alp+beta_old/alp_old).squeeze(),(beta.sqrt()/alp).squeeze()}).unsqueeze(0);
+            }
+            lanczos_vals_list.push_back(lanczos_append);
+            alp_old = alp;
+            beta_old = beta;
+        }
+
+    }
+    if (tridiag){
+        tridiag_cat = torch::cat(lanczos_vals_list);
+        tridiag_output = torch::diagflat(tridiag_cat.slice(1,1,2)) +
+                torch::diagflat(tridiag_cat.slice(1,0,1).slice(0,1),-1) +
+                torch::diagflat(tridiag_cat.slice(1,2,3).slice(0,0,-1),1);
+        return std::make_tuple(a,tridiag_output);
+    }else{
+        return std::make_tuple(a,torch::zeros(1));
+    }
 }
