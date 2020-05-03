@@ -24,6 +24,7 @@ class GPModel(ApproximateGP):
 def load_data(filename):
     X_train = pd.read_csv(f"{filename}.csv",header=None)
     X_train = torch.from_numpy(X_train.values).float()
+    print(X_train.shape)
     return X_train
 
 if __name__ == '__main__':
@@ -83,3 +84,4 @@ if __name__ == '__main__':
     means = means[1:]
     mse_loss = torch.nn.MSELoss()
     print('Test RMSE: {}'.format(mse_loss(means,Y_test.cpu()).sqrt_().item()))
+    #Test RMSE: 0.24515990912914276
