@@ -29,31 +29,37 @@ int main(int argc, char const *argv[]){
 
 //    torch::Tensor X = read_csv<float>("X.csv",1000,3);
 //    torch::Tensor b = read_csv<float>("V.csv",1000,2);
-    torch::Tensor X = torch::rand({100,nd});
-    torch::Tensor b = torch::randn({100,1});
+    torch::Tensor X = torch::rand({20000,nd});
+    torch::Tensor b = torch::randn({20000,1});
 
     float ls = 3.0;
     float lambda = 1e-2;
+    int T = 10;
+    int max_its = 50;
+    float tol = 1e-6;
     rbf_pointer<float> op,op_grad;
     cudaMemcpyFromSymbol(&op, rbf_pointer_func<float>, sizeof(rbf_pointer<float>)); //rbf_pointer_func,rbf_pointer_grad
     cudaMemcpyFromSymbol(&op_grad, rbf_pointer_grad<float>, sizeof(rbf_pointer<float>)); //rbf_pointer_func,rbf_pointer_grad
 
-    FMM_obj<float> ffm_obj = FMM_obj<float>(X,X,ls,op,lambda,device_cuda);
-    FMM_obj<float> ffm_obj_grad = FMM_obj<float>(X,X,ls,op_grad,lambda,device_cuda);
+//    FMM_obj<float> ffm_obj = FMM_obj<float>(X,X,ls,op,lambda,device_cuda);
+//    FMM_obj<float> ffm_obj_grad = FMM_obj<float>(X,X,ls,op_grad,lambda,device_cuda);
+    exact_MV<float> ffm_obj = exact_MV<float>(X,X,ls,op,lambda,device_cuda);
+    exact_MV<float> ffm_obj_grad = exact_MV<float>(X,X,ls,op_grad,lambda,device_cuda);
 
 //    torch::Tensor output = ffm_obj_test*b;
 //    exact_MV<float> exact_obj_test = exact_MV<float>(X,X,ls,op,lambda,device_cuda);
 //    torch::Tensor output_ref = exact_obj_test*b;
-    torch::Tensor b_inv,tridiag_matrix,log_det,trace;
+    torch::Tensor loss,grad,b_inv;
 //    std::tie(b_inv,tridiag_matrix) = CG(ffm_obj_test,b,(float) 1e-6,(int) 100,true);
-    std::tie(log_det,trace) = trace_and_log_det_calc(ffm_obj,ffm_obj_grad,(int)10,(int)50,(float)1e-6);
-    std::cout<<log_det<<std::endl;
-    std::cout<<trace<<std::endl;
+//    std::tie(log_det,trace) = trace_and_log_det_calc(ffm_obj,ffm_obj_grad,(int)10,(int)50,(float)1e-6);
+//    std::cout<<log_det<<std::endl;
+//    std::cout<<trace<<std::endl;
+    std::tie(loss,grad,b_inv)=calculate_loss_and_grad<float>(ffm_obj,ffm_obj_grad,b,T,max_its,tol);
 
 //    log_det = calculate_one_lanczos_triag(tridiag_matrix);
-//    std::cout<<log_det<<std::endl;
-//    std::cout<<b_inv<<std::endl;
-//    std::cout<<tridiag_matrix<<std::endl;
+    std::cout<<loss<<std::endl;
+    std::cout<<grad<<std::endl;
+    std::cout<<b_inv<<std::endl;
 
 
 //    X_data=X,X,ls,op,lambda,device_cuda
