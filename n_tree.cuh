@@ -508,7 +508,7 @@ torch::Tensor FFM(
     n_tree_big ntree_X = n_tree_big{edge, X_data, xmin};
     n_tree_big ntree_Y = n_tree_big{edge, Y_data, ymin};
     torch::Tensor square_dist,dist,interactions,far_field,near_field,dist_far_field;
-    near_field = torch::rand(1);
+    near_field = torch::zeros({1,2}).toType(torch::kLong);
     while (near_field.numel()>0 and ntree_X.avg_nr_points > 100. and ntree_Y.avg_nr_points > 100.){
         ntree_X.divide();
         ntree_Y.divide();
@@ -584,7 +584,7 @@ struct exact_MV : FMM_obj<scalar_t>{
 };
 
 template<typename scalar_t>
-std::tuple<torch::Tensor,torch::Tensor> CG(FMM_obj<scalar_t> MV, torch::Tensor &b, float tol, int max_its,bool tridiag){
+std::tuple<torch::Tensor,torch::Tensor> CG(FMM_obj<scalar_t> & MV, torch::Tensor &b, float tol, int max_its,bool tridiag){
     int h = b.size(0);
     scalar_t delta = tol*(float)h;
     auto a = torch::zeros_like(b);
@@ -632,4 +632,50 @@ std::tuple<torch::Tensor,torch::Tensor> CG(FMM_obj<scalar_t> MV, torch::Tensor &
     }else{
         return std::make_tuple(a,torch::zeros(1));
     }
+}
+
+torch::Tensor calculate_one_lanczos_triag(torch::Tensor & tridiag_mat){
+    torch::Tensor V,P,U;
+    std::tie(P,U) = torch::eig(tridiag_mat,true);
+    P = P.slice(1,0,1);
+    V = U.slice(0,0);
+    return (V.pow_(2)*P.log_()).sum();
+}
+template <typename scalar_t>
+std::tuple<torch::Tensor,torch::Tensor> trace_and_log_det_calc(FMM_obj<scalar_t> &MV,FMM_obj<scalar_t> &MV_grad,int T,int max_its,float tol){
+    std::vector<torch::Tensor> log_det_approx = {};
+    std::vector<torch::Tensor> trace_approx = {};
+    torch::Tensor z_sol,z,tridiag_z,log_det_cat,trace_cat;
+    for (int i=0;i<T;i++){
+        z = torch::randn({MV.X_data.size(0),1});
+        std::tie(z_sol,tridiag_z) = CG<scalar_t>(MV,z,tol,max_its,true);
+        log_det_approx.push_back(calculate_one_lanczos_triag(tridiag_z));
+        trace_approx.push_back( torch::sum(z_sol*(MV_grad*z)));
+    }
+    log_det_cat = torch::stack(log_det_approx);
+    trace_cat = torch::stack(trace_approx);
+    return std::make_tuple(log_det_cat.mean(),trace_cat.mean());
+}
+
+template<typename scalar_t>
+torch::Tensor ls_grad_calculate(FMM_obj<scalar_t> &MV_grad,torch::Tensor & b_sol,torch::Tensor &trace_est){
+    return trace_est + torch::sum(b_sol.*(MV_grad*b_sol));
+}
+
+torch::Tensor GP_loss(torch::Tensor &log_det,torch::Tensor &b_sol,torch::Tensor &b){
+    return log_det - torch::sum(b*b_sol);
+}
+template<typename scalar_t>
+std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> calculate_loss_and_grad(FMM_obj<scalar_t> &MV,
+        FMM_obj<scalar_t> &MV_grad,
+        torch::Tensor & b,
+        int T,
+        int max_its,
+        float tol){
+    torch::Tensor b_sol,log_det,trace_est,grad,loss,_;
+    std::tie(b_sol,_) = CG(MV,b,tol,max_its,false);
+    std::tie(log_det,trace_est) = trace_and_log_det_calc(MV,MV_grad,T,max_its,tol);
+    grad = ls_grad_calculate(MV_grad,b_sol,trace_est);
+    loss = GP_loss(log_det,b_sol,b);
+    return std::make_tuple(loss,grad,b_sol);
 }
