@@ -170,7 +170,7 @@ struct n_tree_big {
         }
         return *std::max_element(box_sizes.begin(),box_sizes.end());
     };
-    torch::Tensor operator*(const n_tree_big& other){ //give all interactions, i.e. cartesian product of indices
+    torch::Tensor operator*(const n_tree_big& other){ //give all interactions, i.e. cartesian product of boxes
         std::vector<torch::Tensor> tl = {};
         for (int i=0; i<current_nr_boxes;i++){
             for (int j=0; j<other.current_nr_boxes;j++){
@@ -287,7 +287,7 @@ void near_field_compute(torch::Tensor & near_field_interactions,
     torch::Tensor Y_inds_job,cuda_Y_job,cuda_b_job,cuda_X_job,X_inds_job,output_job;
     std::vector<torch::Tensor> results = {};
 
-    for (int i=0; i<unique_box_indices_Y.numel();i++){
+    for (int i=0; i<unique_box_indices_Y.numel();i++){ //for each Y-box, find all the "common" X-boxes, stack the X-boxes and compute exactly.
         Y_inds_job = y_box.n_roons[unique_box_indices_Y_accessor[i]].row_indices;
         cuda_Y_job = Y_data.index({Y_inds_job}).to(device_gpu); //breaks on seccond iteration...
         cuda_b_job = b.index({Y_inds_job}).to(device_gpu);
@@ -345,7 +345,7 @@ torch::Tensor get_recursive_indices(const int nodes,
     recursive_indices(nodes,d,init,indices);
     for ( auto &row : indices )
     {
-        cat.push_back(torch::from_blob(row.data(),{1,3},torch::kInt32));
+        cat.push_back(torch::from_blob(row.data(),{1,d},torch::kInt32));
     }
     return torch::cat(cat,0);
 }
@@ -431,21 +431,24 @@ void far_field_compute(torch::Tensor & far_field_interactions,
                        torch::Tensor &dist,
                        scalar_t & ls,
                        rbf_pointer<scalar_t> & op){
-    torch::Tensor chebnodes_1D = chebyshev_nodes_1D(laplace_nodes);
-    torch::Tensor laplace_combinations = get_recursive_indices(laplace_nodes,nd);
-    torch::Tensor cheb_data_X = (get_cheb_data<scalar_t>(chebnodes_1D,laplace_combinations)*x_box.edge/2+x_box.edge/2).to(device_gpu);
+    torch::Tensor chebnodes_1D = chebyshev_nodes_1D(laplace_nodes); //get chebyshev nodes, laplace_nodes is fixed now, should probably be a variable
+    torch::Tensor laplace_combinations = get_recursive_indices(laplace_nodes,nd); // get all possible combinations of chebyshev nodes. Total combintations should have dimension [laplace_nodes^nd,nd]
+    torch::Tensor cheb_data_X = (get_cheb_data<scalar_t>(chebnodes_1D,laplace_combinations)*x_box.edge/2+x_box.edge/2).to(device_gpu); //get the actual data given the indices
     chebnodes_1D=chebnodes_1D.to(device_gpu);
     laplace_combinations=laplace_combinations.to(device_gpu);
     torch::Tensor unique_box_indices_Y,_inverse_indices_Y,_counts_Y,cheb_data_Y,unique_box_indices_X,_1,_2;
     std::tie(unique_box_indices_Y,_inverse_indices_Y,_counts_Y) = torch::_unique2(far_field_interactions.slice(1, 1, 2), true, false);
-    std::tie(unique_box_indices_X,_1,_2) = torch::_unique2(far_field_interactions.slice(1, 1, 2), true, false);
+    std::tie(unique_box_indices_X,_1,_2) = torch::_unique2(far_field_interactions.slice(1, 0, 1), true, false);
 
+    /*
+     * for all unique indices do a transformation, i.e. L_y*u.
+     */
     std::map<long, torch::Tensor> Y_box_transforms;
     torch::Tensor laplace_low_rank,y_subset,b_subset;
     auto unique_box_indices_Y_accessor = unique_box_indices_Y.accessor<long,1>();
     auto unique_box_indices_X_accessor = unique_box_indices_X.accessor<long,1>();
 
-    for (int i=0; i<unique_box_indices_Y.numel();i++){//
+    for (int i=0; i<unique_box_indices_Y.numel();i++){//parallelize!
         Y_box_transforms[unique_box_indices_Y_accessor[i]] = apply_laplace_interpolation<scalar_t>(
                 y_box,
                 b,
@@ -455,14 +458,18 @@ void far_field_compute(torch::Tensor & far_field_interactions,
                 laplace_combinations,
                 false);
     }
-    std::map<long, torch::Tensor> results;
+
+    /*
+     * Do all low rank interactions,i.e. T*(L_y*u) we apply T here.
+     */
+    std::map<long, torch::Tensor> results; //Store/accumulate results according to unique X-boxes
     for (int i=0; i<unique_box_indices_X.numel();i++){
         results[unique_box_indices_X_accessor[i]] = torch::zeros({cheb_data_X.size(0), b.size(1)}).toType(torch::kFloat32).to(device_gpu);
     }
-    torch::Tensor xy;
+    torch::Tensor xy; //distance offset
     long m,n;
     auto far_field_accessor = far_field_interactions.accessor<long,2>();
-    for (int i =0; i<dist.size(0);i++){
+    for (int i =0; i<dist.size(0);i++){ //parallelize
         xy = dist.slice(0,i,i+1);
         m = far_field_accessor[i][1];
         n = far_field_accessor[i][0];
@@ -475,10 +482,14 @@ void far_field_compute(torch::Tensor & far_field_interactions,
                 op
                 );
     }
-    std::vector<torch::Tensor> final_res = {};
-    std::vector<torch::Tensor> final_indices = {};
 
-    for (int i=0; i<unique_box_indices_X.numel();i++){//
+    /*
+     * Finally transform back to regular dimensionality i.e. Apply L_x *(T*(L_y*u))
+     */
+    std::vector<torch::Tensor> final_res = {}; // We cache all the results...
+    std::vector<torch::Tensor> final_indices = {}; // ... and remember the index we applied it to!
+
+    for (int i=0; i<unique_box_indices_X.numel();i++){//parallelize!
         final_res.push_back(apply_laplace_interpolation<scalar_t>(
                 x_box,
                 results[unique_box_indices_X_accessor[i]],
@@ -491,7 +502,7 @@ void far_field_compute(torch::Tensor & far_field_interactions,
         }
     torch::Tensor update = torch::cat({final_res});
     torch::Tensor rows = torch::cat({final_indices});
-    update_2d_rows_cpu<scalar_t>(output,update,rows);
+    update_2d_rows_cpu<scalar_t>(output,update,rows); //since we have not done accumulation ,we do accumulation here...
 };
 template <typename scalar_t>
 torch::Tensor FFM(
@@ -502,23 +513,23 @@ torch::Tensor FFM(
         scalar_t & ls,
         rbf_pointer<scalar_t> & op
         ) {
-    torch::Tensor output = torch::zeros({X_data.size(0),b.size(1)});
-    torch::Tensor edge,xmin,ymin;
-    std::tie(edge,xmin,ymin) = calculate_edge(X_data,Y_data);
-    n_tree_big ntree_X = n_tree_big{edge, X_data, xmin};
-    n_tree_big ntree_Y = n_tree_big{edge, Y_data, ymin};
-    torch::Tensor square_dist,dist,interactions,far_field,near_field,dist_far_field;
+    torch::Tensor output = torch::zeros({X_data.size(0),b.size(1)}); //initialize empty output
+    torch::Tensor edge,xmin,ymin; //these are needed for computing centers of boxes
+    std::tie(edge,xmin,ymin) = calculate_edge(X_data,Y_data); //actually calculate them
+    n_tree_big ntree_X = n_tree_big{edge, X_data, xmin}; //Intialize tree for X-data
+    n_tree_big ntree_Y = n_tree_big{edge, Y_data, ymin};//Intialize tree for Y-data
+    torch::Tensor square_dist,dist,interactions,far_field,near_field,dist_far_field; //these are needed to figure out which interactions are near/far field
     near_field = torch::zeros({1,2}).toType(torch::kLong);
     while (near_field.numel()>0 and ntree_X.avg_nr_points > 100. and ntree_Y.avg_nr_points > 100.){
-        ntree_X.divide();
-        ntree_Y.divide();
-        interactions =  ntree_X*ntree_Y;
-        std::tie(square_dist, dist) = ntree_X.distance(ntree_Y, interactions);
+        ntree_X.divide();//divide ALL boxes recursively once
+        ntree_Y.divide();//divide ALL boxes recursively once
+        interactions =  ntree_X*ntree_Y; //find ALL interactions
+        std::tie(square_dist, dist) = ntree_X.distance(ntree_Y, interactions); //get distances for all interactions
 //        std::cout<<square_dist<<std::endl;
 //        std::cout<<dist<<std::endl;
-        std::tie(far_field, near_field, dist_far_field) = ntree_X.far_and_near_field(square_dist, interactions, dist);
+        std::tie(far_field, near_field, dist_far_field) = ntree_X.far_and_near_field(square_dist, interactions, dist); //classify into near and far field
         if(far_field.numel()>0){
-            far_field_compute<scalar_t>(far_field, ntree_X, ntree_Y, output, b, gpu_device, dist_far_field,ls,op); //Something is up here!
+            far_field_compute<scalar_t>(far_field, ntree_X, ntree_Y, output, b, gpu_device, dist_far_field,ls,op); //far field compute
         }
     }
     if (near_field.numel()>0){
@@ -527,7 +538,7 @@ torch::Tensor FFM(
     return output;
 }
 template <typename scalar_t>
-struct FMM_obj{
+struct FFM_object{
     torch::Tensor & X_data;
     torch::Tensor & Y_data;
     scalar_t & ls;
@@ -535,7 +546,7 @@ struct FMM_obj{
     scalar_t &lambda;
     const std::string & gpu_device;
 
-    FMM_obj(
+    FFM_object( //constructor
             torch::Tensor & X_data,
     torch::Tensor & Y_data,
     scalar_t & ls,
@@ -554,29 +565,29 @@ struct FMM_obj{
     };
 };
 template <typename scalar_t>
-struct exact_MV : FMM_obj<scalar_t>{
+struct exact_MV : FFM_object<scalar_t>{
     exact_MV(torch::Tensor & X_data,
                          torch::Tensor & Y_data,
                          scalar_t & ls,
                          rbf_pointer<scalar_t> & op,
                          scalar_t &lambda,
-                         const std::string & gpu_device):FMM_obj<scalar_t>(X_data,Y_data,ls,op,lambda,gpu_device){};
+                         const std::string & gpu_device): FFM_object<scalar_t>(X_data, Y_data, ls, op, lambda, gpu_device){};
     torch::Tensor operator* (torch::Tensor & b){
-        torch::Tensor output = torch::zeros({FMM_obj<scalar_t>::X_data.size(0),b.size(1)}).to(FMM_obj<scalar_t>::gpu_device);
-        b = b.to(FMM_obj<scalar_t>::gpu_device);
-        torch::Tensor gpu_X = FMM_obj<scalar_t>::X_data.to(FMM_obj<scalar_t>::gpu_device);
-        torch::Tensor gpu_Y = FMM_obj<scalar_t>::Y_data.to(FMM_obj<scalar_t>::gpu_device);
+        torch::Tensor output = torch::zeros({FFM_object<scalar_t>::X_data.size(0), b.size(1)}).to(FFM_object<scalar_t>::gpu_device);
+        b = b.to(FFM_object<scalar_t>::gpu_device);
+        torch::Tensor gpu_X = FFM_object<scalar_t>::X_data.to(FFM_object<scalar_t>::gpu_device);
+        torch::Tensor gpu_Y = FFM_object<scalar_t>::Y_data.to(FFM_object<scalar_t>::gpu_device);
 
         rbf_call<scalar_t>(
                 gpu_X,
                 gpu_Y,
                 b,
                 output,
-                FMM_obj<scalar_t>::ls,
-                FMM_obj<scalar_t>::op,
+                FFM_object<scalar_t>::ls,
+                FFM_object<scalar_t>::op,
                 true
         );
-        output = output+b*FMM_obj<scalar_t>::lambda;
+        output = output+ b * FFM_object<scalar_t>::lambda;
         b = b.to("cpu");
         output = output.to("cpu");
         return output;
@@ -584,7 +595,7 @@ struct exact_MV : FMM_obj<scalar_t>{
 };
 
 template<typename scalar_t>
-std::tuple<torch::Tensor,torch::Tensor> CG(FMM_obj<scalar_t> & MV, torch::Tensor &b, float & tol, int & max_its,bool tridiag){
+std::tuple<torch::Tensor,torch::Tensor> CG(FFM_object<scalar_t> & MV, torch::Tensor &b, float & tol, int & max_its, bool tridiag){
     int h = b.size(0);
     scalar_t delta = tol*(float)h;
     auto a = torch::zeros_like(b);
@@ -642,7 +653,7 @@ torch::Tensor calculate_one_lanczos_triag(torch::Tensor & tridiag_mat){
     return (V.pow_(2)*P.log_()).sum();
 }
 template <typename scalar_t>
-std::tuple<torch::Tensor,torch::Tensor> trace_and_log_det_calc(FMM_obj<scalar_t> &MV,FMM_obj<scalar_t> &MV_grad,int& T,int &max_its,float &tol){
+std::tuple<torch::Tensor,torch::Tensor> trace_and_log_det_calc(FFM_object<scalar_t> &MV, FFM_object<scalar_t> &MV_grad, int& T, int &max_its, float &tol){
     std::vector<torch::Tensor> log_det_approx = {};
     std::vector<torch::Tensor> trace_approx = {};
     torch::Tensor z_sol,z,tridiag_z,log_det_cat,trace_cat;
@@ -658,7 +669,7 @@ std::tuple<torch::Tensor,torch::Tensor> trace_and_log_det_calc(FMM_obj<scalar_t>
 }
 
 template<typename scalar_t>
-torch::Tensor ls_grad_calculate(FMM_obj<scalar_t> &MV_grad,torch::Tensor & b_sol,torch::Tensor &trace_est){
+torch::Tensor ls_grad_calculate(FFM_object<scalar_t> &MV_grad, torch::Tensor & b_sol, torch::Tensor &trace_est){
     return trace_est + torch::sum(b_sol*(MV_grad*b_sol));
 }
 
@@ -666,12 +677,12 @@ torch::Tensor GP_loss(torch::Tensor &log_det,torch::Tensor &b_sol,torch::Tensor 
     return log_det - torch::sum(b*b_sol);
 }
 template<typename scalar_t>
-std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> calculate_loss_and_grad(FMM_obj<scalar_t> &MV,
-        FMM_obj<scalar_t> &MV_grad,
-        torch::Tensor & b,
-        int &T,
-        int &max_its,
-        float &tol){
+std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> calculate_loss_and_grad(FFM_object<scalar_t> &MV,
+                                                                              FFM_object<scalar_t> &MV_grad,
+                                                                              torch::Tensor & b,
+                                                                              int &T,
+                                                                              int &max_its,
+                                                                              float &tol){
     torch::Tensor b_sol,log_det,trace_est,grad,loss,_;
     std::tie(b_sol,_) = CG(MV,b,tol,max_its,false);
     std::tie(log_det,trace_est) = trace_and_log_det_calc<scalar_t>(MV,MV_grad,T,max_its,tol);
