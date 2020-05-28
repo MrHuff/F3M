@@ -6,10 +6,11 @@
  *  this is a toy program for learning CUDA, some functions are reusable in other project
  *
  */
-#include <stdio.h>
+//#include <stdio.h>
 #include "1_d_conv.cu"
-#include "n_tree.cuh"
-#include "utils.h"
+#include "FFM_mk2.cuh"
+
+//#include "utils.h"
 /*
 *********************************************************************
 function name: main
@@ -33,7 +34,7 @@ int main(int argc, char const *argv[]){
     torch::Tensor b_train = torch::randn({1000,1});
 //
     float ls = 1.0; //lengthscale
-    float lambda = 1e-2; // ridge parameter
+    float lambda = 1e-1; // ridge parameter
 //    int T = 10;
 //    int max_its = 50;
 //    float tol = 1e-6;
@@ -47,6 +48,9 @@ int main(int argc, char const *argv[]){
 //    FFM_object<float> ffm_obj_grad = FFM_object<float>(X,X,ls,op_grad,lambda,device_cuda);
     exact_MV<float> exact_ref = exact_MV<float>(X_train, X_train, ls, op, lambda, device_cuda); //Exact method reference
 //    exact_MV<float> ffm_obj_grad_exact = exact_MV<float>(X,X,ls,op_grad,lambda,device_cuda);
+    /*
+     * Implement "skip heuristic" for full interactions..., figure out how to calculate everything on cuda at the end, little interactions as possible. for each level of granularity...
+     * */
 
     /*
      * Evaluate performance and accuracy

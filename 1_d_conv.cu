@@ -28,7 +28,7 @@ template<typename T>
 using rbf_pointer = T (*) (T[], T[],const T *);
 
 template<typename T>
-std::tuple<dim3,dim3,int> get_kernel_launch_params(int cols,int height){
+std::tuple<dim3,dim3,int> get_kernel_launch_params(int &cols,int &height){
     dim3 blockSize;
     dim3 gridSize;
     int denonminator = std::max(1,(int) (cols*sizeof(T)));
@@ -36,6 +36,33 @@ std::tuple<dim3,dim3,int> get_kernel_launch_params(int cols,int height){
     gridSize.x = height / blockSize.x + (height % blockSize.x == 0 ? 0 : 1);
     return std::make_tuple(blockSize,gridSize,blockSize.x * (cols+1) * sizeof(T));
 };
+
+template<typename T>
+std::tuple<dim3,dim3,int,torch::Tensor> skip_kernel_launch(int &cols,
+        int &height,
+        int &blksize,
+        torch::Tensor & box_sizes,
+        torch::Tensor & box_idx){
+    dim3 blockSize;
+    dim3 gridSize;
+    blockSize.x = blksize;
+    std::vector<int> block_box_idx={};
+    auto box_size_accessor = box_sizes.accessor<int,1>();
+    auto box_idx_accessor = box_idx.accessor<int,1>();
+
+    int n = box_sizes.size(0);
+    int size,boxes_needed;
+    for (int i=0;i<n;i++){
+        size = box_size_accessor[i+1];
+        boxes_needed = (int)ceil((float)size/(float)blksize);
+        for (int j=0;j<boxes_needed;j++){
+            block_box_idx.push_back(box_idx_accessor[i]);
+        }
+    }
+    gridSize.x = block_box_idx.size();
+    return std::make_tuple(blockSize,gridSize,blockSize.x * (cols+1) * sizeof(T),torch::from_blob(block_box_idx.data(),{(long)block_box_idx.size()}));
+};
+
 template<typename T>
 __device__ T square(T x){
     return powf(x,square_int);
@@ -119,6 +146,8 @@ __device__ static void torch_load_b(
     shared_mem[threadIdx.x] = b[index][col_index];
 }
 
+
+//Consider caching the kernel value if b is in Nxd.
 template <typename scalar_t>
 __global__ void rbf_1d_reduce_shared_torch(
                                 const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
@@ -299,4 +328,106 @@ __global__ void laplace_interpolation_transpose(const torch::PackedTensorAccesso
 };
 
 
+__device__ int calculate_box_ind(int &current_thread_idx,
+        torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> counts,
+        torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_box_idx){
+    int nr_of_counts = counts.size(0); //remember 0 included!
+    for (int i=0;i<nr_of_counts-1;i++){
+        if ( current_thread_idx>=counts[i] && current_thread_idx<counts[i+1]){
+            return x_box_idx[i];
+        }
+    }
 
+}
+//so this is correct...
+template <typename scalar_t>
+__global__ void skip_conv_1d(const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
+                             const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> Y_data,
+                             const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data,
+                             torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output,
+                             scalar_t * ls,
+                             rbf_pointer<scalar_t> op,
+                             const torch::PackedTensorAccessor32<bool,2,torch::RestrictPtrTraits> boolean_interaction_mask,//Actually make a boolean mask
+                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_boxes_count,
+                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> y_boxes_count,
+                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_box_idx
+                             ){
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    unsigned int x_n = X_data.size(0);
+    unsigned int M = boolean_interaction_mask.size(1);
+    if (i>x_n-1){return;}
+    scalar_t x_i[nd];
+    scalar_t y_j[nd];
+    scalar_t acc;
+    int box_ind,start,end;
+    for (int k=0;k<nd;k++){
+        x_i[k] = X_data[i][k];
+    }
+    box_ind = calculate_box_ind(i,x_boxes_count,x_box_idx);
+//    printf("thread %i: %i\n",i,box_ind);
+    for (int b_ind=0; b_ind < b_data.size(1); b_ind++) { //for all dims of b
+        acc=0.0;
+        for (int j = 0; j < M; j++) { // iterate through every existing ybox
+            if (boolean_interaction_mask[box_ind][j]) { //if there is an interaction
+                start = y_boxes_count[j]; // 0 to something
+                end = y_boxes_count[j + 1]; // seomthing
+                for (int j_2 = start; j_2 < end; j_2++) {
+                    for (int k = 0; k < nd; k++) {
+                        y_j[k] = Y_data[j_2][k];
+                    };
+                    acc += (*op)(x_i, y_j, ls) * b_data[j_2][b_ind];
+
+                }
+            }
+        }
+        output[i][b_ind] = acc;
+    }
+    __syncthreads();
+}
+
+//Crux is getting the launch right presumably or parallelizaiton/stream. using a minblock or 32*n.
+template <typename scalar_t>
+__global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
+                             const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> Y_data,
+                             const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data,
+                             torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output,
+                             scalar_t * ls,
+                             rbf_pointer<scalar_t> op,
+                             const torch::PackedTensorAccessor32<bool,2,torch::RestrictPtrTraits> boolean_interaction_mask,//Actually make a boolean mask
+                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_boxes_count,
+                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> y_boxes_count,
+                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_box_idx
+){
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    unsigned int x_n = X_data.size(0);
+    unsigned int M = boolean_interaction_mask.size(1);
+    if (i>x_n-1){return;}
+    scalar_t x_i[nd];
+    scalar_t y_j[nd];
+    scalar_t acc;
+    int box_ind,start,end;
+    for (int k=0;k<nd;k++){
+        x_i[k] = X_data[i][k];
+    }
+    box_ind = calculate_box_ind(i,x_boxes_count,x_box_idx);
+//    printf("thread %i: %i\n",i,box_ind);
+    for (int b_ind=0; b_ind < b_data.size(1); b_ind++) { //for all dims of b
+        acc=0.0;
+        for (int j = 0; j < M; j++) { // iterate through every existing ybox
+            if (boolean_interaction_mask[box_ind][j]) { //if there is an interaction
+                start = y_boxes_count[j]; // 0 to something
+                end = y_boxes_count[j + 1]; // seomthing
+
+                for (int j_2 = start; j_2 < end; j_2++) {
+                    for (int k = 0; k < nd; k++) {
+                        y_j[k] = Y_data[j_2][k];
+                    };
+                    acc += (*op)(x_i, y_j, ls) * b_data[j_2][b_ind];
+
+                }
+            }
+        }
+        output[i][b_ind] = acc;
+    }
+    __syncthreads();
+}

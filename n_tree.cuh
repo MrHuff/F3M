@@ -6,6 +6,7 @@
 #include "1_d_conv.cu"
 #include "utils.h"
 #include <vector>
+#include "algorithm"
 //template<typename T>
 
 template <typename scalar_t>
@@ -114,13 +115,14 @@ struct n_tree_big {
     torch::Tensor data;
     torch::Tensor xmin;
     std::vector<n_tree> n_roons;
-    int current_nr_boxes;
     float avg_nr_points;
     int dim;
     int number_of_divisions;
     int largest_box_n;
     std::vector<torch::Tensor> output_coord = {};
     std::vector<torch::Tensor> ones = {};
+    std::vector<int> current_box_indices = {};
+    torch::Tensor vector_equivalence;
     n_tree_big(torch::Tensor &e, torch::Tensor &d, torch::Tensor &xm){
         edge = e;
         data = d;
@@ -131,18 +133,20 @@ struct n_tree_big {
         }
         output_coord = recursive_center(ones,output_coord);
         n_roons.push_back(n_tree{0, (int) data.size(0), torch::arange(data.size(0)), xmin + 0.5 * edge});
-        current_nr_boxes= n_roons.size();
+        current_box_indices.push_back(0);
         avg_nr_points = data.size(0);
         number_of_divisions = (int) pow(2,dim);
         largest_box_n = data.size(0);
+        vector_equivalence = torch::zeros(data.size(0)).toType(torch::kInt32);
     };
     void divide(){
-        int _new_nr_of_boxes = 0;
         int n_elem;
         int index;
         float sum_points = 0;
         std::vector<n_tree> _new_n_roons;
-        for (int i=0;i<current_nr_boxes;i++){
+        std::vector<int> new_box_indices;
+
+        for (int &i:current_box_indices){
             torch::Tensor tmp_points = data.index({n_roons[i].row_indices}); //have to use a copy?
             std::vector<torch::Tensor> bool_vector = (tmp_points<=n_roons[i].center).unbind(dim=1);
             std::vector<torch::Tensor> n_divisors = {};
@@ -153,16 +157,18 @@ struct n_tree_big {
                 index = (int) i*number_of_divisions + j;
                 if (n_elem>0){
                     _new_n_roons.push_back(n_tree{index, n_elem, n_roons[i].row_indices.index({n_divisors[j]}), n_roons[i].center + 0.25 * edge * output_coord[j]} );
-                _new_nr_of_boxes++;
+                    new_box_indices.push_back(index);
                 }
             }
         };
-        current_nr_boxes = _new_nr_of_boxes;
+        current_box_indices = new_box_indices;
         n_roons = _new_n_roons;
-        avg_nr_points = sum_points/(float) current_nr_boxes;
+        avg_nr_points = sum_points/(float) current_box_indices.size();
         edge = edge*0.5;
         largest_box_n = get_largest_box();
+//        update_vector_equivalence();
     };
+
     int get_largest_box(){
         std::vector<int> box_sizes = {};
         for (auto el:n_roons){
@@ -170,10 +176,34 @@ struct n_tree_big {
         }
         return *std::max_element(box_sizes.begin(),box_sizes.end());
     };
-    torch::Tensor operator*(const n_tree_big& other){ //give all interactions, i.e. cartesian product of boxes
+
+    std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> get_box_sorted_data(torch::Tensor &unique_boxes_sorted){
+        auto accessor = unique_boxes_sorted.accessor<long,1>();
+        torch::Tensor points_count_vec = torch::zeros({unique_boxes_sorted.size(0)+1}).toType(torch::kInt32);
+        auto accessor_points_count = points_count_vec.accessor<int,1>();
+        std::vector<torch::Tensor> cat_vector;
+        int n = accessor.size(0);
+        for (int i=0;i<n;i++){
+            accessor_points_count[i+1]=n_roons[i].n_elems;
+            cat_vector.push_back(n_roons[i].row_indices);
+        };
+        torch::Tensor index_output = torch::cat(cat_vector,0);
+        torch::Tensor data_output = data.index({index_output});
+        return std::make_tuple(data_output,points_count_vec,index_output);
+    };
+
+    void update_vector_equivalence(){
+        int box_index;
+        for (auto &el:n_roons){
+            box_index = el.index;
+            assign_box_vector<int>(vector_equivalence,box_index,el.row_indices);
+        }
+    };
+
+    torch::Tensor operator*(const n_tree_big& other){ //incorrect, does not do descent now.
         std::vector<torch::Tensor> tl = {};
-        for (int i=0; i<current_nr_boxes;i++){
-            for (int j=0; j<other.current_nr_boxes;j++){
+        for (int &i:current_box_indices){
+            for (int j: other.current_box_indices){
                 tl.push_back(torch::tensor({n_roons[i].index,other.n_roons[j].index}).unsqueeze(0));
             }
         };
@@ -198,11 +228,33 @@ struct n_tree_big {
                 interactions.index({torch::logical_not(far_field)}),
                L1_dist.index({far_field}));
     }
+    void update_descent_boxes(const torch::Tensor & unique_far_boxes){
+        auto accessor = unique_far_boxes.accessor<long,1>();
+        int n = accessor.size(0);
+        std::vector<int> new_box_indices;
+        for (int i=0;i<n;i++){
+            new_box_indices.push_back( accessor[i]);
+        };
+        current_box_indices = new_box_indices;
+    }
+    template <typename scalar_t>
+    void assign_box_vector(
+            torch::Tensor &vector,
+            scalar_t &box_ind,
+            torch::Tensor &rows){
+        int n = rows.size(0);
+        auto o_accessor = vector.accessor<scalar_t,1>();
+        auto row_accessor = rows.accessor<long,1>();
+        for (int i = 0;i<n;i++){
+            o_accessor[row_accessor[i]]=box_ind;
+        }
+    }
+
 };
 
 std::ostream& operator<<(std::ostream& os, const n_tree_big& v)
 {
-    for(int i=0; i<v.current_nr_boxes;i++){
+    for(int i:v.current_box_indices){
         os<<v.n_roons[i]<<"\n";
     }
     return os;
@@ -258,10 +310,143 @@ void rbf_call(
                                                                             op
                                                                             );
     }
-
     cudaDeviceSynchronize();
-
 }
+
+
+int optimal_blocksize(int &min_box_size){
+    std::vector<int> candidates = {0,32,64,96,128,160,192};
+    for (int i=0;i<candidates.size();i++){
+        if( min_box_size>=candidates[i]&& min_box_size<=candidates[i+1]){
+            return candidates[i+1];
+        }
+    }
+    return 192;
+}
+
+template <typename scalar_t>
+void call_skip_conv(
+        torch::Tensor & cuda_X_job,
+        torch::Tensor & cuda_Y_job,
+        torch::Tensor & cuda_b_job,
+        torch::Tensor & output_job,
+        scalar_t & ls,
+        rbf_pointer<scalar_t> & op,
+        torch::Tensor & bool_mask_interactions,
+        torch::Tensor & x_boxes_count_cumulative,
+        torch::Tensor & y_boxes_count_cumulative,
+        torch::Tensor & x_box_idx,
+        torch::Tensor & x_boxes_count,
+        const std::string & device_gpu,
+        bool shared = true,
+
+){
+    scalar_t *d_ls;
+    cudaMalloc((void **)&d_ls, sizeof(scalar_t));
+    cudaMemcpy(d_ls, &ls, sizeof(scalar_t), cudaMemcpyHostToDevice);
+
+    dim3 blockSize,gridSize;
+    int memory,blkSize;
+
+    if(shared){
+        int min_size=x_boxes_count.min().item<int>();
+        blkSize = optimal_blocksize(min_size);
+        std::tie(blockSize,gridSize,memory) = skip_kernel_launch<scalar_t>(nd, cuda_X_job.size(0),blkSize,x_boxes_count,x_box_idx);
+
+
+        skip_conv_1d_shared<scalar_t><<<gridSize,blockSize,memory>>>(cuda_X_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                     cuda_Y_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                     cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                     output_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                     d_ls,
+                                                                     op,
+                                                                     bool_mask_interactions.packed_accessor32<bool,2,torch::RestrictPtrTraits>(),
+                                                                     x_boxes_count_cumulative.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+                                                                     y_boxes_count_cumulative.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+                                                                     x_box_idx.packed_accessor32<int,1,torch::RestrictPtrTraits>()
+        );
+
+    }else{
+        std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(nd, cuda_X_job.size(0));
+        skip_conv_1d<scalar_t><<<gridSize,blockSize,memory>>>(cuda_X_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                              cuda_Y_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                              cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                              output_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                              d_ls,
+                                                              op,
+                                                              bool_mask_interactions.packed_accessor32<bool,2,torch::RestrictPtrTraits>(),
+                                                              x_boxes_count_cumulative.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+                                                              y_boxes_count_cumulative.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+                                                              x_box_idx.packed_accessor32<int,1,torch::RestrictPtrTraits>()
+                                                                            );
+    } //fix types...
+    cudaDeviceSynchronize();
+}
+
+//Could represent indices with [box_id, nr of points], make sure its all concatenated correctly and in order.
+//local variable: x_i, box belonging. How to get loading scheme. [nr of points].cumsum().  Iteration schedual...
+// calculate box belonging.
+
+
+torch::Tensor get_boolean_2d_mask(torch::Tensor & near_field_interactions,
+                                    int & nx_box,
+                                    int & ny_box){
+    torch::Tensor boolean_mask = torch::zeros({nx_box,ny_box}).toType(torch::kBool);
+    auto accessor_bool =boolean_mask.accessor<bool,2>();
+    auto accessor_interactions =near_field_interactions.accessor<long,2>();
+    int n_int = near_field_interactions.size(0);
+    for (int i=0;i<n_int;i++){
+        accessor_bool[accessor_interactions[i][0]][accessor_interactions[i][1]]=true;
+    };
+    return boolean_mask;
+}
+
+template <typename scalar_t>
+void near_field_compute_v2(torch::Tensor & near_field_interactions,
+                        n_tree_big & x_box,
+                        n_tree_big & y_box,
+                        torch::Tensor & output,
+                        const torch::Tensor& b,
+                        const std::string & device_gpu,
+                        scalar_t & ls,
+                        rbf_pointer<scalar_t> & op){
+
+    torch::Tensor b_permuted,
+    update,
+    x_unique_sorted,
+    x_data,
+    x_boxes_ind,
+    x_boxes_ind_count,
+    y_unique_sorted,
+    y_data,
+    y_boxes_ind,
+    y_boxes_ind_count,
+    placeholder,
+    boolean_interactions,
+    x_idx_reordering,
+    y_idx_reordering;
+    int total_x_boxes,total_y_boxes;
+    std::tie(x_unique_sorted,placeholder)=torch::_unique(near_field_interactions.slice(1,0,1),true);
+    std::tie(y_unique_sorted,placeholder)=torch::_unique(near_field_interactions.slice(1,1,2),true);
+    std::tie( x_data,x_boxes_ind,x_idx_reordering)=x_box.get_box_sorted_data(x_unique_sorted);
+    std::tie( y_data,y_boxes_ind,y_idx_reordering)=y_box.get_box_sorted_data(x_unique_sorted);
+    total_x_boxes = x_box.n_roons.size();
+    total_y_boxes = y_box.n_roons.size();
+    boolean_interactions = get_boolean_2d_mask(near_field_interactions,total_x_boxes,total_y_boxes).to(device_gpu);
+//    x_data = x_data.to(device_gpu);
+//    y_data = y_data.to(device_gpu);
+//    x_boxes_ind_count= x_boxes_ind.cumsum(0).toType(torch::kInt32).to(device_gpu);
+//    y_boxes_ind_count= y_boxes_ind.cumsum(0).toType(torch::kInt32).to(device_gpu);
+//    x_unique_sorted = x_unique_sorted.toType(torch::kInt32).to(device_gpu);
+//    update = torch::zeros_like(output).to(device_gpu);
+//    b_permuted = b.index({y_idx_reordering}).to(device_gpu);
+//
+    call_skip_conv<scalar_t>(x_data,y_data,b_permuted,update,ls,op,boolean_interactions,x_boxes_ind_count,y_boxes_ind_count,x_unique_sorted,false);
+    update = update.to("cpu");
+    update_2d_rows_cpu<scalar_t>(output,update,x_idx_reordering);
+
+};
+
 
 template <typename scalar_t>
 void near_field_compute(torch::Tensor & near_field_interactions,
@@ -351,22 +536,22 @@ torch::Tensor get_recursive_indices(const int nodes,
 }
 template <typename scalar_t>
 torch::Tensor apply_laplace_interpolation(
-        n_tree_big& BOX,
+        n_tree_big& n_tree,
         torch::Tensor &b,
         long i ,
         const std::string & device_gpu,
         torch::Tensor & nodes,
         torch::Tensor & laplace_indices,
         const bool tranpose_mode=false){
-    torch::Tensor box_data = BOX.data.index({BOX.n_roons[i].row_indices});
-    box_data = ((2 / BOX.edge) * (box_data - BOX.n_roons[i].center)).to(device_gpu);
+    torch::Tensor box_data = n_tree.data.index({n_tree.n_roons[i].row_indices});
+    box_data = ((2 / n_tree.edge) * (box_data - n_tree.n_roons[i].center)).to(device_gpu);
     dim3 blockSize,gridSize;
     int memory;
     std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(nd, box_data.size(0));
 
     if (not tranpose_mode){
         torch::Tensor laplace_low_rank = torch::zeros({b.size(1),laplace_indices.size(0)}).to(device_gpu);
-        torch::Tensor b_data = b.index({BOX.n_roons[i].row_indices}).to(device_gpu);
+        torch::Tensor b_data = b.index({n_tree.n_roons[i].row_indices}).to(device_gpu);
         laplace_interpolation<scalar_t><<<gridSize,blockSize>>>(
                 box_data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                 b_data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
@@ -504,6 +689,20 @@ void far_field_compute(torch::Tensor & far_field_interactions,
     torch::Tensor rows = torch::cat({final_indices});
     update_2d_rows_cpu<scalar_t>(output,update,rows); //since we have not done accumulation ,we do accumulation here...
 };
+
+template <typename scalar_t>
+std::tuple<torch::Tensor,torch::Tensor,torch::Tensor>  get_everything_needed(
+        torch::Tensor& edge, const std::string & device_gpu){
+    torch::Tensor chebnodes_1D = chebyshev_nodes_1D(laplace_nodes); //get chebyshev nodes, laplace_nodes is fixed now, should probably be a variable
+    torch::Tensor laplace_combinations = get_recursive_indices(laplace_nodes,nd); // get all possible combinations of chebyshev nodes. Total combintations should have dimension [laplace_nodes^nd,nd]
+    torch::Tensor cheb_data_X = (get_cheb_data<scalar_t>(chebnodes_1D,laplace_combinations)*edge/2+edge/2).to(device_gpu); //get the actual data given the indices
+    chebnodes_1D=chebnodes_1D.to(device_gpu);
+    laplace_combinations=laplace_combinations.to(device_gpu);
+    return std::make_tuple(chebnodes_1D,laplace_combinations,cheb_data_X);
+
+};
+
+
 template <typename scalar_t>
 torch::Tensor FFM(
         torch::Tensor &X_data,
@@ -514,11 +713,10 @@ torch::Tensor FFM(
         rbf_pointer<scalar_t> & op
         ) {
     torch::Tensor output = torch::zeros({X_data.size(0),b.size(1)}); //initialize empty output
-    torch::Tensor edge,xmin,ymin; //these are needed for computing centers of boxes
+    torch::Tensor edge,xmin,ymin,x_near_unique,tmp,y_near_unique,square_dist,dist,interactions,far_field,near_field,dist_far_field; //these are needed to figure out which interactions are near/far field
     std::tie(edge,xmin,ymin) = calculate_edge(X_data,Y_data); //actually calculate them
     n_tree_big ntree_X = n_tree_big{edge, X_data, xmin}; //Intialize tree for X-data
     n_tree_big ntree_Y = n_tree_big{edge, Y_data, ymin};//Intialize tree for Y-data
-    torch::Tensor square_dist,dist,interactions,far_field,near_field,dist_far_field; //these are needed to figure out which interactions are near/far field
     near_field = torch::zeros({1,2}).toType(torch::kLong);
     while (near_field.numel()>0 and ntree_X.avg_nr_points > 100. and ntree_Y.avg_nr_points > 100.){
         ntree_X.divide();//divide ALL boxes recursively once
@@ -528,12 +726,18 @@ torch::Tensor FFM(
 //        std::cout<<square_dist<<std::endl;
 //        std::cout<<dist<<std::endl;
         std::tie(far_field, near_field, dist_far_field) = ntree_X.far_and_near_field(square_dist, interactions, dist); //classify into near and far field
+
         if(far_field.numel()>0){
             far_field_compute<scalar_t>(far_field, ntree_X, ntree_Y, output, b, gpu_device, dist_far_field,ls,op); //far field compute
         }
+        std::tie(x_near_unique, tmp) = torch::_unique(near_field.slice(1, 0, 1));
+        std::tie(y_near_unique, tmp) = torch::_unique(near_field.slice(1, 1, 2));
+        ntree_X.update_descent_boxes(x_near_unique);
+        ntree_Y.update_descent_boxes(y_near_unique);
+//
     }
     if (near_field.numel()>0){
-        near_field_compute<scalar_t>(near_field,ntree_X, ntree_Y, output, b, gpu_device,ls,op);
+        near_field_compute_v2<scalar_t>(near_field,ntree_X, ntree_Y, output, b, gpu_device,ls,op); //try another upgrade!
     }
     return output;
 }
