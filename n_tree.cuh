@@ -333,27 +333,33 @@ void call_skip_conv(
         scalar_t & ls,
         rbf_pointer<scalar_t> & op,
         torch::Tensor & bool_mask_interactions,
-        torch::Tensor & x_boxes_count_cumulative,
-        torch::Tensor & y_boxes_count_cumulative,
-        torch::Tensor & x_box_idx,
         torch::Tensor & x_boxes_count,
+        torch::Tensor & y_boxes_count,
+        torch::Tensor & x_box_idx,
         const std::string & device_gpu,
-        bool shared = true,
-
+        bool shared = true
 ){
     scalar_t *d_ls;
     cudaMalloc((void **)&d_ls, sizeof(scalar_t));
     cudaMemcpy(d_ls, &ls, sizeof(scalar_t), cudaMemcpyHostToDevice);
-
     dim3 blockSize,gridSize;
     int memory,blkSize;
+    cuda_X_job = cuda_X_job.to(device_gpu);
+    cuda_Y_job = cuda_Y_job.to(device_gpu);
+    cuda_b_job = cuda_b_job.to(device_gpu);
+    output_job = output_job.to(device_gpu);
+    bool_mask_interactions = bool_mask_interactions.to(device_gpu);
+    torch::Tensor x_boxes_count_cumulative = x_boxes_count.cumsum(0).toType(torch::kInt32).to(device_gpu);
+    torch::Tensor y_boxes_count_cumulative = y_boxes_count.cumsum(0).toType(torch::kInt32).to(device_gpu);
+
 
     if(shared){
+        torch::Tensor indicator;
         int min_size=x_boxes_count.min().item<int>();
         blkSize = optimal_blocksize(min_size);
-        std::tie(blockSize,gridSize,memory) = skip_kernel_launch<scalar_t>(nd, cuda_X_job.size(0),blkSize,x_boxes_count,x_box_idx);
-
-
+        std::tie(blockSize,gridSize,memory,indicator) = skip_kernel_launch<scalar_t>(nd,blkSize,x_boxes_count,x_box_idx);
+        x_box_idx = x_box_idx.to(device_gpu);
+        indicator = indicator.to(device_gpu);
         skip_conv_1d_shared<scalar_t><<<gridSize,blockSize,memory>>>(cuda_X_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                                      cuda_Y_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                                      cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
@@ -363,11 +369,13 @@ void call_skip_conv(
                                                                      bool_mask_interactions.packed_accessor32<bool,2,torch::RestrictPtrTraits>(),
                                                                      x_boxes_count_cumulative.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
                                                                      y_boxes_count_cumulative.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                                                                     x_box_idx.packed_accessor32<int,1,torch::RestrictPtrTraits>()
+                                                                     x_box_idx.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+                                                                     indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>()
         );
 
     }else{
         std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(nd, cuda_X_job.size(0));
+        x_box_idx = x_box_idx.to(device_gpu);
         skip_conv_1d<scalar_t><<<gridSize,blockSize,memory>>>(cuda_X_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                               cuda_Y_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                               cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
@@ -432,16 +440,27 @@ void near_field_compute_v2(torch::Tensor & near_field_interactions,
     std::tie( y_data,y_boxes_ind,y_idx_reordering)=y_box.get_box_sorted_data(x_unique_sorted);
     total_x_boxes = x_box.n_roons.size();
     total_y_boxes = y_box.n_roons.size();
-    boolean_interactions = get_boolean_2d_mask(near_field_interactions,total_x_boxes,total_y_boxes).to(device_gpu);
+    boolean_interactions = get_boolean_2d_mask(near_field_interactions,total_x_boxes,total_y_boxes);
 //    x_data = x_data.to(device_gpu);
 //    y_data = y_data.to(device_gpu);
 //    x_boxes_ind_count= x_boxes_ind.cumsum(0).toType(torch::kInt32).to(device_gpu);
 //    y_boxes_ind_count= y_boxes_ind.cumsum(0).toType(torch::kInt32).to(device_gpu);
-//    x_unique_sorted = x_unique_sorted.toType(torch::kInt32).to(device_gpu);
-//    update = torch::zeros_like(output).to(device_gpu);
-//    b_permuted = b.index({y_idx_reordering}).to(device_gpu);
+    x_unique_sorted = x_unique_sorted.toType(torch::kInt32);
+    update = torch::zeros_like(output);
+    b_permuted = b.index({y_idx_reordering});
 //
-    call_skip_conv<scalar_t>(x_data,y_data,b_permuted,update,ls,op,boolean_interactions,x_boxes_ind_count,y_boxes_ind_count,x_unique_sorted,false);
+    call_skip_conv<scalar_t>(x_data,
+            y_data,
+            b_permuted,
+            update,
+            ls,
+            op,
+            boolean_interactions,
+             x_boxes_ind,
+             y_boxes_ind,
+            x_unique_sorted,
+            device_gpu,
+            true);
     update = update.to("cpu");
     update_2d_rows_cpu<scalar_t>(output,update,x_idx_reordering);
 

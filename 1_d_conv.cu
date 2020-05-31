@@ -28,7 +28,7 @@ template<typename T>
 using rbf_pointer = T (*) (T[], T[],const T *);
 
 template<typename T>
-std::tuple<dim3,dim3,int> get_kernel_launch_params(int &cols,int &height){
+std::tuple<dim3,dim3,int> get_kernel_launch_params(int cols,int height){
     dim3 blockSize;
     dim3 gridSize;
     int denonminator = std::max(1,(int) (cols*sizeof(T)));
@@ -38,9 +38,8 @@ std::tuple<dim3,dim3,int> get_kernel_launch_params(int &cols,int &height){
 };
 
 template<typename T>
-std::tuple<dim3,dim3,int,torch::Tensor> skip_kernel_launch(int &cols,
-        int &height,
-        int &blksize,
+std::tuple<dim3,dim3,int,torch::Tensor> skip_kernel_launch(int cols,
+        int & blksize,
         torch::Tensor & box_sizes,
         torch::Tensor & box_idx){
     dim3 blockSize;
@@ -52,15 +51,27 @@ std::tuple<dim3,dim3,int,torch::Tensor> skip_kernel_launch(int &cols,
 
     int n = box_sizes.size(0);
     int size,boxes_needed;
-    for (int i=0;i<n;i++){
+    for (int i=0;i<n-1;i++){
         size = box_size_accessor[i+1];
         boxes_needed = (int)ceil((float)size/(float)blksize);
+//        std::cout<<size<<std::endl;
+//        std::cout<<boxes_needed<<std::endl;
         for (int j=0;j<boxes_needed;j++){
             block_box_idx.push_back(box_idx_accessor[i]);
         }
     }
-    gridSize.x = block_box_idx.size();
-    return std::make_tuple(blockSize,gridSize,blockSize.x * (cols+1) * sizeof(T),torch::from_blob(block_box_idx.data(),{(long)block_box_idx.size()}));
+    std::cout<<block_box_idx<<std::endl;
+    int total_blocks_needed =  block_box_idx.size();
+    gridSize.x =total_blocks_needed;
+    torch::Tensor output_block = torch::zeros({total_blocks_needed}).toType(torch::kInt32);
+    auto block_box_idx_accessor = output_block.accessor<int,1>();
+    for (int i = 0;i<total_blocks_needed;i++){
+        block_box_idx_accessor[i] =  block_box_idx[i];
+    }
+
+    //from_blob not fucking working...
+
+    return std::make_tuple(blockSize,gridSize,blockSize.x * (cols+1) * sizeof(T),output_block);
 };
 
 template<typename T>
@@ -396,38 +407,59 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor32<scalar_t
                              const torch::PackedTensorAccessor32<bool,2,torch::RestrictPtrTraits> boolean_interaction_mask,//Actually make a boolean mask
                              const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_boxes_count,
                              const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> y_boxes_count,
-                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_box_idx
+                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_box_idx,
+                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> indicator
 ){
-    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
-    unsigned int x_n = X_data.size(0);
+    int box_ind,start,end,a,b;
+    box_ind = blockIdx.x;
+    a = x_boxes_count[box_ind];
+    b = x_boxes_count[box_ind+1];
+    int i = a+ threadIdx.x; // current thread
+
     unsigned int M = boolean_interaction_mask.size(1);
-    if (i>x_n-1){return;}
     scalar_t x_i[nd];
     scalar_t y_j[nd];
     scalar_t acc;
-    int box_ind,start,end;
-    for (int k=0;k<nd;k++){
-        x_i[k] = X_data[i][k];
+    extern __shared__ scalar_t buffer[];
+    scalar_t *yj = &buffer[0];
+    scalar_t *bj = &buffer[blockDim.x*nd];
+
+
+    //Load these points only... the rest gets no points... threadIdx.x +a to b. ...
+    if (i<b) {
+        for (int k = 0; k < nd; k++) {
+            x_i[k] = X_data[i][k];
+        }
     }
-    box_ind = calculate_box_ind(i,x_boxes_count,x_box_idx);
+//    box_ind = calculate_box_ind(i,x_boxes_count,x_box_idx);
 //    printf("thread %i: %i\n",i,box_ind);
     for (int b_ind=0; b_ind < b_data.size(1); b_ind++) { //for all dims of b
         acc=0.0;
-        for (int j = 0; j < M; j++) { // iterate through every existing ybox
-            if (boolean_interaction_mask[box_ind][j]) { //if there is an interaction
-                start = y_boxes_count[j]; // 0 to something
-                end = y_boxes_count[j + 1]; // seomthing
+        for (int m = 0; m < M; m++) { // iterate through every existing ybox
+            if (boolean_interaction_mask[box_ind][m]) { //if there is an interaction
+                start = y_boxes_count[m]; // 0 to something
+                end = y_boxes_count[m + 1]; // seomthing
 
-                for (int j_2 = start; j_2 < end; j_2++) {
-                    for (int k = 0; k < nd; k++) {
-                        y_j[k] = Y_data[j_2][k];
-                    };
-                    acc += (*op)(x_i, y_j, ls) * b_data[j_2][b_ind];
-
+                for (int jstart = start, tile = 0; jstart < end; jstart += blockDim.x, tile++) {
+                    int j = start+tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
+                    if (j < end) { // we load yj from device global memory only if j<ny
+                        torch_load_y<scalar_t>(j, yj, Y_data);
+                        torch_load_b<scalar_t>(b_ind ,j, bj, b_data);
+                    }
+                    __syncthreads();
+                    if (i < b) { // we compute x1i only if needed
+                        scalar_t *yjrel = yj; // Loop on the columns of the current block.
+                        for (int jrel = 0; (jrel < blockDim.x) && (jrel < end - jstart); jrel++, yjrel += nd) {
+                            acc += (*op)(x_i, yjrel,ls) * bj[jrel]; //sums incorrectly cause pointer is fucked not sure if allocating properly
+                        }
+                    }
+//                    __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
+                };
+                if (i < b) {
+                    output[i][b_ind] = acc;
                 }
             }
         }
-        output[i][b_ind] = acc;
     }
     __syncthreads();
 }
