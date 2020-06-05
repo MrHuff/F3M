@@ -30,8 +30,8 @@ int main(int argc, char const *argv[]){
 
 //    torch::Tensor X_train = read_csv<float>("X_train_PCA.csv",11619,3); something wrong with data probably...
 //    torch::Tensor b_train = read_csv<float>("Y_train.csv",11619,1); something wrong with data probably...
-    torch::Tensor X_train = torch::rand({1000,nd});
-    torch::Tensor b_train = torch::randn({1000,1});
+    torch::Tensor X_train = torch::rand({10000,nd});
+    torch::Tensor b_train = torch::randn({10000,1});
 //
     float ls = 1.0; //lengthscale
     float lambda = 1e-1; // ridge parameter
