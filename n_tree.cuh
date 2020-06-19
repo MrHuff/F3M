@@ -26,7 +26,6 @@ void update_2d_rows_cpu(
     }
 }
 
-
 std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> calculate_edge(const torch::Tensor &X,const torch::Tensor &Y){
     torch::Tensor Xmin = std::get<0>(X.min(0));
     torch::Tensor Xmax = std::get<0>(X.max(0));
@@ -221,27 +220,7 @@ struct n_tree_big {
                 interactions.index({torch::logical_not(far_field)}),
                L1_dist.index({far_field}),L1_dist.index({torch::logical_not(far_field)}));
     }
-//    void update_descent_boxes(const torch::Tensor & unique_far_boxes){
-//        auto accessor = unique_far_boxes.accessor<long,1>();
-//        int n = accessor.size(0);
-//        std::vector<int> new_box_indices;
-//        for (int i=0;i<n;i++){
-//            new_box_indices.push_back( accessor[i]);
-//        };
-//        current_box_indices = new_box_indices;
-//    }
-//    template <typename scalar_t>
-//    void assign_box_vector(
-//            torch::Tensor &vector,
-//            scalar_t &box_ind,
-//            torch::Tensor &rows){
-//        int n = rows.size(0);
-//        auto o_accessor = vector.accessor<scalar_t,1>();
-//        auto row_accessor = rows.accessor<long,1>();
-//        for (int i = 0;i<n;i++){
-//            o_accessor[row_accessor[i]]=box_ind;
-//        }
-//    }
+
 
 };
 
@@ -253,19 +232,7 @@ std::ostream& operator<<(std::ostream& os, const n_tree_big& v)
     return os;
 }
 
-//torch::Tensor concat_X_box_indices(n_tree_big &x_box, torch::Tensor & box_indices){
-//    std::vector<torch::Tensor> cat = {};
-//    for (int i=0; i<box_indices.numel();i++){
-//        cat.push_back(x_box.n_roons[box_indices.accessor<long,1>()[i]].row_indices);
-//    }
-//    return torch::cat(cat,0);
-//}
-//
-//void replace_box_index_with_data_index_X(std::vector<torch::Tensor> &job_vector, n_tree_big & x_box) {
-//    for (auto &el : job_vector) {
-//        el = concat_X_box_indices(x_box, el);
-//    }
-//}
+
 
 template <typename scalar_t>
 void rbf_call(
@@ -458,47 +425,6 @@ void near_field_compute_v2(torch::Tensor & near_field_interactions,
 
 };
 
-//
-//template <typename scalar_t>
-//void near_field_compute(torch::Tensor & near_field_interactions,
-//                        n_tree_big & x_box,
-//                        n_tree_big & y_box,
-//                        torch::Tensor & output,
-//                        torch::Tensor &b,
-//                        const std::string & device_gpu,
-//                        scalar_t & ls,
-//                        rbf_pointer<scalar_t> & op){
-//    torch::Tensor unique_box_indices_Y,_inverse_indices_Y,_counts_Y;
-//    std::tie(unique_box_indices_Y,_inverse_indices_Y,_counts_Y) = torch::_unique2(near_field_interactions.slice(1,1,2),true,true);
-//    std::vector<torch::Tensor> job_vector;
-//    auto unique_box_indices_Y_accessor = unique_box_indices_Y.accessor<long,1>();
-//    for (int i=0; i<unique_box_indices_Y.numel();i++){
-//        job_vector.push_back(near_field_interactions.slice(1,0,1).index({_inverse_indices_Y==unique_box_indices_Y_accessor[i]}));
-//    }
-//    replace_box_index_with_data_index_X(job_vector,x_box);
-////    cudaStream_t streams[MAX_STREAMS];
-//    torch::Tensor & X_data = x_box.data;
-//    torch::Tensor & Y_data = y_box.data;
-//
-//    torch::Tensor Y_inds_job,cuda_Y_job,cuda_b_job,cuda_X_job,X_inds_job,output_job;
-//    std::vector<torch::Tensor> results = {};
-//
-//    for (int i=0; i<unique_box_indices_Y.numel();i++){ //for each Y-box, find all the "common" X-boxes, stack the X-boxes and compute exactly.
-//        Y_inds_job = y_box.n_roons[unique_box_indices_Y_accessor[i]].row_indices;
-//        cuda_Y_job = Y_data.index({Y_inds_job}).to(device_gpu); //breaks on seccond iteration...
-//        cuda_b_job = b.index({Y_inds_job}).to(device_gpu);
-//        X_inds_job = job_vector[unique_box_indices_Y_accessor[i]];
-//        cuda_X_job = X_data.index(X_inds_job).to(device_gpu);
-//        output_job = torch::zeros({X_inds_job.size(0),output.size(1)}).to(device_gpu);
-//        rbf_call<scalar_t>(cuda_X_job, cuda_Y_job, cuda_b_job, output_job,ls,op);
-//        results.push_back(output_job.to("cpu"));
-//    }
-//    torch::Tensor update = torch::cat({results});
-//    torch::Tensor rows = torch::cat({job_vector});
-//    update_2d_rows_cpu<scalar_t>(output,update,rows);
-//};
-//Make smarter implementation for tmrw using pointers to X and b rather than accessing the entire thing
-
 int get_RFF_dim(n_tree_big & x_box, n_tree_big & y_box){
     auto biggest = (float) max(x_box.largest_box_n,y_box.largest_box_n);
     return (int) round(sqrt(biggest)*log(biggest));
@@ -609,45 +535,7 @@ std::tuple<torch::Tensor,torch::Tensor> apply_laplace_interpolation_v2(
 
 }
 
-//template <typename scalar_t>
-//torch::Tensor apply_laplace_interpolation(
-//        n_tree_big& n_tree,
-//        torch::Tensor &b,
-//        long i ,
-//        const std::string & device_gpu,
-//        torch::Tensor & nodes,
-//        torch::Tensor & laplace_indices,
-//        const bool tranpose_mode=false){
-//    torch::Tensor box_data = n_tree.data.index({n_tree.n_roons[i].row_indices});
-//    box_data = ((2 / n_tree.edge) * (box_data - n_tree.n_roons[i].center)).to(device_gpu);
-//    dim3 blockSize,gridSize;
-//    int memory;
-//    std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(nd, box_data.size(0));
-//
-//    if (not tranpose_mode){
-//        torch::Tensor laplace_low_rank = torch::zeros({b.size(1),laplace_indices.size(0)}).to(device_gpu);
-//        torch::Tensor b_data = b.index({n_tree.n_roons[i].row_indices}).to(device_gpu);
-//        laplace_interpolation<scalar_t><<<gridSize,blockSize>>>(
-//                box_data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-//                b_data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-//                nodes.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>(),
-//                laplace_indices.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
-//                laplace_low_rank.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>());
-//        cudaDeviceSynchronize();
-//        return laplace_low_rank.t_();
-//    }else{
-//        torch::Tensor high_rank_res = torch::zeros({box_data.size(0),b.size(1)}).to(device_gpu);
-//        torch::Tensor& b_data =b;
-//        laplace_interpolation_transpose<scalar_t><<<gridSize,blockSize>>>(
-//                box_data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-//                b_data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-//                nodes.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>(),
-//                laplace_indices.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
-//                high_rank_res.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>());
-//        cudaDeviceSynchronize();
-//        return high_rank_res;
-//    }
-//}
+
 
 template <typename scalar_t>
 torch::Tensor get_cheb_data(
@@ -666,20 +554,6 @@ torch::Tensor get_cheb_data(
     return cheb_data;
 }
 
-//template <typename scalar_t>
-//torch::Tensor low_rank_exact(torch::Tensor & cuda_X_job,
-//                    torch::Tensor & cuda_b_job,
-//                    torch::Tensor & distance,
-//                     const std::string & device_gpu,
-//                     scalar_t & ls,
-//                     rbf_pointer<scalar_t> & op
-//                     ){
-//    distance = distance.to(device_gpu);
-//    torch::Tensor output_job = torch::zeros_like(cuda_b_job).toType(torch::kFloat32);
-//    torch::Tensor cuda_Y_job = cuda_X_job + distance;
-//    rbf_call<scalar_t>(cuda_X_job, cuda_Y_job, cuda_b_job, output_job,ls,op);
-//    return output_job;
-//}
 
 torch::Tensor get_distance_tensor(torch::Tensor & near_field_interactions,
                                   int & nx_box,
@@ -818,100 +692,6 @@ void far_field_compute_v2(torch::Tensor & far_field_interactions,
     update_2d_rows_cpu<scalar_t>(output,update,x_idx_reordering);
 };
 
-
-
-
-//template <typename scalar_t>
-//void far_field_compute(torch::Tensor & far_field_interactions,
-//                       n_tree_big & x_box,
-//                       n_tree_big & y_box,
-//                       torch::Tensor & output,
-//                       torch::Tensor &b,
-//                       const std::string & device_gpu,
-//                       torch::Tensor &dist,
-//                       scalar_t & ls,
-//                       rbf_pointer<scalar_t> & op){
-//    torch::Tensor chebnodes_1D = chebyshev_nodes_1D(laplace_nodes); //get chebyshev nodes, laplace_nodes is fixed now, should probably be a variable
-//    torch::Tensor laplace_combinations = get_recursive_indices(laplace_nodes,nd); // get all possible combinations of chebyshev nodes. Total combintations should have dimension [laplace_nodes^nd,nd]
-//    torch::Tensor cheb_data_X = (get_cheb_data<scalar_t>(chebnodes_1D,laplace_combinations)*x_box.edge/2+x_box.edge/2).to(device_gpu); //get the actual data given the indices
-//    chebnodes_1D=chebnodes_1D.to(device_gpu);
-//    laplace_combinations=laplace_combinations.to(device_gpu);
-//    torch::Tensor unique_box_indices_Y,_inverse_indices_Y,_counts_Y,cheb_data_Y,unique_box_indices_X,_1,_2;
-//    std::tie(unique_box_indices_Y,_inverse_indices_Y,_counts_Y) = torch::_unique2(far_field_interactions.slice(1, 1, 2), true, false);
-//    std::tie(unique_box_indices_X,_1,_2) = torch::_unique2(far_field_interactions.slice(1, 0, 1), true, false);
-//
-//    /*
-//     * for all unique indices do a transformation, i.e. L_y*u.
-//     */
-//    std::map<long, torch::Tensor> Y_box_transforms;
-//    torch::Tensor laplace_low_rank,y_subset,b_subset;
-//    auto unique_box_indices_Y_accessor = unique_box_indices_Y.accessor<long,1>();
-//    auto unique_box_indices_X_accessor = unique_box_indices_X.accessor<long,1>();
-//
-//    for (int i=0; i<unique_box_indices_Y.numel();i++){//parallelize!
-//        Y_box_transforms[unique_box_indices_Y_accessor[i]] = apply_laplace_interpolation<scalar_t>(
-//                y_box,
-//                b,
-//                unique_box_indices_Y_accessor[i],
-//                device_gpu,
-//                chebnodes_1D,
-//                laplace_combinations,
-//                false);
-//    }
-//
-//    std::cout<<Y_box_transforms[0]<<std::endl;
-//    std::cout<<Y_box_transforms[1]<<std::endl;
-//
-//    /*
-//     * Do all low rank interactions,i.e. T*(L_y*u) we apply T here.
-//     */
-//    std::map<long, torch::Tensor> results; //Store/accumulate results according to unique X-boxes
-//    for (int i=0; i<unique_box_indices_X.numel();i++){
-//        results[unique_box_indices_X_accessor[i]] = torch::zeros({cheb_data_X.size(0), b.size(1)}).toType(torch::kFloat32).to(device_gpu);
-//    }
-//    torch::Tensor xy; //distance offset
-//    long m,n;
-//    auto far_field_accessor = far_field_interactions.accessor<long,2>();
-//    for (int i =0; i<dist.size(0);i++){ //parallelize
-//        xy = dist.slice(0,i,i+1);
-//        m = far_field_accessor[i][1];
-//        n = far_field_accessor[i][0];
-//        results[unique_box_indices_X_accessor[n]]+=low_rank_exact<scalar_t>(
-//                cheb_data_X,
-//                Y_box_transforms[unique_box_indices_Y_accessor[m]],
-//                xy,
-//                device_gpu,
-//                ls,
-//                op
-//                );
-//    }
-//
-//    std::cout<<results[0]<<std::endl;
-//    std::cout<<results[1]<<std::endl;
-//
-//
-//    /*
-//     * Finally transform back to regular dimensionality i.e. Apply L_x *(T*(L_y*u))
-//     */
-//    std::vector<torch::Tensor> final_res = {}; // We cache all the results...
-//    std::vector<torch::Tensor> final_indices = {}; // ... and remember the index we applied it to!
-//
-//    for (int i=0; i<unique_box_indices_X.numel();i++){//parallelize!
-//        final_res.push_back(apply_laplace_interpolation<scalar_t>(
-//                x_box,
-//                results[unique_box_indices_X_accessor[i]],
-//                unique_box_indices_X_accessor[i],
-//                device_gpu,
-//                chebnodes_1D,
-//                laplace_combinations,
-//                true).to("cpu"));
-//        final_indices.push_back(x_box.n_roons[unique_box_indices_X_accessor[i]].row_indices);
-//        }
-//    torch::Tensor update = torch::cat({final_res});
-//    torch::Tensor rows = torch::cat({final_indices});
-//    update_2d_rows_cpu<scalar_t>(output,update,rows); //since we have not done accumulation ,we do accumulation here...
-//};
-
 torch::Tensor get_new_interactions(torch::Tensor & old_near_interactions, n_tree_big& x_tree, n_tree_big& y_tree){
     int n = old_near_interactions.size(0);
     auto old_interaction_accessor = old_near_interactions.accessor<int,2>();
@@ -933,9 +713,6 @@ torch::Tensor get_new_interactions(torch::Tensor & old_near_interactions, n_tree
     }
     return new_interactions_vec;
 }
-
-
-
 
 template <typename scalar_t>
 torch::Tensor FFM(
