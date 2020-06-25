@@ -144,13 +144,15 @@ struct n_tree_big {
         float sum_points = 0;
         std::vector<n_tree> _new_n_roons;
         std::vector<int> new_box_indices;
-
-        for (int &i:current_box_indices){
+        //Do entire thing in cuda.
+        for (int &i:current_box_indices){//This is thing is parallelizable probably put on cuda...
             torch::Tensor tmp_points = data.index({n_roons[i].row_indices}); //have to use a copy?
             std::vector<torch::Tensor> bool_vector = (tmp_points<=n_roons[i].center).unbind(dim=1);
+            torch::Tensor tmp = tmp_points<=n_roons[i].center;
             std::vector<torch::Tensor> n_divisors = {};
-            n_divisors = recursive_divide(bool_vector,n_divisors);
-            for (int j=0;j<number_of_divisions;j++){
+            //create 2^{d-1} vector, do matmul. Make sure box indices are ordered correctly.
+//            n_divisors = recursive_divide(bool_vector,n_divisors);
+            for (int j=0;j<number_of_divisions;j++){ //no for loop.
                 n_elem = n_divisors[j].sum().item().toInt();
                 sum_points+=(float) n_elem;
                 index = (int) i*number_of_divisions + j;
