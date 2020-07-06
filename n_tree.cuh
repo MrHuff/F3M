@@ -7,6 +7,7 @@
 #include "utils.h"
 #include <vector>
 #include "algorithm"
+#include "divide_n_conquer.cu"
 //template<typename T>
 
 template <typename scalar_t>
@@ -109,6 +110,86 @@ std::ostream& operator<<(std::ostream& os, const n_tree& v)
     os<<v.center<<'\n';
     return os;
 }
+template <typename scalar_t>
+struct n_tree_cuda{
+    torch::Tensor &data;
+    torch::Tensor edge,xmin,box_indicator,multiply,coord_tensor,sorted_index,unique_counts,box_indices_sorted;
+    std::vector<torch::Tensor> output_coord = {};
+    std::vector<torch::Tensor> ones = {};
+    torch::Tensor centers;
+    std::string &device;
+    int dim,dim_fac,largest_box_n;
+    float avg_nr_points;
+
+    n_tree_cuda(torch::Tensor &e, torch::Tensor &d, torch::Tensor &xm,std::string &cuda_str): data(d),device(cuda_str){
+        xmin = xm.to(device);
+        edge = e.to(device);
+        dim = data.size(1);
+        dim_fac = pow(2,dim);
+        box_indicator = torch::zeros({data.size(0)}).toType(torch::kInt32).to(device);
+        sorted_index = torch::argsort(box_indicator);
+        std::tie(box_indices_sorted,unique_counts) = torch::_unique(box_indicator);
+        largest_box_n = (int) unique_counts.max().item();
+        avg_nr_points = (float) unique_counts.mean().item();
+        multiply = torch::pow(2,torch::arange(dim)).to(device);
+        for (int i=0;i<dim;i++){
+            ones.push_back(-1*torch::ones(1));
+        }
+        output_coord = recursive_center(ones,output_coord);
+        coord_tensor = torch::cat(output_coord).to(device);
+        centers = xmin + 0.5 * edge;
+        centers = centers.unsqueeze(-1);
+
+    }
+
+    torch::Tensor get_centers_expanded(){
+        return centers.repeat_interleave(unique_counts,0);
+    }
+
+    void divide(){
+        torch::Tensor output = torch::zeros_like(box_indicator);
+        int blockSize,gridSize,memory;
+        std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(nd, data.size(0));
+
+        box_division<scalar_t><<<gridSize,blockSize>>>(
+                data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                centers.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                multiply.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+                box_indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+                output.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+                dim_fac
+        );
+        box_indicator = output;
+        sorted_index = torch::argsort(box_indicator);
+        std::tie(box_indices_sorted,unique_counts) = torch::_unique(box_indicator);
+        largest_box_n = (int) unique_counts.max().item();
+        avg_nr_points = (float) unique_counts.mean().item();
+        centers = centers.repeat_interleave(dim_fac,0)+ 0.25 * edge * coord_tensor;
+        edge = edge*0.5;
+    };
+    std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> get_box_sorted_data(){
+        return std::make_tuple(data.index(sorted_index),unique_counts,sorted_index);
+    }
+
+    std::tuple<torch::Tensor,torch::Tensor> distance(const n_tree_cuda& other, const torch::Tensor &interactions ) { //give all interactions, i.e. cartesian product of indices
+        torch::Tensor l1_distances;
+
+        l1_distances = other.centers.index(interactions.slice(1,1))-centers.index(interactions.slice(1,0));
+
+        return std::make_tuple(l1_distances.pow(2).sum(1).sqrt() ,l1_distances);
+    }
+    std::tuple<torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor> far_and_near_field(
+            const torch::Tensor & square_dist,
+            const torch::Tensor &interactions,
+            const torch::Tensor &L1_dist) const{
+        torch::Tensor far_field = square_dist>=(edge*2+1e-6);
+        return std::make_tuple(interactions.index({far_field}),
+                               interactions.index({torch::logical_not(far_field)}),
+                               L1_dist.index({far_field}),L1_dist.index({torch::logical_not(far_field)}));
+    }
+
+};
+
 struct n_tree_big {
     torch::Tensor edge;
     torch::Tensor data;
@@ -475,23 +556,23 @@ torch::Tensor get_recursive_indices(const int nodes,
 }
 template <typename scalar_t>
 std::tuple<torch::Tensor,torch::Tensor> apply_laplace_interpolation_v2(
-        n_tree_big& n_tree,
-        torch::Tensor &unique_sorted_boxes_idx,
+        n_tree_cuda<scalar_t>& n_tree,
+//        torch::Tensor &unique_sorted_boxes_idx,
         torch::Tensor &b,
         const std::string & device_gpu,
         torch::Tensor & nodes,
         torch::Tensor & laplace_indices,
         const bool & transpose){
     torch::Tensor box_data,boxes_count,idx_reordering,b_data,output;
-    std::tie(box_data, boxes_count, idx_reordering)=n_tree.get_box_sorted_data(unique_sorted_boxes_idx);
-    box_data = ((2 / n_tree.edge) * (box_data - n_tree.get_centers_expanded(unique_sorted_boxes_idx))).to(device_gpu);
+    std::tie(box_data, boxes_count, idx_reordering)=n_tree.get_box_sorted_data();
+    box_data = ((2 / n_tree.edge) * (box_data - n_tree.get_centers_expanded())).to(device_gpu);
 
     dim3 blockSize,gridSize;
     int memory,blkSize,concat_size;
     torch::Tensor indicator,box_block;
     int min_size=boxes_count.min().item<int>();
     blkSize = optimal_blocksize(min_size);
-    std::tie(blockSize,gridSize,memory,indicator,box_block) = skip_kernel_launch<scalar_t>(nd,blkSize,boxes_count,unique_sorted_boxes_idx);
+    std::tie(blockSize,gridSize,memory,indicator,box_block) = skip_kernel_launch<scalar_t>(nd,blkSize,boxes_count,n_tree.box_indices_sorted);
     memory = memory+laplace_nodes*sizeof(scalar_t);
     indicator = indicator.to(device_gpu);
     box_block = box_block.to(device_gpu);
@@ -642,26 +723,27 @@ torch::Tensor setup_skip_conv(torch::Tensor &cheb_data,
 
 template <typename scalar_t>
 void far_field_compute_v2(torch::Tensor & far_field_interactions,
-                       n_tree_big & x_box,
-                       n_tree_big & y_box,
+                       n_tree_cuda<scalar_t> & x_box,
+                       n_tree_cuda<scalar_t> & y_box,
                        torch::Tensor & output,
                        torch::Tensor &b,
                        const std::string & device_gpu,
                        torch::Tensor &dist,
                        scalar_t & ls,
                        rbf_pointer<scalar_t> & op){
-    torch::Tensor x_unique_sorted,y_unique_sorted,placeholder,update,low_rank_y,x_idx_reordering,_,boolean_mask,distance_tensor;
-    std::tie(x_unique_sorted,placeholder)=torch::_unique(far_field_interactions.slice(1,0,1),true);
-    std::tie(y_unique_sorted,placeholder)=torch::_unique(far_field_interactions.slice(1,1,2),true);
+    torch::Tensor placeholder,update,low_rank_y,x_idx_reordering,_,boolean_mask,distance_tensor;
+//    x_unique_sorted,y_unique_sorted,
+//    std::tie(x_unique_sorted,placeholder)=torch::_unique(far_field_interactions.slice(1,0,1),true);
+//    std::tie(y_unique_sorted,placeholder)=torch::_unique(far_field_interactions.slice(1,1,2),true);
     torch::Tensor chebnodes_1D = chebyshev_nodes_1D(laplace_nodes); //get chebyshev nodes, laplace_nodes is fixed now, should probably be a variable
     torch::Tensor laplace_combinations = get_recursive_indices(laplace_nodes,nd); // get all possible combinations of chebyshev nodes. Total combintations should have dimension [laplace_nodes^nd,nd]
     torch::Tensor cheb_data_X = (get_cheb_data<scalar_t>(chebnodes_1D,laplace_combinations)*x_box.edge/2+x_box.edge/2).to(device_gpu); //get the actual data given the indices
     chebnodes_1D=chebnodes_1D.to(device_gpu);
     laplace_combinations=laplace_combinations.to(device_gpu);
-    x_unique_sorted = x_unique_sorted.toType(torch::kInt32);
-    y_unique_sorted = y_unique_sorted.toType(torch::kInt32);
+//    x_unique_sorted = x_unique_sorted.toType(torch::kInt32);
+//    y_unique_sorted = y_unique_sorted.toType(torch::kInt32);
     std::tie(low_rank_y,_) = apply_laplace_interpolation_v2<scalar_t>(y_box,
-                                                                      y_unique_sorted,
+//                                                                      y_unique_sorted,
                                                                       b,
                                                             device_gpu,
                                                             chebnodes_1D,
@@ -676,14 +758,14 @@ void far_field_compute_v2(torch::Tensor & far_field_interactions,
             low_rank_y,
             boolean_mask,
             distance_tensor,
-            x_unique_sorted,
+            x_box.box_indices_sorted,
             op,
             ls,
             device_gpu
             );
 
     std::tie(update,x_idx_reordering) = apply_laplace_interpolation_v2<scalar_t>(x_box,
-                                                                        x_unique_sorted,
+//                                                                        x_unique_sorted,
                                                                         low_rank_y,
                                                                         device_gpu,
                                                                         chebnodes_1D,
@@ -729,8 +811,10 @@ torch::Tensor FFM(
     torch::Tensor debug_output = torch::zeros_like(output);
     torch::Tensor edge,xmin,ymin,x_near_unique,tmp,y_near_unique,square_dist,dist,interactions,far_field,near_field,dist_far_field,dist_near_field; //these are needed to figure out which interactions are near/far field
     std::tie(edge,xmin,ymin) = calculate_edge(X_data,Y_data); //actually calculate them
-    n_tree_big ntree_X = n_tree_big{edge, X_data, xmin}; //Intialize tree for X-data
-    n_tree_big ntree_Y = n_tree_big{edge, Y_data, ymin};//Intialize tree for Y-data
+    n_tree_cuda<scalar_t> ntree_X = n_tree_cuda<scalar_t>{edge,X_data,xmin,gpu_device};
+    n_tree_cuda<scalar_t> ntree_Y = n_tree_cuda<scalar_t>{edge,Y_data,ymin,gpu_device};
+//    n_tree_big ntree_X = n_tree_big{edge, X_data, xmin}; //Intialize tree for X-data
+//    n_tree_big ntree_Y = n_tree_big{edge, Y_data, ymin};//Intialize tree for Y-data
     near_field = torch::zeros({1,2}).toType(torch::kInt32);
     float min_points = pow((float) laplace_nodes,nd);
     while (near_field.numel()>0 and ntree_X.avg_nr_points > min_points and ntree_Y.avg_nr_points > min_points){
