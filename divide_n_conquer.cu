@@ -10,7 +10,7 @@ __global__ void box_division(const torch::PackedTensorAccessor32<scalar_t,2,torc
                              const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers,
                              const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> b,
                              const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> old_indices,
-                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> output,
+                             torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> output,
                              int divide_num
 
 

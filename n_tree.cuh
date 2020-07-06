@@ -117,11 +117,11 @@ struct n_tree_cuda{
     std::vector<torch::Tensor> output_coord = {};
     std::vector<torch::Tensor> ones = {};
     torch::Tensor centers;
-    std::string &device;
+    std::string device;
     int dim,dim_fac,largest_box_n;
     float avg_nr_points;
-
-    n_tree_cuda(torch::Tensor &e, torch::Tensor &d, torch::Tensor &xm,std::string &cuda_str): data(d),device(cuda_str){
+    n_tree_cuda(torch::Tensor &e, torch::Tensor &d, torch::Tensor &xm, const std::string &cuda_str):data(d){
+        device = cuda_str;
         xmin = xm.to(device);
         edge = e.to(device);
         dim = data.size(1);
@@ -129,8 +129,8 @@ struct n_tree_cuda{
         box_indicator = torch::zeros({data.size(0)}).toType(torch::kInt32).to(device);
         sorted_index = torch::argsort(box_indicator);
         std::tie(box_indices_sorted,unique_counts) = torch::_unique(box_indicator);
-        largest_box_n = (int) unique_counts.max().item();
-        avg_nr_points = (float) unique_counts.mean().item();
+        largest_box_n = unique_counts.max().item<int>();
+        avg_nr_points =  unique_counts.mean().item<float>();
         multiply = torch::pow(2,torch::arange(dim)).to(device);
         for (int i=0;i<dim;i++){
             ones.push_back(-1*torch::ones(1));
@@ -148,7 +148,8 @@ struct n_tree_cuda{
 
     void divide(){
         torch::Tensor output = torch::zeros_like(box_indicator);
-        int blockSize,gridSize,memory;
+        dim3 blockSize,gridSize;
+        int memory;
         std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(nd, data.size(0));
 
         box_division<scalar_t><<<gridSize,blockSize>>>(
@@ -162,8 +163,8 @@ struct n_tree_cuda{
         box_indicator = output;
         sorted_index = torch::argsort(box_indicator);
         std::tie(box_indices_sorted,unique_counts) = torch::_unique(box_indicator);
-        largest_box_n = (int) unique_counts.max().item();
-        avg_nr_points = (float) unique_counts.mean().item();
+        largest_box_n =  unique_counts.max().item<int>();
+        avg_nr_points = unique_counts.mean().item<float>();
         centers = centers.repeat_interleave(dim_fac,0)+ 0.25 * edge * coord_tensor;
         edge = edge*0.5;
     };
@@ -394,8 +395,6 @@ void call_skip_conv(
     bool_mask_interactions = bool_mask_interactions.to(device_gpu);
     torch::Tensor x_boxes_count_cumulative = x_boxes_count.cumsum(0).toType(torch::kInt32).to(device_gpu);
     torch::Tensor y_boxes_count_cumulative = y_boxes_count.cumsum(0).toType(torch::kInt32).to(device_gpu);
-
-
     if(shared){
         torch::Tensor indicator,box_block_indicator;
         int min_size=x_boxes_count.min().item<int>();
@@ -454,8 +453,8 @@ torch::Tensor get_boolean_2d_mask(torch::Tensor & near_field_interactions,
 
 template <typename scalar_t>
 void near_field_compute_v2(torch::Tensor & near_field_interactions,
-                        n_tree_big & x_box,
-                        n_tree_big & y_box,
+                        n_tree_cuda<scalar_t> & x_box,
+                        n_tree_cuda<scalar_t> & y_box,
                         torch::Tensor & output,
                         const torch::Tensor& b,
                         const std::string & device_gpu,
@@ -464,25 +463,25 @@ void near_field_compute_v2(torch::Tensor & near_field_interactions,
 
     torch::Tensor b_permuted,
     update,
-    x_unique_sorted,
+//    x_unique_sorted,
     x_data,
     x_boxes_ind_count,
-    y_unique_sorted,
+//    y_unique_sorted,
     y_data,
     y_boxes_ind_count,
-    placeholder,
+//    placeholder,
     boolean_interactions,
     x_idx_reordering,
     y_idx_reordering;
     int total_x_boxes,total_y_boxes;
-    std::tie(x_unique_sorted,placeholder)=torch::_unique(near_field_interactions.slice(1,0,1),true);
-    std::tie(y_unique_sorted,placeholder)=torch::_unique(near_field_interactions.slice(1,1,2),true);
-    x_unique_sorted = x_unique_sorted.toType(torch::kInt32);
-    y_unique_sorted = y_unique_sorted.toType(torch::kInt32);
-    std::tie(x_data, x_boxes_ind_count, x_idx_reordering)=x_box.get_box_sorted_data(x_unique_sorted);
-    std::tie( y_data,y_boxes_ind_count,y_idx_reordering)=y_box.get_box_sorted_data(y_unique_sorted);
-    total_x_boxes = x_box.n_roons.size();
-    total_y_boxes = y_box.n_roons.size();
+//    std::tie(x_unique_sorted,placeholder)=torch::_unique(near_field_interactions.slice(1,0,1),true);
+//    std::tie(y_unique_sorted,placeholder)=torch::_unique(near_field_interactions.slice(1,1,2),true);
+//    x_unique_sorted = x_unique_sorted.toType(torch::kInt32);
+//    y_unique_sorted = y_unique_sorted.toType(torch::kInt32);
+    std::tie(x_data, x_boxes_ind_count, x_idx_reordering)=x_box.get_box_sorted_data();
+    std::tie( y_data,y_boxes_ind_count,y_idx_reordering)=y_box.get_box_sorted_data();
+    total_x_boxes = x_box.box_indices_sorted.size(0);
+    total_y_boxes = y_box.box_indices_sorted.size(0);
     boolean_interactions = get_boolean_2d_mask(near_field_interactions,total_x_boxes,total_y_boxes);
 //    x_data = x_data.to(device_gpu);
 //    y_data = y_data.to(device_gpu);
@@ -500,7 +499,7 @@ void near_field_compute_v2(torch::Tensor & near_field_interactions,
                              boolean_interactions,
                              x_boxes_ind_count,
                              y_boxes_ind_count,
-                             x_unique_sorted,
+                            x_box.box_indices_sorted ,
                              device_gpu,
                              true);
     update = update.to("cpu");
@@ -583,7 +582,7 @@ std::tuple<torch::Tensor,torch::Tensor> apply_laplace_interpolation_v2(
     cudaMalloc((void **)&d_min_size, sizeof(int));
     cudaMemcpy(d_min_size, &l_n, sizeof(int), cudaMemcpyHostToDevice);
     if (transpose){
-        concat_size = n_tree.current_box_indices.size();
+        concat_size = n_tree.box_indices_sorted.size(0);
         output = torch::zeros({l_n*concat_size,b.size(1)}).to(device_gpu);
         b_data = b.index({idx_reordering}).to(device_gpu);
         laplace_shared<scalar_t><<<gridSize,blockSize,memory>>>(
@@ -749,8 +748,8 @@ void far_field_compute_v2(torch::Tensor & far_field_interactions,
                                                             chebnodes_1D,
                                                             laplace_combinations,
                                                             true); //no problems here!
-    int total_x_boxes = x_box.n_roons.size();
-    int total_y_boxes = y_box.n_roons.size();
+    int total_x_boxes = x_box.box_indices_sorted.size(0);
+    int total_y_boxes = y_box.box_indices_sorted.size(0);
     boolean_mask = get_boolean_2d_mask(far_field_interactions,total_x_boxes,total_y_boxes);
     distance_tensor = get_distance_tensor(far_field_interactions,total_x_boxes,total_y_boxes,dist);
     low_rank_y = setup_skip_conv<scalar_t>(
@@ -775,26 +774,11 @@ void far_field_compute_v2(torch::Tensor & far_field_interactions,
     update=update.to("cpu");
     update_2d_rows_cpu<scalar_t>(output,update,x_idx_reordering);
 };
-
-torch::Tensor get_new_interactions(torch::Tensor & old_near_interactions, n_tree_big& x_tree, n_tree_big& y_tree){
+torch::Tensor get_new_interactions(torch::Tensor & old_near_interactions, int & p){
     int n = old_near_interactions.size(0);
-    auto old_interaction_accessor = old_near_interactions.accessor<int,2>();
-    int p = x_tree.number_of_divisions;
-    int offset_x,offset_y;
-    torch::Tensor new_interactions_vec = torch::zeros({n*p*p,2}).toType(torch::kInt32);
-    auto new_interactions_vec_accessor = new_interactions_vec.accessor<int,2>();
-    for (int i =0; i<n;i++){
-        offset_x = p*old_interaction_accessor[i][0];
-        offset_y = p*old_interaction_accessor[i][1];
-        for (int j = 0; j<p;j++){
-            for (int k= 0; k<p;k++) {
-                new_interactions_vec_accessor[i*p*p+j*p+k][0] = j+offset_x;
-                new_interactions_vec_accessor[i*p*p+j*p+k][1] = k+offset_y;
-
-                //                new_interactions_vec.push_back({j,k});
-            }
-        }
-    }
+    old_near_interactions = old_near_interactions.repeat_interleave(p*p,0);
+    torch::Tensor arr = torch::arange(p);
+    torch::Tensor new_interactions_vec = torch::stack({arr.repeat_interleave(p*p),arr.repeat(p*p)},1).repeat(n)+p*old_near_interactions;
     return new_interactions_vec;
 }
 
@@ -811,8 +795,8 @@ torch::Tensor FFM(
     torch::Tensor debug_output = torch::zeros_like(output);
     torch::Tensor edge,xmin,ymin,x_near_unique,tmp,y_near_unique,square_dist,dist,interactions,far_field,near_field,dist_far_field,dist_near_field; //these are needed to figure out which interactions are near/far field
     std::tie(edge,xmin,ymin) = calculate_edge(X_data,Y_data); //actually calculate them
-    n_tree_cuda<scalar_t> ntree_X = n_tree_cuda<scalar_t>{edge,X_data,xmin,gpu_device};
-    n_tree_cuda<scalar_t> ntree_Y = n_tree_cuda<scalar_t>{edge,Y_data,ymin,gpu_device};
+    n_tree_cuda<scalar_t> ntree_X = n_tree_cuda<scalar_t>(edge,X_data,xmin,gpu_device);
+    n_tree_cuda<scalar_t> ntree_Y = n_tree_cuda<scalar_t>(edge,Y_data,ymin,gpu_device);
 //    n_tree_big ntree_X = n_tree_big{edge, X_data, xmin}; //Intialize tree for X-data
 //    n_tree_big ntree_Y = n_tree_big{edge, Y_data, ymin};//Intialize tree for Y-data
     near_field = torch::zeros({1,2}).toType(torch::kInt32);
@@ -820,7 +804,7 @@ torch::Tensor FFM(
     while (near_field.numel()>0 and ntree_X.avg_nr_points > min_points and ntree_Y.avg_nr_points > min_points){
         ntree_X.divide();//divide ALL boxes recursively once
         ntree_Y.divide();//divide ALL boxes recursively once
-        interactions = get_new_interactions(near_field,ntree_X,ntree_Y);
+        interactions = get_new_interactions(near_field,ntree_X.dim_fac);
         //Remove old far_field interactions...
         std::tie(square_dist, dist) = ntree_X.distance(ntree_Y, interactions); //get distances for all interactions
         std::tie(far_field, near_field, dist_far_field,dist_near_field) = ntree_X.far_and_near_field(square_dist, interactions,dist); //classify into near and far field
