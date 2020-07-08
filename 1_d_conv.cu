@@ -45,40 +45,19 @@ std::tuple<dim3,dim3,int,torch::Tensor,torch::Tensor> skip_kernel_launch(int col
     dim3 blockSize;
     dim3 gridSize;
     blockSize.x = blksize;
-    std::vector<int> block_box_idx={};
-    std::vector<int> box_block_idx={};
 
-    auto box_size_accessor = box_sizes.accessor<int,1>();
-    auto box_idx_accessor = box_idx.accessor<int,1>();
-
-    int n = box_sizes.size(0);
-    int size,boxes_needed;
-    for (int i=0;i<n-1;i++){
-        size = box_size_accessor[i+1];
-        boxes_needed = (int)ceil((float)size/(float)blksize);
-//        std::cout<<size<<std::endl;
-//        std::cout<<boxes_needed<<std::endl;
-        for (int j=0;j<boxes_needed;j++){
-            block_box_idx.push_back(box_idx_accessor[i]);
-            box_block_idx.push_back(j);
-        }
+    torch::Tensor boxes_needed = torch::ceil(box_sizes.toType(torch::kFloat32)/(float)blksize).toType(torch::kLong); //blkSize is wrong and fix stuff
+    torch::Tensor output_block = box_idx.repeat_interleave({boxes_needed});// Adjust for special case
+    std::vector<torch::Tensor> cont = {};
+    boxes_needed = boxes_needed.to("cpu").toType(torch::kInt32);
+    auto accessor = boxes_needed.accessor<int,1>();
+    for (int i=0;i<boxes_needed.size(0);i++){
+        int b = accessor[i];
+        cont.push_back(torch::arange(b));
     }
-//    std::cout<<block_box_idx<<std::endl;
-    int total_blocks_needed =  block_box_idx.size();
-    gridSize.x = total_blocks_needed;
-    torch::Tensor output_block = torch::zeros({total_blocks_needed}).toType(torch::kInt32);
-    torch::Tensor block_idx_within_box = torch::zeros({total_blocks_needed}).toType(torch::kInt32);
-
-    auto block_box_idx_accessor = output_block.accessor<int,1>();
-    auto box_block_idx_accessor = block_idx_within_box.accessor<int,1>();
-
-    for (int i = 0;i<total_blocks_needed;i++){
-        block_box_idx_accessor[i] =  block_box_idx[i];
-        box_block_idx_accessor[i] =  box_block_idx[i];
-    }
-
+    torch::Tensor block_idx_within_box = torch::cat(cont).toType(torch::kInt32).to(output_block.device());
     //from_blob not fucking working...
-
+    gridSize.x = output_block.size(0);
     return std::make_tuple(blockSize,gridSize,blockSize.x * (cols+1) * sizeof(T),output_block,block_idx_within_box);
 };
 
