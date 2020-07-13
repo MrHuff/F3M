@@ -200,132 +200,6 @@ struct n_tree_cuda{
 
 };
 
-//struct n_tree_big {
-//    torch::Tensor edge;
-//    torch::Tensor data;
-//    torch::Tensor xmin;
-//    std::vector<n_tree> n_roons;
-//    float avg_nr_points;
-//    int dim;
-//    int number_of_divisions;
-//    int largest_box_n;
-//    std::vector<torch::Tensor> output_coord = {};
-//    std::vector<torch::Tensor> ones = {};
-//    std::vector<int> current_box_indices = {};
-////    torch::Tensor vector_equivalence;
-//    n_tree_big(torch::Tensor &e, torch::Tensor &d, torch::Tensor &xm){
-//        edge = e;
-//        data = d;
-//        xmin = xm;
-//        dim = data.size(1);
-//        for (int i=0;i<dim;i++){
-//            ones.push_back(-1*torch::ones(1));
-//        }
-//        output_coord = recursive_center(ones,output_coord);
-//        n_roons.push_back(n_tree{0, (int) data.size(0), torch::arange(data.size(0)), xmin + 0.5 * edge});
-//        current_box_indices.push_back(0);
-//        avg_nr_points = data.size(0);
-//        number_of_divisions = (int) pow(2,dim);
-//        largest_box_n = data.size(0);
-////        vector_equivalence = torch::zeros(data.size(0)).toType(torch::kInt32);
-//    };
-//    void divide(){
-//        int n_elem;
-//        int index;
-//        float sum_points = 0;
-//        std::vector<n_tree> _new_n_roons;
-//        std::vector<int> new_box_indices;
-//        //Do entire thing in cuda.
-//        for (int &i:current_box_indices){//This is thing is parallelizable probably put on cuda...
-//            torch::Tensor tmp_points = data.index({n_roons[i].row_indices}); //have to use a copy?
-//            std::vector<torch::Tensor> bool_vector = (tmp_points<=n_roons[i].center).unbind(dim=1);
-//            torch::Tensor tmp = tmp_points<=n_roons[i].center;
-//            std::vector<torch::Tensor> n_divisors = {};
-//            //create 2^{d-1} vector, do matmul. Make sure box indices are ordered correctly.
-////            n_divisors = recursive_divide(bool_vector,n_divisors);
-//            for (int j=0;j<number_of_divisions;j++){ //no for loop.
-//                n_elem = n_divisors[j].sum().item().toInt();
-//                sum_points+=(float) n_elem;
-//                index = (int) i*number_of_divisions + j;
-//                if (n_elem>0){
-//                    _new_n_roons.push_back(n_tree{index, n_elem, n_roons[i].row_indices.index({n_divisors[j]}), n_roons[i].center + 0.25 * edge * output_coord[j]} );
-//                    new_box_indices.push_back(index);
-//                }
-//            }
-//        };
-//        current_box_indices = new_box_indices;
-//        n_roons = _new_n_roons;
-//        avg_nr_points = sum_points/(float) current_box_indices.size();
-//        edge = edge*0.5;
-//        largest_box_n = get_largest_box();
-////        update_vector_equivalence();
-//    };
-//
-//    int get_largest_box(){
-//        std::vector<int> box_sizes = {};
-//        for (auto el:n_roons){
-//            box_sizes.push_back(el.n_elems);
-//        }
-//        return *std::max_element(box_sizes.begin(),box_sizes.end());
-//    };
-//
-//    std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> get_box_sorted_data(torch::Tensor &unique_boxes_sorted){
-//        auto accessor = unique_boxes_sorted.accessor<int,1>();
-//        torch::Tensor points_count_vec = torch::zeros({unique_boxes_sorted.size(0)+1}).toType(torch::kInt32);
-//        auto accessor_points_count = points_count_vec.accessor<int,1>();
-//        std::vector<torch::Tensor> cat_vector;
-//        int n = accessor.size(0);
-//        for (int i=0;i<n;i++){
-//            accessor_points_count[i+1]=n_roons[accessor[i]].n_elems;
-//            cat_vector.push_back(n_roons[accessor[i]].row_indices);
-//        };
-//        torch::Tensor index_output = torch::cat(cat_vector,0);
-//        torch::Tensor data_output = data.index({index_output});
-//        return std::make_tuple(data_output,points_count_vec,index_output);
-//    };
-//    torch::Tensor get_centers_expanded(torch::Tensor &unique_boxes_sorted){
-//        auto accessor = unique_boxes_sorted.accessor<int,1>();
-//        int n = accessor.size(0);
-//        torch::Tensor ones_tmp;
-//        std::vector<torch::Tensor> cat_center = {};
-//        for (int i=0;i<n;i++){
-//            ones_tmp = torch::ones({n_roons[accessor[i]].n_elems,dim});
-//            cat_center.push_back(n_roons[accessor[i]].center*ones_tmp);
-//        };
-//        return torch::cat(cat_center,0);
-//    }
-//
-//    std::tuple<torch::Tensor,torch::Tensor> distance(const n_tree_big& other, const torch::Tensor &interactions ) { //give all interactions, i.e. cartesian product of indices
-//        std::vector<torch::Tensor> dist = {};
-//        auto interaction_accessor = interactions.accessor<int,2>();
-//        for (int i = 0; i < interactions.size(0); i++) {
-//            dist.push_back((other.n_roons[interaction_accessor[i][1]].center-n_roons[interaction_accessor[i][0]].center).unsqueeze(0));
-//        }
-//        torch::Tensor l1_distances = torch::cat(dist);
-//        return std::make_tuple(l1_distances.pow(2).sum(1).sqrt() ,l1_distances);
-//    }
-//    std::tuple<torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor> far_and_near_field(
-//            const torch::Tensor & square_dist,
-//            const torch::Tensor &interactions,
-//            const torch::Tensor &L1_dist) const{
-//        torch::Tensor far_field = square_dist>=(edge*2+1e-6);
-//        return std::make_tuple(interactions.index({far_field}),
-//                interactions.index({torch::logical_not(far_field)}),
-//               L1_dist.index({far_field}),L1_dist.index({torch::logical_not(far_field)}));
-//    }
-//
-//
-//};
-
-//std::ostream& operator<<(std::ostream& os, const n_tree_big& v)
-//{
-//    for(int i:v.current_box_indices){
-//        os<<v.n_roons[i]<<"\n";
-//    }
-//    return os;
-//}
-//
-
 
 template <typename scalar_t>
 void rbf_call(
@@ -488,6 +362,8 @@ void near_field_compute_v2(torch::Tensor & near_field_interactions,
     y_idx_reordering;
     std::tie(x_boxes_ind_count, x_idx_reordering)=x_box.get_box_sorted_data();
     std::tie( y_boxes_ind_count,y_idx_reordering)=y_box.get_box_sorted_data();
+
+    //Fix this mechanic, probably use a different mechanic... ask glaunès!
     boolean_interactions = get_boolean_2d_mask(near_field_interactions,x_box.box_indices_sorted.size(0),y_box.box_indices_sorted.size(0)).to(device_gpu);
     torch::Tensor &x_data = x_box.data;
     torch::Tensor &y_data = y_box.data;
@@ -746,10 +622,10 @@ void far_field_compute_v2(torch::Tensor & far_field_interactions,
                                             laplace_combinations,
                                             true,
                                             low_rank_y); //no problems here!
+    //Consider limiting number of boxes!!!
     boolean_mask = get_boolean_2d_mask(far_field_interactions,x_box.box_indices_sorted.size(0),y_box.box_indices_sorted.size(0)).to(device_gpu);
     dist = dist.to("cpu");
     distance_tensor = get_distance_tensor(far_field_interactions,x_box.box_indices_sorted.size(0),y_box.box_indices_sorted.size(0),dist).to(device_gpu);
-
     low_rank_y = setup_skip_conv<scalar_t>(
             cheb_data_X,
             low_rank_y,
