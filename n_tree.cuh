@@ -404,7 +404,7 @@ void call_skip_conv(
 //    y_idx_reordering = y_idx_reordering.to(device_gpu);
 //    cuda_b_job = cuda_b_job.to(device_gpu);
 //    output_job = output_job.to(device_gpu);
-    bool_mask_interactions = bool_mask_interactions.to(device_gpu);
+//    bool_mask_interactions = bool_mask_interactions.to(device_gpu);
 
     if(shared){
         torch::Tensor indicator,box_block_indicator;
@@ -488,7 +488,7 @@ void near_field_compute_v2(torch::Tensor & near_field_interactions,
     y_idx_reordering;
     std::tie(x_boxes_ind_count, x_idx_reordering)=x_box.get_box_sorted_data();
     std::tie( y_boxes_ind_count,y_idx_reordering)=y_box.get_box_sorted_data();
-    boolean_interactions = get_boolean_2d_mask(near_field_interactions,x_box.box_indices_sorted.size(0),y_box.box_indices_sorted.size(0));
+    boolean_interactions = get_boolean_2d_mask(near_field_interactions,x_box.box_indices_sorted.size(0),y_box.box_indices_sorted.size(0)).to(device_gpu);
     torch::Tensor &x_data = x_box.data;
     torch::Tensor &y_data = y_box.data;
     call_skip_conv<scalar_t>(x_data,
@@ -663,7 +663,7 @@ torch::Tensor get_distance_tensor(torch::Tensor & near_field_interactions,
 }
 
 template <typename scalar_t>
-void setup_skip_conv(torch::Tensor &cheb_data,
+torch::Tensor setup_skip_conv(torch::Tensor &cheb_data,
                               torch::Tensor &b_data,
                               torch::Tensor & bool_mask,
                               torch::Tensor & distance_tensor,
@@ -720,7 +720,7 @@ void setup_skip_conv(torch::Tensor &cheb_data,
                 d_min_size
         );
     }
-
+    return output;
 }
 
 template <typename scalar_t>
@@ -737,7 +737,7 @@ void far_field_compute_v2(torch::Tensor & far_field_interactions,
                           torch::Tensor & laplace_combinations,
                           torch::Tensor & cheb_data_X
 ){
-    torch::Tensor placeholder,update,low_rank_y,x_idx_reordering,_,boolean_mask,distance_tensor;
+    torch::Tensor low_rank_y,boolean_mask,distance_tensor;
     low_rank_y = torch::zeros({cheb_data_X.size(0)*x_box.box_indices_sorted.size(0),b.size(1)}).to(device_gpu);
     apply_laplace_interpolation_v2<scalar_t>(y_box,
                                             b,
@@ -750,7 +750,7 @@ void far_field_compute_v2(torch::Tensor & far_field_interactions,
     dist = dist.to("cpu");
     distance_tensor = get_distance_tensor(far_field_interactions,x_box.box_indices_sorted.size(0),y_box.box_indices_sorted.size(0),dist).to(device_gpu);
 
-    setup_skip_conv<scalar_t>(
+    low_rank_y = setup_skip_conv<scalar_t>(
             cheb_data_X,
             low_rank_y,
             boolean_mask,
@@ -807,14 +807,14 @@ torch::Tensor FFM(
     while (near_field.numel()>0 and ntree_X.avg_nr_points > min_points and ntree_Y.avg_nr_points > min_points){
         ntree_X.divide();//divide ALL boxes recursively once
         ntree_Y.divide();//divide ALL boxes recursively once
-        cheb_data_X = cheb_data_X*ntree_X.edge/2+ntree_X.edge/2;
         interactions = get_new_interactions(near_field,ntree_X.dim_fac);
 //        near_field = get_new_interactions(near_field,ntree_X.dim_fac);
         //Remove old far_field interactions...
         std::tie(square_dist, dist) = ntree_X.distance(ntree_Y, interactions); //get distances for all interactions
         std::tie(far_field, near_field, dist_far_field,dist_near_field) = ntree_X.far_and_near_field(square_dist, interactions,dist); //classify into near and far field
         if(far_field.numel()>0){
-            far_field_compute_v2<scalar_t>(far_field, ntree_X, ntree_Y, output, b, gpu_device, dist_far_field,ls,op,chebnodes_1D,laplace_combinations,cheb_data_X); //far field compute
+            torch::Tensor cheb_data = cheb_data_X*ntree_X.edge/2.+ntree_X.edge/2.;
+            far_field_compute_v2<scalar_t>(far_field, ntree_X, ntree_Y, output, b, gpu_device, dist_far_field,ls,op,chebnodes_1D,laplace_combinations,cheb_data); //far field compute
         }
     }
     if (near_field.numel()>0){

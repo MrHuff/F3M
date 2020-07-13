@@ -492,6 +492,7 @@ __global__ void laplace_shared(
 ){
     int box_ind = indicator[blockIdx.x];
     int a,b;
+    scalar_t factor = 2./(*edge);
     a = x_boxes_count[box_ind];
     b = x_boxes_count[box_ind+1];
     int i = a+ threadIdx.x+box_block_indicator[blockIdx.x]*blockDim.x; // current thread
@@ -499,7 +500,7 @@ __global__ void laplace_shared(
     scalar_t b_i;
     if (i<b) {
         for (int k = 0; k < nd; k++) {
-            x_i[k] = (2/(*edge))*(X_data[idx_reordering[i]][k]-centers[box_ind][k]);
+            x_i[k] = factor*(X_data[idx_reordering[i]][k]-centers[box_ind][k]);
         }
     }
     extern __shared__ int int_buffer[];
@@ -552,6 +553,7 @@ __global__ void laplace_shared_transpose(
         ) {
 
     int box_ind, a, b;
+    scalar_t factor = 2./(*edge);
     box_ind = indicator[blockIdx.x];
     a = x_boxes_count[box_ind];
     b = x_boxes_count[box_ind + 1];
@@ -559,7 +561,7 @@ __global__ void laplace_shared_transpose(
     scalar_t x_i[nd];
     if (i<b) {
         for (int k = 0; k < nd; k++) {
-            x_i[k] = (2/(*edge))*(X_data[idx_reordering[i]][k]-centers[box_ind][k]);
+            x_i[k] = factor*(X_data[idx_reordering[i]][k]-centers[box_ind][k]);
         }
     }
     scalar_t acc;
@@ -667,7 +669,7 @@ __global__ void skip_conv_far_cookie(const torch::PackedTensorAccessor32<scalar_
             }
         }
         if (i < b) {
-            output[i][b_ind] = acc;
+            output[i][b_ind] += acc;
         }
     }
     __syncthreads();

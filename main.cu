@@ -8,7 +8,7 @@
  */
 //#include <stdio.h>
 #include "1_d_conv.cu"
-#include "FFM_mk2.cuh"
+#include "n_tree.cuh"
 
 //#include "utils.h"
 /*
