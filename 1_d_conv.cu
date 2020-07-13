@@ -143,6 +143,28 @@ __device__ static void torch_load_b(
         const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b){
     shared_mem[threadIdx.x] = b[index][col_index];
 }
+template <typename scalar_t>
+__device__ static void torch_load_y_v2(int index, scalar_t *shared_mem,
+        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> y,
+        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> y_idx_reordering
+        ){
+#pragma unroll
+    for (int k = 0; k < nd; k++) {
+        //assert(&((*px)[i * FIRST + k]) != nullptr);
+        shared_mem[nd * threadIdx.x + k] = y[y_idx_reordering[index]][k]; // First, load the i-th line of px[0]  -> shared_mem[ 0 : FIRST ].
+        // Don't use thread id -> nvidia-chips doesn't work like that! It only got a third of the way
+        // Some weird memory allocation issue
+    }
+}
+template <typename scalar_t>
+__device__ static void torch_load_b_v2(
+        int col_index,
+        int index,
+        scalar_t *shared_mem,
+        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b,
+        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> y_idx_reordering){
+    shared_mem[threadIdx.x] = b[y_idx_reordering[index]][col_index];
+}
 
 
 //Consider caching the kernel value if b is in Nxd.
@@ -251,80 +273,80 @@ __device__ scalar_t calculate_laplace_product(
 }
 
 
-template <typename scalar_t>
-__global__ void laplace_interpolation(const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
-                                      const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data, //also put b's in shared mem for maximum perform.
-                                      const torch::PackedTensorAccessor32<scalar_t,1,torch::RestrictPtrTraits> lap_nodes,
-                                      const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> combinations,
-                                      torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output
-){
-
-    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
-    unsigned int x_n = X_data.size(0);
-    if (i>x_n-1){return;}
-    scalar_t x_i[nd];
-    scalar_t l_p[laplace_nodes];
-    int comb_j[nd];
-    for (int k=0;k<nd;k++){
-        x_i[k] = X_data[i][k];
-//        printf("x: %f\n",x_i[k]);
-    }
-    for (int k=0;k<laplace_nodes;k++){
-        l_p[k] = lap_nodes[k];
-//        printf("l_p: %f\n",l_p[k]);
-    }
-    unsigned int y_n = combinations.size(0);
-
-    for (int b_ind=0; b_ind < b_data.size(1); b_ind++){
-        for (int p=0;p<y_n;p++){
-            for (int k=0;k<nd;k++){
-                comb_j[k] = combinations[p][k];
-//                printf("comb_j: %i\n",comb_j[k]);
-            };
-            atomicAdd(&output[b_ind][p],calculate_laplace_product(l_p, x_i, comb_j, b_data[i][b_ind])); //for each p, sum accross x's...
-        };
-    }
-    __syncthreads();
-};
-
-template <typename scalar_t>
-__global__ void laplace_interpolation_transpose(const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
-                                      const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data, //also put b's in shared mem for maximum perform.
-                                      const torch::PackedTensorAccessor32<scalar_t,1,torch::RestrictPtrTraits> lap_nodes,
-                                      const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> combinations,
-                                      torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output
-){
-
-    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
-    unsigned int x_n = X_data.size(0);
-    if (i>x_n-1){return;}
-    scalar_t acc;
-    scalar_t x_i[nd];
-    scalar_t l_p[laplace_nodes];
-    int comb_j[nd];
-    for (int k=0;k<nd;k++){
-        x_i[k] = X_data[i][k];
-//        printf("x: %f\n",x_i[k]);
-    }
-    for (int k=0;k<laplace_nodes;k++){
-        l_p[k] = lap_nodes[k];
-//        printf("l_p: %f\n",l_p[k]);
-    }
-    unsigned int y_n = combinations.size(0);
-
-    for (int b_ind=0; b_ind < b_data.size(1); b_ind++){
-        acc=0.0;
-        for (int p=0;p<y_n;p++){
-            for (int k=0;k<nd;k++){
-                comb_j[k] = combinations[p][k];
-//                printf("comb_j: %i\n",comb_j[k]);
-            };
-            acc+=calculate_laplace_product(l_p, x_i, comb_j,b_data[p][b_ind]);
-        };
-        output[i][b_ind] = acc;
-    }
-    __syncthreads();
-};
+//template <typename scalar_t>
+//__global__ void laplace_interpolation(const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
+//                                      const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data, //also put b's in shared mem for maximum perform.
+//                                      const torch::PackedTensorAccessor32<scalar_t,1,torch::RestrictPtrTraits> lap_nodes,
+//                                      const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> combinations,
+//                                      torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output
+//){
+//
+//    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+//    unsigned int x_n = X_data.size(0);
+//    if (i>x_n-1){return;}
+//    scalar_t x_i[nd];
+//    scalar_t l_p[laplace_nodes];
+//    int comb_j[nd];
+//    for (int k=0;k<nd;k++){
+//        x_i[k] = X_data[i][k];
+////        printf("x: %f\n",x_i[k]);
+//    }
+//    for (int k=0;k<laplace_nodes;k++){
+//        l_p[k] = lap_nodes[k];
+////        printf("l_p: %f\n",l_p[k]);
+//    }
+//    unsigned int y_n = combinations.size(0);
+//
+//    for (int b_ind=0; b_ind < b_data.size(1); b_ind++){
+//        for (int p=0;p<y_n;p++){
+//            for (int k=0;k<nd;k++){
+//                comb_j[k] = combinations[p][k];
+////                printf("comb_j: %i\n",comb_j[k]);
+//            };
+//            atomicAdd(&output[b_ind][p],calculate_laplace_product(l_p, x_i, comb_j, b_data[i][b_ind])); //for each p, sum accross x's...
+//        };
+//    }
+//    __syncthreads();
+//};
+//
+//template <typename scalar_t>
+//__global__ void laplace_interpolation_transpose(const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
+//                                      const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data, //also put b's in shared mem for maximum perform.
+//                                      const torch::PackedTensorAccessor32<scalar_t,1,torch::RestrictPtrTraits> lap_nodes,
+//                                      const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> combinations,
+//                                      torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output
+//){
+//
+//    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+//    unsigned int x_n = X_data.size(0);
+//    if (i>x_n-1){return;}
+//    scalar_t acc;
+//    scalar_t x_i[nd];
+//    scalar_t l_p[laplace_nodes];
+//    int comb_j[nd];
+//    for (int k=0;k<nd;k++){
+//        x_i[k] = X_data[i][k];
+////        printf("x: %f\n",x_i[k]);
+//    }
+//    for (int k=0;k<laplace_nodes;k++){
+//        l_p[k] = lap_nodes[k];
+////        printf("l_p: %f\n",l_p[k]);
+//    }
+//    unsigned int y_n = combinations.size(0);
+//
+//    for (int b_ind=0; b_ind < b_data.size(1); b_ind++){
+//        acc=0.0;
+//        for (int p=0;p<y_n;p++){
+//            for (int k=0;k<nd;k++){
+//                comb_j[k] = combinations[p][k];
+////                printf("comb_j: %i\n",comb_j[k]);
+//            };
+//            acc+=calculate_laplace_product(l_p, x_i, comb_j,b_data[p][b_ind]);
+//        };
+//        output[i][b_ind] = acc;
+//    }
+//    __syncthreads();
+//};
 
 
 __device__ int calculate_box_ind(int &current_thread_idx,
@@ -395,7 +417,9 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor32<scalar_t
                              const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_boxes_count,
                              const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> y_boxes_count,
                              const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> indicator,
-                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> box_block_indicator
+                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> box_block_indicator,
+                            const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_idx_reordering,
+                            const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> y_idx_reordering
 ){
     int box_ind,start,end,a,b;
     box_ind = indicator[blockIdx.x];
@@ -412,7 +436,7 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor32<scalar_t
     //Load these points only... the rest gets no points... threadIdx.x +a to b. ...
     if (i<b) {
         for (int k = 0; k < nd; k++) {
-            x_i[k] = X_data[i][k];
+            x_i[k] = X_data[x_idx_reordering[i]][k];
         }
     }
 //    box_ind = calculate_box_ind(i,x_boxes_count,x_box_idx);
@@ -427,8 +451,8 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor32<scalar_t
                 for (int jstart = start, tile = 0; jstart < end; jstart += blockDim.x, tile++) {
                     int j = start+tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
                     if (j < end) { // we load yj from device global memory only if j<ny
-                        torch_load_y<scalar_t>(j, yj, Y_data);
-                        torch_load_b<scalar_t>(b_ind ,j, bj, b_data);
+                        torch_load_y_v2<scalar_t>(j, yj, Y_data,y_idx_reordering);
+                        torch_load_b_v2<scalar_t>(b_ind ,j, bj, b_data,y_idx_reordering);
                     }
                     __syncthreads();
                     if (i < b) { // we compute x1i only if needed
@@ -439,10 +463,11 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor32<scalar_t
                     }
                     __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
                 };
-                if (i < b) {
-                    output[i][b_ind] = acc;
-                }
+
             }
+        }
+        if (i < b) {
+            output[x_idx_reordering[i]][b_ind] += acc;
         }
     }
     __syncthreads();
@@ -460,9 +485,10 @@ __global__ void laplace_shared(
         const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> indicator,
         const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> box_block_indicator,
         const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_boxes_count,
-        const int * cheb_data_size
-//        scalar_t * ls,
-//        rbf_pointer<scalar_t> op
+        const int * cheb_data_size,
+        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers,
+        const scalar_t * edge,
+        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> idx_reordering
 ){
     int box_ind = indicator[blockIdx.x];
     int a,b;
@@ -473,7 +499,7 @@ __global__ void laplace_shared(
     scalar_t b_i;
     if (i<b) {
         for (int k = 0; k < nd; k++) {
-            x_i[k] = X_data[i][k];
+            x_i[k] = (2/(*edge))*(X_data[idx_reordering[i]][k]-centers[box_ind][k]);
         }
     }
     extern __shared__ int int_buffer[];
@@ -486,7 +512,7 @@ __global__ void laplace_shared(
     }
     for (int b_ind=0; b_ind<b_size; b_ind++) {
         if (i<b) {
-            b_i = b_data[i][b_ind];
+            b_i = b_data[idx_reordering[i]][b_ind];
         }
         for (int jstart = 0, tile = 0; jstart < *cheb_data_size; jstart += blockDim.x, tile++) {
             int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
@@ -519,7 +545,10 @@ __global__ void laplace_shared_transpose(
         const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> indicator,
         const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> box_block_indicator,
         const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_boxes_count,
-        const int * cheb_data_size
+        const int * cheb_data_size,
+        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers,
+        const scalar_t * edge,
+        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> idx_reordering
         ) {
 
     int box_ind, a, b;
@@ -528,9 +557,9 @@ __global__ void laplace_shared_transpose(
     b = x_boxes_count[box_ind + 1];
     int i = a + threadIdx.x + box_block_indicator[blockIdx.x] * blockDim.x; // current thread
     scalar_t x_i[nd];
-    if (i < b) {
+    if (i<b) {
         for (int k = 0; k < nd; k++) {
-            x_i[k] = X_data[i][k];
+            x_i[k] = (2/(*edge))*(X_data[idx_reordering[i]][k]-centers[box_ind][k]);
         }
     }
     scalar_t acc;
@@ -549,6 +578,7 @@ __global__ void laplace_shared_transpose(
             if (j < *cheb_data_size) { // we load yj from device global memory only if j<ny
                 torch_load_y<int>(j, yj, combinations);
                 torch_load_b<scalar_t>(b_ind, j + box_ind * *cheb_data_size, bj, b_data); //b's are incorrectly loaded
+
             }
 
             __syncthreads();
@@ -562,7 +592,7 @@ __global__ void laplace_shared_transpose(
 
         }
         if (i < b) {
-            output[i][b_ind] = acc;
+            output[idx_reordering[i]][b_ind] += acc;
         }
 
     }
@@ -631,12 +661,13 @@ __global__ void skip_conv_far_cookie(const torch::PackedTensorAccessor32<scalar_
                         }
                     }
                 };
-                if (i < b) {
-                    output[i][b_ind] = acc;
-                }
+
                 __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
 
             }
+        }
+        if (i < b) {
+            output[i][b_ind] = acc;
         }
     }
     __syncthreads();
@@ -715,12 +746,15 @@ __global__ void skip_conv_far_boxes_opt(const torch::PackedTensorAccessor32<scal
                         }
                         acc += (*op)(x_i, y_j, ls) * bj[j]; //sums incorrectly cause pointer is fucked not sure if allocating properly
                     }
-                    output[i][b_ind] = acc;
                 }
                 __syncthreads();
 
             }
         }
+        if (i < b) { // we compute x1i only if needed
+            output[i][b_ind] += acc;
+        }
+
     }
     __syncthreads();
 
