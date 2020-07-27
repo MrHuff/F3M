@@ -417,6 +417,7 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor32<scalar_t
     for (int b_ind=0; b_ind < b_data.size(1); b_ind++) { //for all dims of b
         acc=0.0;
         for (int m = 0; m < M; m++) { // iterate through every existing ybox
+            //Pass near field interactions...
             if (!far_field_comp<scalar_t>(cX_i,centers_Y[m],edge)) { //if there is an interaction
                 start = y_boxes_count[m]; // 0 to something
                 end = y_boxes_count[m + 1]; // seomthing
@@ -657,8 +658,9 @@ __global__ void skip_conv_far_cookie(const torch::PackedTensorAccessor32<scalar_
 
 }
 
+//[[0,1],[0,2],[0,3],[0,4],[0,5]...] ~ O(n_b^2x2)
 
-
+//Thrust
 template <typename scalar_t>
 __global__ void skip_conv_far_boxes_opt(const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> cheb_data,
                                     const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data,
@@ -685,7 +687,8 @@ __global__ void skip_conv_far_boxes_opt(const torch::PackedTensorAccessor32<scal
     scalar_t *yj = &buffer[0];
     scalar_t *bj = &buffer[*cheb_data_size*nd];
     scalar_t *distance = &buffer[*cheb_data_size*(nd+1)];
-    scalar_t *cX_i = &buffer[(blockDim.x)*(nd+1)+nd];
+    scalar_t *cX_i = &buffer[(blockDim.x)*(nd+1)+nd]; //Get another shared memory pointer.
+    //int *block_indicator = &buffer[(blockDim.x)*(nd+1)+2*nd]; //Should be fine...
 
     if (threadIdx.x<nd){
         cX_i[threadIdx.x] = centers_X[box_ind][threadIdx.x];
@@ -707,10 +710,16 @@ __global__ void skip_conv_far_boxes_opt(const torch::PackedTensorAccessor32<scal
 
 //    box_ind = calculate_box_ind(i,x_boxes_count,x_box_idx);
 //    printf("thread %i: %i\n",i,box_ind);
-    for (int b_ind=0; b_ind < b_data.size(1); b_ind++) { //for all dims of b
+    for (int b_ind=0; b_ind < b_data.size(1); b_ind++) { //for all dims of b A*b, b \in \mathbb{R}^{n\times d}, d>=1.
         acc=0.0;
+        //{0: [1,2,3,4,5], 1:[7,3,8], ...
+        // }
+        //v = data_struct[box_ind]
+        //for (auto :el &v){
+        // do stuff
+        // }
 
-
+        //Joan know how: Be careful when transfer data structure. Move it share-memory!
         for (int m = 0; m < M; m++) { // iterate through every existing ybox
 
 
@@ -721,33 +730,40 @@ __global__ void skip_conv_far_boxes_opt(const torch::PackedTensorAccessor32<scal
 
             if (get_2_norm(distance)>2**edge) { //if there is an interaction
 
-
-
-
                 for (int jstart = 0, tile = 0; jstart < *cheb_data_size; jstart += blockDim.x, tile++) {
                     int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
-                    if (j<*cheb_data_size){
-                        bj[j] = b_data[j+m* *cheb_data_size][b_ind];
+                    if (j < *cheb_data_size) {
+                        bj[j] = b_data[j + m * *cheb_data_size][b_ind];
                     }
-                }
-
-                __syncthreads(); //Need to be smart with this, don't slow down the others!
-                if (i < b) { // we compute x1i only if needed
-                    scalar_t *yjrel = yj; // Loop on the columns of the current block.
-                    for (int j = 0; j < *cheb_data_size; j++, yjrel += nd) {
-                        for (int k=0;k<nd;k++){
-                            y_j[k] = yjrel[k]+distance[k];
+                    __syncthreads(); //Need to be smart with this, don't slow down the others!
+                    if (i < b) { // we compute x1i only if needed
+                        scalar_t *yjrel = yj; // Loop on the columns of the current block.
+                        for (int j = 0; j < *cheb_data_size; j++, yjrel += nd) {
+                            for (int k = 0; k < nd; k++) {
+                                y_j[k] = yjrel[k] + distance[k];
+                            }                                    //store in don't be afraid of using tmp vals.
+                            acc += (*op)(x_i, y_j, ls) * bj[j]; //sums incorrectly cause pointer is fucked not sure if allocating properly
                         }
-                        acc += (*op)(x_i, y_j, ls) * bj[j]; //sums incorrectly cause pointer is fucked not sure if allocating properly
                     }
                 }
-                __syncthreads();
 
+            }else{
+                if ((threadIdx.x==0)&(box_block_indicator[blockIdx.x]==0)){
+                    //Use thrust for append that's hopefully concurrency safe...
+                    //Else precompute
+                    //be smarter about this...
+                    //Concurrency rip...
+                    //atomic append.
+                    //empty_global_nearfield_data.append({box_ind,el})
+                    //
+
+                }
             }
         }
         if (i < b) { // we compute x1i only if needed
             output[i][b_ind] += acc;
         }
+        __syncthreads();
 
     }
     __syncthreads();
