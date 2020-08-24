@@ -10,6 +10,9 @@
 #include "divide_n_conquer.cu"
 //template<typename T>
 
+template<typename T>
+at::ScalarType dtype() { return at::typeMetaToScalarType(caffe2::TypeMeta::Make<T>()); }
+
 template <typename scalar_t>
 void update_2d_rows_cpu(
         torch::Tensor &original,
@@ -678,7 +681,7 @@ std::tuple<torch::Tensor,torch::Tensor> get_cheb_data(
         ){
     int n = (int) pow(cheb_nodes.size(0),d);
     torch::Tensor cheb_idx = torch::zeros({n,d}).toType(torch::kInt32).to(gpu_device);
-    torch::Tensor cheb_data = torch::zeros({n,d}).toType(torch::kFloat32).to(gpu_device);
+    torch::Tensor cheb_data = torch::zeros({n,d}).toType(dtype<scalar_t>()).to(gpu_device);
     dim3 block,grid;
     int shared;
     std::tie(block,grid,shared) =  get_kernel_launch_params<scalar_t>(d,n);
@@ -687,7 +690,7 @@ std::tuple<torch::Tensor,torch::Tensor> get_cheb_data(
             cheb_data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
             cheb_idx.packed_accessor32<int,2,torch::RestrictPtrTraits>()
             );
-    
+
     return std::make_tuple(cheb_idx,cheb_data);
 
 }
@@ -709,6 +712,9 @@ torch::Tensor FFM(
     near_field = torch::zeros({1,2}).toType(torch::kInt32).to(gpu_device);
     float min_points = pow((float) laplace_nodes,nd);
     torch::Tensor chebnodes_1D = chebyshev_nodes_1D(laplace_nodes).to(gpu_device); //get chebyshev nodes, laplace_nodes is fixed now, should probably be a variable
+    torch::Tensor cheb_data_X,laplace_combinations;
+    std::tie(laplace_combinations,cheb_data_X)=get_cheb_data<scalar_t>(chebnodes_1D,nd,gpu_device);
+
     //Could probably rewrite this...
 
     torch::Tensor interactions_x,interactions_y,interactions_x_parsed;
