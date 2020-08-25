@@ -542,25 +542,26 @@ torch::Tensor setup_skip_conv(torch::Tensor &cheb_data,
                               scalar_t & ls,
                               const std::string & device_gpu,
                               torch::Tensor & interactions_x_parsed,
-                              torch::Tensor & interactions_y
+                              torch::Tensor & interactions_y,
+                              torch::Tensor & edge
 ){
     scalar_t *d_ls;
-    int *d_min_size;
+    int *d_cheb_data_size;
     cudaMalloc((void **)&d_ls, sizeof(scalar_t));
     cudaMemcpy(d_ls, &ls, sizeof(scalar_t), cudaMemcpyHostToDevice);
     torch::Tensor indicator,box_block,output;
-    int min_size=cheb_data.size(0);
-    int blkSize = optimal_blocksize(min_size);
+    int cheb_data_size=cheb_data.size(0);
+    int blkSize = optimal_blocksize(cheb_data_size);
 //    torch::Tensor boxes_count = min_size*torch::ones({unique_sorted_boxes_idx.size(0)+1}).toType(torch::kInt32);
-    torch::Tensor boxes_count = min_size*torch::ones(unique_sorted_boxes_idx.size(0)).toType(torch::kInt32).to(device_gpu);
+    torch::Tensor boxes_count = cheb_data_size * torch::ones(unique_sorted_boxes_idx.size(0)).toType(torch::kInt32).to(device_gpu);
     dim3 blockSize,gridSize;
     int memory,required_shared_mem;
     unique_sorted_boxes_idx = unique_sorted_boxes_idx.toType(torch::kInt32);
     std::tie(blockSize,gridSize,memory,indicator,box_block) = skip_kernel_launch<scalar_t>(nd,blkSize,boxes_count,unique_sorted_boxes_idx);
     output = torch::zeros_like(b_data);
-    required_shared_mem = (min_size*(nd+1)+nd)*sizeof(scalar_t);
-    cudaMalloc((void **)&d_min_size, sizeof(int));
-    cudaMemcpy(d_min_size, &min_size, sizeof(int), cudaMemcpyHostToDevice);
+    required_shared_mem = (cheb_data_size * (nd + 1) + nd) * sizeof(scalar_t);
+    cudaMalloc((void **)&d_cheb_data_size, sizeof(int));
+    cudaMemcpy(d_cheb_data_size, &cheb_data_size, sizeof(int), cudaMemcpyHostToDevice);
 
     if (required_shared_mem<=SHAREDMEMPERBLOCK/8){
         skip_conv_far_boxes_opt<scalar_t><<<gridSize,blockSize,required_shared_mem>>>(
@@ -573,7 +574,8 @@ torch::Tensor setup_skip_conv(torch::Tensor &cheb_data,
                 centers_Y.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                 indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
                 box_block.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                d_min_size,
+                d_cheb_data_size,
+                edge.data_ptr<scalar_t>(),
                 interactions_x_parsed.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
                 interactions_y.packed_accessor32<int,1,torch::RestrictPtrTraits>()
         );
@@ -589,7 +591,10 @@ torch::Tensor setup_skip_conv(torch::Tensor &cheb_data,
                 centers_Y.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                 indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
                 box_block.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                d_min_size
+                d_cheb_data_size,
+                edge.data_ptr<scalar_t>(),
+                interactions_x_parsed.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
+                interactions_y.packed_accessor32<int,1,torch::RestrictPtrTraits>()
         );
     }
     return output;
@@ -632,7 +637,8 @@ torch::Tensor far_field_compute_v2(
             ls,
             device_gpu,
             interactions_x_parsed,
-            interactions_y
+            interactions_y,
+            x_box.edge
             );
 
     apply_laplace_interpolation_v2<scalar_t>(x_box,
@@ -642,16 +648,17 @@ torch::Tensor far_field_compute_v2(
                                             laplace_combinations,
                                             false,
                                             output);
+    return torch::zeros({10,2});
 
 };
 std::tuple<torch::Tensor,torch::Tensor> get_new_interactions(torch::Tensor & old_near_interactions, int & p,const std::string & gpu_device){
     int n = old_near_interactions.size(0);
-    old_near_interactions = old_near_interactions.repeat_interleave(p*p,0);
-    torch::Tensor arr = torch::arange(p).to(gpu_device);
+    std::vector<torch::Tensor> unbound_old = torch::unbind(old_near_interactions.repeat_interleave(p*p,0),1);
+    torch::Tensor arr = torch::arange(p).toType(torch::kInt32).to(gpu_device);
 //    torch::Tensor test = arr.repeat(p*n);
 //    torch::Tensor test_2 = arr.repeat_interleave(p).repeat(n);
-    torch::Tensor interaction_x = arr.repeat_interleave(p).repeat(n)+p*old_near_interactions;
-    torch::Tensor interaction_y = arr.repeat(p*n)+p*old_near_interactions;
+    torch::Tensor interaction_x = arr.repeat_interleave(p).repeat(n)+p*unbound_old[0];
+    torch::Tensor interaction_y = arr.repeat(p*n)+p*unbound_old[1];
 
 //    torch::Tensor new_interactions_vec = torch::stack({arr.repeat_interleave(p).repeat(n),arr.repeat(p*n)},1).to(gpu_device)+p*old_near_interactions;
     return std::make_tuple(interaction_x,interaction_y);
@@ -660,7 +667,7 @@ std::tuple<torch::Tensor,torch::Tensor> get_new_interactions(torch::Tensor & old
 torch::Tensor process_interactions(torch::Tensor & interactions,int x_boxes,const std::string & gpu_device){
     torch::Tensor box_indices,tmp,counts,count_cumsum,results;
     std::tie(box_indices,tmp,counts) = torch::_unique2(interactions,true,false,true);
-    count_cumsum = torch::cat({box_indices,counts.cumsum(0).toType(torch::kInt32)},1);  //64+1 vec
+    count_cumsum = torch::stack({box_indices.toType(torch::kInt32),counts.cumsum(0).toType(torch::kInt32)},1);  //64+1 vec
     results = -torch::ones({x_boxes,2}).toType(torch::kInt32).to(gpu_device);
     dim3 blockSize,gridSize;
     int memory;
@@ -674,9 +681,9 @@ torch::Tensor process_interactions(torch::Tensor & interactions,int x_boxes,cons
 }
 
 template<typename scalar_t>
-std::tuple<torch::Tensor,torch::Tensor> get_cheb_data(
+std::tuple<torch::Tensor,torch::Tensor> parse_cheb_data(
         torch::Tensor & cheb_nodes,
-        int &d,
+        int d,
         const std::string & gpu_device
         ){
     int n = (int) pow(cheb_nodes.size(0),d);
@@ -713,7 +720,7 @@ torch::Tensor FFM(
     float min_points = pow((float) laplace_nodes,nd);
     torch::Tensor chebnodes_1D = chebyshev_nodes_1D(laplace_nodes).to(gpu_device); //get chebyshev nodes, laplace_nodes is fixed now, should probably be a variable
     torch::Tensor cheb_data_X,laplace_combinations;
-    std::tie(laplace_combinations,cheb_data_X)=get_cheb_data<scalar_t>(chebnodes_1D,nd,gpu_device);
+    std::tie(laplace_combinations,cheb_data_X)=parse_cheb_data<scalar_t>(chebnodes_1D,nd,gpu_device);
 
     //Could probably rewrite this...
 

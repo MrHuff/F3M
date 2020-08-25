@@ -287,7 +287,10 @@ __device__ int calculate_box_ind(int &current_thread_idx,
 }
 
 template <typename scalar_t>
-__device__ void xy_l1_dist(scalar_t * c_X,scalar_t * c_Y,scalar_t * dist){
+__device__ void xy_l1_dist(
+        scalar_t * c_X,
+        const torch::PackedTensorAccessor32<scalar_t,1,torch::RestrictPtrTraits> c_Y,
+        scalar_t * dist){
 #pragma unroll
     for (int k = 0; k < nd; k++) {
         dist[k] = c_Y[k]-c_X[k];
@@ -501,6 +504,7 @@ __global__ void laplace_shared(
             if (i < b) { // we compute x1i only if needed
                 int *yjrel = yj; // Loop on the columns of the current block.
                 for (int jrel = 0; (jrel < blockDim.x) && (jrel < *cheb_data_size - jstart); jrel++, yjrel += nd) {
+                    //Do shuffle if possible...
                     atomicAdd(&output[jstart+jrel+box_ind**cheb_data_size][b_ind],calculate_laplace_product(l_p, x_i, yjrel,b_i)); //for each p, sum accross x's...
                 }
             }
@@ -580,25 +584,26 @@ __global__ void laplace_shared_transpose(
 //Both these needs updating, i.e. pass additional appendage vector and pass interaction vector.
 
 template <typename scalar_t>
-__global__ void skip_conv_far_cookie(const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> cheb_data,
-                                    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data,
-                                    torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output,
-                                    scalar_t * ls,
-                                    rbf_pointer<scalar_t> op,
-                                     const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers_X,//Actually make a boolean mask
-                                     const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers_Y,//Actually
-                                    const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> indicator,
-                                    const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> box_block_indicator,
-                                    const int * cheb_data_size,
-                                     const scalar_t * edge
+__global__ void skip_conv_far_cookie(
+                        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> cheb_data,
+                        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data,
+                        torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output,
+                        scalar_t * ls,
+                        rbf_pointer<scalar_t> op,
+                        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers_X,
+                        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers_Y,
+                        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> indicator,
+                        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> box_block_indicator,
+                        const int * cheb_data_size,
+                        const scalar_t * edge,
+                        const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> interactions_x_parsed,
+                        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> interactions_y
 ){
     int box_ind,a,b;
     box_ind = indicator[blockIdx.x];
     a = box_ind * *cheb_data_size;
     b = (box_ind+1) * *cheb_data_size;
-
     int i = a + threadIdx.x+box_block_indicator[blockIdx.x]*blockDim.x; // Use within box, block index i.e. same size as indicator...
-    unsigned int M = centers_X.size(0);
     scalar_t x_i[nd];
     scalar_t y_j[nd];
 
@@ -621,17 +626,15 @@ __global__ void skip_conv_far_cookie(const torch::PackedTensorAccessor32<scalar_
 //    printf("thread %i: %i\n",i,box_ind);
     for (int b_ind=0; b_ind < b_data.size(1); b_ind++) { //for all dims of b
         acc=0.0;
-        for (int m = 0; m < M; m++) { // iterate through every existing ybox, consider feasible interactions?
 
-
+        for (int m = interactions_x_parsed[box_ind][0]; m < interactions_x_parsed[box_ind][1]; m++) {
             if(threadIdx.x==0){
-                xy_l1_dist(cX_i,centers_Y[m],distance);
+                distance[threadIdx.x]=centers_Y[interactions_y[m]][threadIdx.x] - cX_i[threadIdx.x];
+//                xy_l1_dist<scalar_t>(cX_i,centers_Y[interactions_y[m]],distance);
             }
             __syncthreads();
 
             if (get_2_norm(distance)>2**edge) { //if there is an interaction
-
-
                 for (int jstart = 0, tile = 0; jstart < *cheb_data_size; jstart += blockDim.x, tile++) {
                     int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
                     if (j < *cheb_data_size) { // I dont think these are being loaded correctly!!!
@@ -666,7 +669,8 @@ __global__ void skip_conv_far_cookie(const torch::PackedTensorAccessor32<scalar_
 
 //Thrust
 template <typename scalar_t>
-__global__ void skip_conv_far_boxes_opt(const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> cheb_data,
+__global__ void skip_conv_far_boxes_opt(
+                                    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> cheb_data,
                                     const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data,
                                     torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output,
                                     scalar_t * ls,
@@ -686,7 +690,6 @@ __global__ void skip_conv_far_boxes_opt(const torch::PackedTensorAccessor32<scal
     a = box_ind* *cheb_data_size;
     b = (box_ind+1)* *cheb_data_size;
     int i = a + threadIdx.x+box_block_indicator[blockIdx.x]*blockDim.x; // Use within box, block index i.e. same size as indicator...
-    unsigned int M = centers_Y.size(0);
     scalar_t x_i[nd];
     scalar_t y_j[nd];
     scalar_t acc;
@@ -719,23 +722,17 @@ __global__ void skip_conv_far_boxes_opt(const torch::PackedTensorAccessor32<scal
 //    printf("thread %i: %i\n",i,box_ind);
     for (int b_ind=0; b_ind < b_data.size(1); b_ind++) { //for all dims of b A*b, b \in \mathbb{R}^{n\times d}, d>=1.
         acc=0.0;
-        //{0: [1,2,3,4,5], 1:[7,3,8], ...
-        // }
-        //v = data_struct[box_ind]
-        //for (auto :el &v){
-        // do stuff
-        // }
         //Cheap idea: get raw data box data [0;0;0;1...],[1,2,3;0...], [box_ind_X <-interacts with-> box_ind_Y]
         //mask and load into shared memory... or do indicator vector of start and end
         //Joan know how: Be careful when transfer data structure. Move it share-memory!
         //Hmmm think its better to concatenate and pass info as a  -> [x_box_ind, start_idx,end_idx]
         //interaction should be sorted...
 
-        for (int m = 0; m < M; m++) { // iterate through every existing ybox
-            //Check interaction dataobject...
-
-            if(threadIdx.x==0){
-                xy_l1_dist(cX_i,centers_Y[m],distance);
+        for (int m = interactions_x_parsed[box_ind][0]; m < interactions_x_parsed[box_ind][1]; m++) {
+            //m here is the index of the valid y boxes for box_ind
+            //Access the actual box by taking interactions_y[m]
+            if(threadIdx.x<nd){
+                distance[threadIdx.x]=centers_Y[interactions_y[m]][threadIdx.x] - cX_i[threadIdx.x];
             }
             __syncthreads();
 
@@ -765,7 +762,7 @@ __global__ void skip_conv_far_boxes_opt(const torch::PackedTensorAccessor32<scal
                     //be smarter about this...
                     //Concurrency rip...
                     //atomic append.
-                    //empty_global_nearfield_data.append({box_ind,m})
+                    //empty_global_nearfield_data.append({box_ind,interactions_y[m]})
                     //
                 }
             }
@@ -820,7 +817,7 @@ __global__ void get_cheb_idx_data(
     int idx;
     __syncthreads();
     for (int j=0;j<d;j++){
-        idx = (int) ceil(i/pow(lap_nodes,j));
+        idx = (int) floor((i%(int)pow(lap_nodes,j+1))/pow(lap_nodes,j));
         cheb_idx[i][j] = idx;
         cheb_data[i][j] = cheb_nodes[idx];
     }
