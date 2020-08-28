@@ -336,7 +336,9 @@ __global__ void skip_conv_1d(const torch::PackedTensorAccessor32<scalar_t,2,torc
                              const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_boxes_count,
                              const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> y_boxes_count,
                              const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_box_idx,
-                             const scalar_t * edge
+                             const scalar_t * edge,
+                             const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> interactions_x_parsed,
+                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> interactions_y
 ){
     int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
     unsigned int x_n = X_data.size(0);
@@ -355,17 +357,15 @@ __global__ void skip_conv_1d(const torch::PackedTensorAccessor32<scalar_t,2,torc
 //    printf("thread %i: %i\n",i,box_ind);
     for (int b_ind=0; b_ind < b_data.size(1); b_ind++) { //for all dims of b
         acc=0.0;
-        for (int j = 0; j < M; j++) { // iterate through every existing ybox
-            if (!far_field_comp<scalar_t>(cX_i,centers_Y[j],edge)) { //if there is an interaction
-                start = y_boxes_count[j]; // 0 to something
-                end = y_boxes_count[j + 1]; // seomthing
-                for (int j_2 = start; j_2 < end; j_2++) {
-                    for (int k = 0; k < nd; k++) {
-                        y_j[k] = Y_data[j_2][k];
-                    };
-                    acc += (*op)(x_i, y_j, ls) * b_data[j_2][b_ind];
+        for (int j = interactions_x_parsed[box_ind][0]; j < interactions_x_parsed[box_ind][1]; j++) { // iterate through every existing ybox
+            start = y_boxes_count[interactions_y[j]]; // 0 to something
+            end = y_boxes_count[interactions_y[j] + 1]; // seomthing
+            for (int j_2 = start; j_2 < end; j_2++) {
+                for (int k = 0; k < nd; k++) {
+                    y_j[k] = Y_data[j_2][k];
+                };
+                acc += (*op)(x_i, y_j, ls) * b_data[j_2][b_ind];
 
-                }
             }
         }
         output[i][b_ind] = acc;
@@ -390,7 +390,9 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor32<scalar_t
                              const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> box_block_indicator,
                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_idx_reordering,
                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> y_idx_reordering,
-                                    const scalar_t * edge
+                            const scalar_t * edge,
+                            const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> interactions_x_parsed,
+                            const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> interactions_y
 
 ){
     int box_ind,start,end,a,b;
@@ -421,29 +423,27 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor32<scalar_t
 //    printf("thread %i: %i\n",i,box_ind);
     for (int b_ind=0; b_ind < b_data.size(1); b_ind++) { //for all dims of b
         acc=0.0;
-        for (int m = 0; m < M; m++) { // iterate through every existing ybox
+
+        for (int m = interactions_x_parsed[box_ind][0]; m < interactions_x_parsed[box_ind][1]; m++) {
             //Pass near field interactions...
-            if (!far_field_comp<scalar_t>(cX_i,centers_Y[m],edge)) { //if there is an interaction
-                start = y_boxes_count[m]; // 0 to something
-                end = y_boxes_count[m + 1]; // seomthing
-
-                for (int jstart = start, tile = 0; jstart < end; jstart += blockDim.x, tile++) {
-                    int j = start+tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
-                    if (j < end) { // we load yj from device global memory only if j<ny
-                        torch_load_y_v2<scalar_t>(j, yj, Y_data,y_idx_reordering);
-                        torch_load_b_v2<scalar_t>(b_ind ,j, bj, b_data,y_idx_reordering);
+            start = y_boxes_count[interactions_y[m]]; // 0 to something
+            end = y_boxes_count[interactions_y[m] + 1]; // seomthing
+            for (int jstart = start, tile = 0; jstart < end; jstart += blockDim.x, tile++) {
+                int j = start+tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
+                if (j < end) { // we load yj from device global memory only if j<ny
+                    torch_load_y_v2<scalar_t>(j, yj, Y_data,y_idx_reordering);
+                    torch_load_b_v2<scalar_t>(b_ind ,j, bj, b_data,y_idx_reordering);
+                }
+                __syncthreads();
+                if (i < b) { // we compute x1i only if needed
+                    scalar_t *yjrel = yj; // Loop on the columns of the current block.
+                    for (int jrel = 0; (jrel < blockDim.x) && (jrel < end - jstart); jrel++, yjrel += nd) {
+                        acc += (*op)(x_i, yjrel,ls) * bj[jrel]; //sums incorrectly cause pointer is fucked not sure if allocating properly
                     }
-                    __syncthreads();
-                    if (i < b) { // we compute x1i only if needed
-                        scalar_t *yjrel = yj; // Loop on the columns of the current block.
-                        for (int jrel = 0; (jrel < blockDim.x) && (jrel < end - jstart); jrel++, yjrel += nd) {
-                            acc += (*op)(x_i, yjrel,ls) * bj[jrel]; //sums incorrectly cause pointer is fucked not sure if allocating properly
-                        }
-                    }
-                    __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
-                };
+                }
+                __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
+            };
 
-            }
         }
         if (i < b) {
             output[x_idx_reordering[i]][b_ind] += acc;
@@ -597,9 +597,11 @@ __global__ void skip_conv_far_cookie(
                         const int * cheb_data_size,
                         const scalar_t * edge,
                         const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> interactions_x_parsed,
-                        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> interactions_y
+                        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> interactions_y,
+                        torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> near_field_interactions,
+                        int * count_ptr
 ){
-    int box_ind,a,b;
+    int box_ind,a,b,tmp_count;
     box_ind = indicator[blockIdx.x];
     a = box_ind * *cheb_data_size;
     b = (box_ind+1) * *cheb_data_size;
@@ -639,7 +641,7 @@ __global__ void skip_conv_far_cookie(
                     int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
                     if (j < *cheb_data_size) { // I dont think these are being loaded correctly!!!
                         torch_load_y<scalar_t>(j, yj, cheb_data);
-                        torch_load_b<scalar_t>(b_ind ,j+m * *cheb_data_size, bj, b_data); //b's are incorrectly loaded
+                        torch_load_b<scalar_t>(b_ind ,j+interactions_y[m] * *cheb_data_size, bj, b_data); //b's are incorrectly loaded
                     }
                     __syncthreads();
                     if (i < b) { // we compute x1i only if needed
@@ -655,7 +657,16 @@ __global__ void skip_conv_far_cookie(
 
                 __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
 
+            }else{
+                if ((threadIdx.x==0)&(box_block_indicator[blockIdx.x]==0)){
+                    tmp_count = atomicAdd(count_ptr, 1);
+                    near_field_interactions[tmp_count][0] = box_ind;
+                    near_field_interactions[tmp_count][1] = interactions_y[m];
+                }
+
             }
+            __syncthreads();
+
         }
         if (i < b) {
             output[i][b_ind] += acc;
@@ -682,10 +693,13 @@ __global__ void skip_conv_far_boxes_opt(
                                     const int * cheb_data_size,
                                     const scalar_t * edge,
                                     const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> interactions_x_parsed,
-                                    const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> interactions_y
+                                    const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> interactions_y,
+                                    torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> near_field_interactions,
+                                    int * count_ptr
 
 ){
-    int box_ind,a,b;
+    int box_ind,a,b,tmp_count;
+
     box_ind = indicator[blockIdx.x];
     a = box_ind* *cheb_data_size;
     b = (box_ind+1)* *cheb_data_size;
@@ -697,7 +711,7 @@ __global__ void skip_conv_far_boxes_opt(
     scalar_t *yj = &buffer[0];
     scalar_t *bj = &buffer[*cheb_data_size*nd];
     scalar_t *distance = &buffer[*cheb_data_size*(nd+1)];
-    scalar_t *cX_i = &buffer[(blockDim.x)*(nd+1)+nd]; //Get another shared memory pointer.
+    scalar_t *cX_i = &buffer[*cheb_data_size*(nd+1)+nd]; //Get another shared memory pointer.
     //int *block_indicator = &buffer[(blockDim.x)*(nd+1)+2*nd]; //Should be fine...
 
     if (threadIdx.x<nd){
@@ -741,7 +755,7 @@ __global__ void skip_conv_far_boxes_opt(
                 for (int jstart = 0, tile = 0; jstart < *cheb_data_size; jstart += blockDim.x, tile++) {
                     int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
                     if (j < *cheb_data_size) {
-                        bj[j] = b_data[j + m * *cheb_data_size][b_ind];
+                        bj[j] = b_data[j + interactions_y[m] * *cheb_data_size][b_ind];
                     }
                     __syncthreads(); //Need to be smart with this, don't slow down the others!
                     if (i < b) { // we compute x1i only if needed
@@ -757,15 +771,13 @@ __global__ void skip_conv_far_boxes_opt(
 
             }else{
                 if ((threadIdx.x==0)&(box_block_indicator[blockIdx.x]==0)){
-                    //Use thrust for append that's hopefully concurrency safe...
-                    //Else precompute
-                    //be smarter about this...
-                    //Concurrency rip...
-                    //atomic append.
-                    //empty_global_nearfield_data.append({box_ind,interactions_y[m]})
-                    //
+                    tmp_count = atomicAdd(count_ptr, 1);
+                    near_field_interactions[tmp_count][0] = box_ind;
+                    near_field_interactions[tmp_count][1] = interactions_y[m];
                 }
             }
+            __syncthreads();
+
         }
         if (i < b) { // we compute x1i only if needed
             output[i][b_ind] += acc;
