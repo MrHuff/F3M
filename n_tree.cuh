@@ -609,7 +609,6 @@ std::tuple<torch::Tensor,torch::Tensor> setup_skip_conv(torch::Tensor &cheb_data
     }
 
     near_field_interactions = near_field_interactions.index({(near_field_interactions.slice(1,0,1)>-1).squeeze(),torch::indexing::Slice()});
-    near_field_interactions = near_field_interactions.index({torch::argsort(near_field_interactions.slice(1,0,1).squeeze()),torch::indexing::Slice()});
     return std::make_tuple(output,near_field_interactions);
 }
 
@@ -667,15 +666,17 @@ torch::Tensor far_field_compute_v2(
 };
 std::tuple<torch::Tensor,torch::Tensor> get_new_interactions(torch::Tensor & old_near_interactions, int & p,const std::string & gpu_device){
     int n = old_near_interactions.size(0);
-    std::vector<torch::Tensor> unbound_old = torch::unbind(old_near_interactions.repeat_interleave(p*p,0),1);
+//    std::vector<torch::Tensor> unbound_old = torch::unbind(old_near_interactions.repeat_interleave(p*p,0),1);
     torch::Tensor arr = torch::arange(p).toType(torch::kInt32).to(gpu_device);
 //    torch::Tensor test = arr.repeat(p*n);
 //    torch::Tensor test_2 = arr.repeat_interleave(p).repeat(n);
-    torch::Tensor interaction_x = arr.repeat_interleave(p*n)+p*unbound_old[0];
-    torch::Tensor interaction_y = arr.repeat(p*n)+p*unbound_old[1];
+//    torch::Tensor interaction_x = p*unbound_old[0] + arr.repeat_interleave(p).repeat(n);
+//    torch::Tensor interaction_y = p*unbound_old[1] + arr.repeat(p*n);
 
-//    torch::Tensor new_interactions_vec = torch::stack({arr.repeat_interleave(p).repeat(n),arr.repeat(p*n)},1).to(gpu_device)+p*old_near_interactions;
-    return std::make_tuple(interaction_x,interaction_y);
+    torch::Tensor new_interactions_vec = torch::stack({arr.repeat_interleave(p).repeat(n),arr.repeat(p*n)},1)+p*old_near_interactions.repeat_interleave(p*p,0);
+    new_interactions_vec = new_interactions_vec.index({torch::argsort(new_interactions_vec.slice(1,0,1).squeeze()),torch::indexing::Slice()});
+    std::vector<torch::Tensor> unbound = torch::unbind(new_interactions_vec,1);
+    return std::make_tuple(unbound[0],unbound[1]);
 }
 
 torch::Tensor process_interactions(torch::Tensor & interactions,int x_boxes,const std::string & gpu_device){
@@ -744,31 +745,31 @@ torch::Tensor FFM(
     //Could probably rewrite this...
 
     torch::Tensor interactions_x,interactions_y,interactions_x_parsed;
-    while (near_field.numel()>0 and ntree_X.avg_nr_points > min_points and ntree_Y.avg_nr_points > min_points){
-        ntree_X.divide();//divide ALL boxes recursively once
-        ntree_Y.divide();//divide ALL boxes recursively once
-        std::tie(interactions_x,interactions_y) = get_new_interactions(near_field,ntree_X.dim_fac,gpu_device);
-        interactions_x_parsed = process_interactions(interactions_x,ntree_X.centers.size(0),gpu_device);
-
-        torch::Tensor cheb_data = cheb_data_X*ntree_X.edge/2.+ntree_X.edge/2.;
-        near_field = far_field_compute_v2<scalar_t>(
-                interactions_x_parsed,
-                interactions_y,
-                ntree_X,
-                ntree_Y,
-                output,
-                b,
-                gpu_device,
-                dist_far_field,
-                ls,
-                op,
-                chebnodes_1D,
-                laplace_combinations,
-                cheb_data
-                ); //far field compute
-
-//        }
-    }
+//    while (near_field.numel()>0 and ntree_X.avg_nr_points > min_points and ntree_Y.avg_nr_points > min_points){
+    ntree_X.divide();//divide ALL boxes recursively once
+    ntree_Y.divide();//divide ALL boxes recursively once
+    std::tie(interactions_x,interactions_y) = get_new_interactions(near_field,ntree_X.dim_fac,gpu_device);
+    near_field = torch::stack({interactions_x,interactions_y},1);
+//    interactions_x_parsed = process_interactions(interactions_x,ntree_X.centers.size(0),gpu_device);
+//    torch::Tensor cheb_data = cheb_data_X*ntree_X.edge/2.+ntree_X.edge/2.;
+//        near_field = far_field_compute_v2<scalar_t>(
+//                interactions_x_parsed,
+//                interactions_y,
+//                ntree_X,
+//                ntree_Y,
+//                output,
+//                b,
+//                gpu_device,
+//                dist_far_field,
+//                ls,
+//                op,
+//                chebnodes_1D,
+//                laplace_combinations,
+//                cheb_data
+//                ); //far field compute
+//
+////        }
+//    }
     if (near_field.numel()>0){
         std::tie(interactions_x,interactions_y) = unbind_nearfield(near_field);
         interactions_x_parsed = process_interactions(interactions_x,ntree_X.centers.size(0),gpu_device);

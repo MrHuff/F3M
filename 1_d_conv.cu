@@ -345,14 +345,12 @@ __global__ void skip_conv_1d(const torch::PackedTensorAccessor32<scalar_t,2,torc
     unsigned int M = centers_X.size(0);
     if (i>x_n-1){return;}
     scalar_t x_i[nd];
-    scalar_t cX_i[nd];
     scalar_t y_j[nd];
     scalar_t acc;
     int box_ind,start,end;
     box_ind = calculate_box_ind(i,x_boxes_count,x_box_idx);
     for (int k=0;k<nd;k++){
         x_i[k] = X_data[i][k];
-        cX_i[k] = centers_X[box_ind][k];
     }
 //    printf("thread %i: %i\n",i,box_ind);
     for (int b_ind=0; b_ind < b_data.size(1); b_ind++) { //for all dims of b
@@ -417,8 +415,6 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor32<scalar_t
             x_i[k] = X_data[x_idx_reordering[i]][k];
         }
     }
-
-
 //    box_ind = calculate_box_ind(i,x_boxes_count,x_box_idx);
 //    printf("thread %i: %i\n",i,box_ind);
     for (int b_ind=0; b_ind < b_data.size(1); b_ind++) { //for all dims of b
