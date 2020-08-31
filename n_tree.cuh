@@ -745,31 +745,33 @@ torch::Tensor FFM(
     //Could probably rewrite this...
 
     torch::Tensor interactions_x,interactions_y,interactions_x_parsed;
-//    while (near_field.numel()>0 and ntree_X.avg_nr_points > min_points and ntree_Y.avg_nr_points > min_points){
-    ntree_X.divide();//divide ALL boxes recursively once
-    ntree_Y.divide();//divide ALL boxes recursively once
-    std::tie(interactions_x,interactions_y) = get_new_interactions(near_field,ntree_X.dim_fac,gpu_device);
-    near_field = torch::stack({interactions_x,interactions_y},1);
-//    interactions_x_parsed = process_interactions(interactions_x,ntree_X.centers.size(0),gpu_device);
-//    torch::Tensor cheb_data = cheb_data_X*ntree_X.edge/2.+ntree_X.edge/2.;
-//        near_field = far_field_compute_v2<scalar_t>(
-//                interactions_x_parsed,
-//                interactions_y,
-//                ntree_X,
-//                ntree_Y,
-//                output,
-//                b,
-//                gpu_device,
-//                dist_far_field,
-//                ls,
-//                op,
-//                chebnodes_1D,
-//                laplace_combinations,
-//                cheb_data
-//                ); //far field compute
-//
-////        }
-//    }
+    while (near_field.numel()>0 and ntree_X.avg_nr_points > min_points and ntree_Y.avg_nr_points > min_points){
+        ntree_X.divide();//divide ALL boxes recursively once
+        ntree_Y.divide();//divide ALL boxes recursively once
+        std::tie(interactions_x,interactions_y) = get_new_interactions(near_field,ntree_X.dim_fac,gpu_device);
+//        interactions_x_parsed = process_interactions(interactions_x,ntree_X.centers.size(0),gpu_device);
+
+        //reconsider approach, might just wanna calculate the far and near field and and then do the sorting and grouping...
+        //Actually this is a much cleaner solution... Implement this and start doing optimizations...
+        torch::Tensor cheb_data = cheb_data_X*ntree_X.edge/2.+ntree_X.edge/2.;
+        near_field = far_field_compute_v2<scalar_t>(
+                interactions_x_parsed,
+                interactions_y,
+                ntree_X,
+                ntree_Y,
+                output,
+                b,
+                gpu_device,
+                dist_far_field,
+                ls,
+                op,
+                chebnodes_1D,
+                laplace_combinations,
+                cheb_data
+                ); //far field compute
+
+//        }
+    }
     if (near_field.numel()>0){
         std::tie(interactions_x,interactions_y) = unbind_nearfield(near_field);
         interactions_x_parsed = process_interactions(interactions_x,ntree_X.centers.size(0),gpu_device);
