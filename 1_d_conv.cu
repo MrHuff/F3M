@@ -593,11 +593,9 @@ __global__ void skip_conv_far_cookie(
                         const int * cheb_data_size,
                         const scalar_t * edge,
                         const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> interactions_x_parsed,
-                        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> interactions_y,
-                        torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> near_field_interactions,
-                        int * count_ptr
+                        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> interactions_y
 ){
-    int box_ind,a,b,tmp_count;
+    int box_ind,a,b;
     box_ind = indicator[blockIdx.x];
     a = box_ind * *cheb_data_size;
     b = (box_ind+1) * *cheb_data_size;
@@ -632,36 +630,26 @@ __global__ void skip_conv_far_cookie(
             }
             __syncthreads();
 
-            if (get_2_norm(distance)>2**edge) { //if there is an interaction
-                for (int jstart = 0, tile = 0; jstart < *cheb_data_size; jstart += blockDim.x, tile++) {
-                    int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
-                    if (j < *cheb_data_size) { // I dont think these are being loaded correctly!!!
-                        torch_load_y<scalar_t>(j, yj, cheb_data);
-                        torch_load_b<scalar_t>(b_ind ,j+interactions_y[m] * *cheb_data_size, bj, b_data); //b's are incorrectly loaded
-                    }
-                    __syncthreads();
-                    if (i < b) { // we compute x1i only if needed
-                        scalar_t *yjrel = yj; // Loop on the columns of the current block.
-                        for (int jrel = 0; (jrel < blockDim.x) && (jrel < *cheb_data_size - jstart); jrel++, yjrel += nd) {
-                            for (int k=0;k<nd;k++){
-                                y_j[k] = yjrel[k]+distance[k];
-                            }
-                            acc += (*op)(x_i, y_j,ls) * bj[jrel]; //sums incorrectly cause pointer is fucked not sure if allocating properly
-                        }
-                    }
-                };
-
-                __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
-
-            }else{
-                if ((threadIdx.x==0)&(box_block_indicator[blockIdx.x]==0)){
-                    tmp_count = atomicAdd(count_ptr, 1);
-                    near_field_interactions[tmp_count][0] = box_ind;
-                    near_field_interactions[tmp_count][1] = interactions_y[m];
+            for (int jstart = 0, tile = 0; jstart < *cheb_data_size; jstart += blockDim.x, tile++) {
+                int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
+                if (j < *cheb_data_size) { // I dont think these are being loaded correctly!!!
+                    torch_load_y<scalar_t>(j, yj, cheb_data);
+                    torch_load_b<scalar_t>(b_ind ,j+interactions_y[m] * *cheb_data_size, bj, b_data); //b's are incorrectly loaded
                 }
+                __syncthreads();
+                if (i < b) { // we compute x1i only if needed
+                    scalar_t *yjrel = yj; // Loop on the columns of the current block.
+                    for (int jrel = 0; (jrel < blockDim.x) && (jrel < *cheb_data_size - jstart); jrel++, yjrel += nd) {
+                        for (int k=0;k<nd;k++){
+                            y_j[k] = yjrel[k]+distance[k];
+                        }
+                        acc += (*op)(x_i, y_j,ls) * bj[jrel]; //sums incorrectly cause pointer is fucked not sure if allocating properly
+                    }
+                }
+            };
 
-            }
-            __syncthreads();
+            __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
+
 
         }
         if (i < b) {
@@ -689,12 +677,10 @@ __global__ void skip_conv_far_boxes_opt(
                                     const int * cheb_data_size,
                                     const scalar_t * edge,
                                     const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> interactions_x_parsed,
-                                    const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> interactions_y,
-                                    torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> near_field_interactions,
-                                    int * count_ptr
+                                    const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> interactions_y
 
 ){
-    int box_ind,a,b,tmp_count;
+    int box_ind,a,b;
 
     box_ind = indicator[blockIdx.x];
     a = box_ind* *cheb_data_size;
@@ -745,35 +731,23 @@ __global__ void skip_conv_far_boxes_opt(
                 distance[threadIdx.x]=centers_Y[interactions_y[m]][threadIdx.x] - cX_i[threadIdx.x];
             }
             __syncthreads();
-
-            if (get_2_norm(distance)>2**edge) { //if there is an interaction
-
-                for (int jstart = 0, tile = 0; jstart < *cheb_data_size; jstart += blockDim.x, tile++) {
-                    int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
-                    if (j < *cheb_data_size) {
-                        bj[j] = b_data[j + interactions_y[m] * *cheb_data_size][b_ind];
-                    }
-                    __syncthreads(); //Need to be smart with this, don't slow down the others!
-                    if (i < b) { // we compute x1i only if needed
-                        scalar_t *yjrel = yj; // Loop on the columns of the current block.
-                        for (int j = 0; j < *cheb_data_size; j++, yjrel += nd) {
-                            for (int k = 0; k < nd; k++) {
-                                y_j[k] = yjrel[k] + distance[k];
-                            }                                    //store in don't be afraid of using tmp vals.
-                            acc += (*op)(x_i, y_j, ls) * bj[j]; //sums incorrectly cause pointer is fucked not sure if allocating properly
-                        }
-                    }
+            for (int jstart = 0, tile = 0; jstart < *cheb_data_size; jstart += blockDim.x, tile++) {
+                int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
+                if (j < *cheb_data_size) {
+                    bj[j] = b_data[j + interactions_y[m] * *cheb_data_size][b_ind];
                 }
-
-            }else{
-                if ((threadIdx.x==0)&(box_block_indicator[blockIdx.x]==0)){
-                    tmp_count = atomicAdd(count_ptr, 1);
-                    near_field_interactions[tmp_count][0] = box_ind;
-                    near_field_interactions[tmp_count][1] = interactions_y[m];
+                __syncthreads(); //Need to be smart with this, don't slow down the others!
+                if (i < b) { // we compute x1i only if needed
+                    scalar_t *yjrel = yj; // Loop on the columns of the current block.
+                    for (int j = 0; j < *cheb_data_size; j++, yjrel += nd) {
+                        for (int k = 0; k < nd; k++) {
+                            y_j[k] = yjrel[k] + distance[k];
+                        }                                    //store in don't be afraid of using tmp vals.
+                        acc += (*op)(x_i, y_j, ls) * bj[j]; //sums incorrectly cause pointer is fucked not sure if allocating properly
+                    }
                 }
             }
             __syncthreads();
-
         }
         if (i < b) { // we compute x1i only if needed
             output[i][b_ind] += acc;
@@ -831,3 +805,25 @@ __global__ void get_cheb_idx_data(
     }
 }
 
+template <typename scalar_t>
+__global__ void boolean_separate_interactions(
+        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers_X,
+        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers_Y,
+        const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> interactions,
+        const scalar_t * edge,
+        torch::PackedTensorAccessor32<bool,1,torch::RestrictPtrTraits> is_far_field
+
+){
+    int i = threadIdx.x+blockIdx.x*blockDim.x; // Thread nr
+    int n = interactions.size(0);
+    if (i>n){return;}
+    scalar_t distance[nd];
+    for (int k=0;k<nd;k++){
+        distance[k]=centers_Y[i][k] - centers_X[i][k];
+    }
+    if (get_2_norm(distance)>2**edge){
+        is_far_field[i]=true;
+    }
+
+
+}
