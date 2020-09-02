@@ -660,7 +660,7 @@ torch::Tensor get_new_interactions(torch::Tensor & old_near_interactions, int & 
 //    torch::Tensor interaction_y = p*unbound_old[1] + arr.repeat(p*n);
 
     torch::Tensor new_interactions_vec = torch::stack({arr.repeat_interleave(p).repeat(n),arr.repeat(p*n)},1)+p*old_near_interactions.repeat_interleave(p*p,0);
-//    new_interactions_vec = new_interactions_vec.index({torch::argsort(new_interactions_vec.slice(1,0,1).squeeze()),torch::indexing::Slice()});
+    new_interactions_vec = new_interactions_vec.index({torch::argsort(new_interactions_vec.slice(1,0,1).squeeze()),torch::indexing::Slice()});
 //    std::vector<torch::Tensor> unbound = torch::unbind(new_interactions_vec,1);
     return new_interactions_vec;
 }

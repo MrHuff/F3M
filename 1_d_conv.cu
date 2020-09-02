@@ -620,44 +620,49 @@ __global__ void skip_conv_far_cookie(
     }
 //    box_ind = calculate_box_ind(i,x_boxes_count,x_box_idx);
 //    printf("thread %i: %i\n",i,box_ind);
-    for (int b_ind=0; b_ind < b_data.size(1); b_ind++) { //for all dims of b
-        acc=0.0;
+    if (interactions_x_parsed[box_ind][0]>-1) {
 
-        for (int m = interactions_x_parsed[box_ind][0]; m < interactions_x_parsed[box_ind][1]; m++) {
-            if(threadIdx.x==0){
-                distance[threadIdx.x]=centers_Y[interactions_y[m]][threadIdx.x] - cX_i[threadIdx.x];
+        for (int b_ind = 0; b_ind < b_data.size(1); b_ind++) { //for all dims of b
+            acc = 0.0;
+
+            for (int m = interactions_x_parsed[box_ind][0]; m < interactions_x_parsed[box_ind][1]; m++) {
+                if (threadIdx.x == 0) {
+                    distance[threadIdx.x] = centers_Y[interactions_y[m]][threadIdx.x] - cX_i[threadIdx.x];
 //                xy_l1_dist<scalar_t>(cX_i,centers_Y[interactions_y[m]],distance);
-            }
-            __syncthreads();
-
-            for (int jstart = 0, tile = 0; jstart < *cheb_data_size; jstart += blockDim.x, tile++) {
-                int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
-                if (j < *cheb_data_size) { // I dont think these are being loaded correctly!!!
-                    torch_load_y<scalar_t>(j, yj, cheb_data);
-                    torch_load_b<scalar_t>(b_ind ,j+interactions_y[m] * *cheb_data_size, bj, b_data); //b's are incorrectly loaded
                 }
                 __syncthreads();
-                if (i < b) { // we compute x1i only if needed
-                    scalar_t *yjrel = yj; // Loop on the columns of the current block.
-                    for (int jrel = 0; (jrel < blockDim.x) && (jrel < *cheb_data_size - jstart); jrel++, yjrel += nd) {
-                        for (int k=0;k<nd;k++){
-                            y_j[k] = yjrel[k]+distance[k];
-                        }
-                        acc += (*op)(x_i, y_j,ls) * bj[jrel]; //sums incorrectly cause pointer is fucked not sure if allocating properly
+
+                for (int jstart = 0, tile = 0; jstart < *cheb_data_size; jstart += blockDim.x, tile++) {
+                    int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
+                    if (j < *cheb_data_size) { // I dont think these are being loaded correctly!!!
+                        torch_load_y<scalar_t>(j, yj, cheb_data);
+                        torch_load_b<scalar_t>(b_ind, j + interactions_y[m] * *cheb_data_size, bj,
+                                               b_data); //b's are incorrectly loaded
                     }
-                }
-            };
+                    __syncthreads();
+                    if (i < b) { // we compute x1i only if needed
+                        scalar_t *yjrel = yj; // Loop on the columns of the current block.
+                        for (int jrel = 0;
+                             (jrel < blockDim.x) && (jrel < *cheb_data_size - jstart); jrel++, yjrel += nd) {
+                            for (int k = 0; k < nd; k++) {
+                                y_j[k] = yjrel[k] + distance[k];
+                            }
+                            acc += (*op)(x_i, y_j, ls) *
+                                   bj[jrel]; //sums incorrectly cause pointer is fucked not sure if allocating properly
+                        }
+                    }
+                };
 
-            __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
+                __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
 
 
+            }
+            if (i < b) {
+                output[i][b_ind] += acc;
+            }
         }
-        if (i < b) {
-            output[i][b_ind] += acc;
-        }
+        __syncthreads();
     }
-    __syncthreads();
-
 }
 
 //[[0,1],[0,2],[0,3],[0,4],[0,5]...] ~ O(n_b^2x2)
@@ -716,47 +721,50 @@ __global__ void skip_conv_far_boxes_opt(
 
 //    box_ind = calculate_box_ind(i,x_boxes_count,x_box_idx);
 //    printf("thread %i: %i\n",i,box_ind);
-    for (int b_ind=0; b_ind < b_data.size(1); b_ind++) { //for all dims of b A*b, b \in \mathbb{R}^{n\times d}, d>=1.
-        acc=0.0;
-        //Cheap idea: get raw data box data [0;0;0;1...],[1,2,3;0...], [box_ind_X <-interacts with-> box_ind_Y]
-        //mask and load into shared memory... or do indicator vector of start and end
-        //Joan know how: Be careful when transfer data structure. Move it share-memory!
-        //Hmmm think its better to concatenate and pass info as a  -> [x_box_ind, start_idx,end_idx]
-        //interaction should be sorted...
+    if (interactions_x_parsed[box_ind][0]>-1) {
+        for (int b_ind = 0;
+             b_ind < b_data.size(1); b_ind++) { //for all dims of b A*b, b \in \mathbb{R}^{n\times d}, d>=1.
+            acc = 0.0;
+            //Cheap idea: get raw data box data [0;0;0;1...],[1,2,3;0...], [box_ind_X <-interacts with-> box_ind_Y]
+            //mask and load into shared memory... or do indicator vector of start and end
+            //Joan know how: Be careful when transfer data structure. Move it share-memory!
+            //Hmmm think its better to concatenate and pass info as a  -> [x_box_ind, start_idx,end_idx]
+            //interaction should be sorted...
 
-        for (int m = interactions_x_parsed[box_ind][0]; m < interactions_x_parsed[box_ind][1]; m++) {
-            //m here is the index of the valid y boxes for box_ind
-            //Access the actual box by taking interactions_y[m]
-            if(threadIdx.x<nd){
-                distance[threadIdx.x]=centers_Y[interactions_y[m]][threadIdx.x] - cX_i[threadIdx.x];
-            }
-            __syncthreads();
-            for (int jstart = 0, tile = 0; jstart < *cheb_data_size; jstart += blockDim.x, tile++) {
-                int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
-                if (j < *cheb_data_size) {
-                    bj[j] = b_data[j + interactions_y[m] * *cheb_data_size][b_ind];
+            for (int m = interactions_x_parsed[box_ind][0]; m < interactions_x_parsed[box_ind][1]; m++) {
+                //m here is the index of the valid y boxes for box_ind
+                //Access the actual box by taking interactions_y[m]
+                if (threadIdx.x < nd) {
+                    distance[threadIdx.x] = centers_Y[interactions_y[m]][threadIdx.x] - cX_i[threadIdx.x];
                 }
-                __syncthreads(); //Need to be smart with this, don't slow down the others!
-                if (i < b) { // we compute x1i only if needed
-                    scalar_t *yjrel = yj; // Loop on the columns of the current block.
-                    for (int j = 0; j < *cheb_data_size; j++, yjrel += nd) {
-                        for (int k = 0; k < nd; k++) {
-                            y_j[k] = yjrel[k] + distance[k];
-                        }                                    //store in don't be afraid of using tmp vals.
-                        acc += (*op)(x_i, y_j, ls) * bj[j]; //sums incorrectly cause pointer is fucked not sure if allocating properly
+                __syncthreads();
+                for (int jstart = 0, tile = 0; jstart < *cheb_data_size; jstart += blockDim.x, tile++) {
+                    int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
+                    if (j < *cheb_data_size) {
+                        bj[j] = b_data[j + interactions_y[m] * *cheb_data_size][b_ind];
+                    }
+                    __syncthreads(); //Need to be smart with this, don't slow down the others!
+                    if (i < b) { // we compute x1i only if needed
+                        scalar_t *yjrel = yj; // Loop on the columns of the current block.
+                        for (int j = 0; j < *cheb_data_size; j++, yjrel += nd) {
+                            for (int k = 0; k < nd; k++) {
+                                y_j[k] = yjrel[k] + distance[k];
+                            }                                    //store in don't be afraid of using tmp vals.
+                            acc += (*op)(x_i, y_j, ls) *
+                                   bj[j]; //sums incorrectly cause pointer is fucked not sure if allocating properly
+                        }
                     }
                 }
+                __syncthreads();
+            }
+            if (i < b) { // we compute x1i only if needed
+                output[i][b_ind] += acc;
             }
             __syncthreads();
-        }
-        if (i < b) { // we compute x1i only if needed
-            output[i][b_ind] += acc;
+
         }
         __syncthreads();
-
     }
-    __syncthreads();
-
 }
 
 
@@ -770,12 +778,13 @@ __global__ void parse_x_boxes(
     unsigned int nr_of_relevant_boxes = box_cumsum.size(0);
     for (int j=0;j<nr_of_relevant_boxes;j++){
         if(i==box_cumsum[j][0]){ //if match
-            if (i==0){
+            if (j==0){
                 results[i][0]=0;
             }else{
-                results[i][0]=box_cumsum[i-1][1];
+                results[i][0]=box_cumsum[j-1][1];
             }
-            results[i][1]=box_cumsum[i][1];
+            results[i][1]=box_cumsum[j][1];
+
         }
     }
     __syncthreads();
