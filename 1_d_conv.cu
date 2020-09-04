@@ -556,9 +556,7 @@ __global__ void laplace_shared_transpose(
             if (j < *cheb_data_size) { // we load yj from device global memory only if j<ny
                 torch_load_y<int>(j, yj, combinations);
                 torch_load_b<scalar_t>(b_ind, j + box_ind * *cheb_data_size, bj, b_data); //b's are incorrectly loaded
-
             }
-
             __syncthreads();
             if (i < b) { // we compute x1i only if needed
                 int *yjrel = yj; // Loop on the columns of the current block.
@@ -602,7 +600,6 @@ __global__ void skip_conv_far_cookie(
     int i = a + threadIdx.x+box_block_indicator[blockIdx.x]*blockDim.x; // Use within box, block index i.e. same size as indicator...
     scalar_t x_i[nd];
     scalar_t y_j[nd];
-
     scalar_t acc;
     extern __shared__ scalar_t buffer[];
     scalar_t *yj = &buffer[0];
@@ -631,7 +628,6 @@ __global__ void skip_conv_far_cookie(
 //                xy_l1_dist<scalar_t>(cX_i,centers_Y[interactions_y[m]],distance);
                 }
                 __syncthreads();
-
                 for (int jstart = 0, tile = 0; jstart < *cheb_data_size; jstart += blockDim.x, tile++) {
                     int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
                     if (j < *cheb_data_size) { // I dont think these are being loaded correctly!!!
@@ -652,10 +648,7 @@ __global__ void skip_conv_far_cookie(
                         }
                     }
                 };
-
                 __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
-
-
             }
             if (i < b) {
                 output[i][b_ind] += acc;
@@ -774,7 +767,7 @@ __global__ void parse_x_boxes(
         ){
     unsigned int nr_x_boxes = results.size(0);
     int i = threadIdx.x+blockIdx.x*blockDim.x; // Thread nr
-    if (i>nr_x_boxes){return;}
+    if (i>nr_x_boxes-1){return;}
     unsigned int nr_of_relevant_boxes = box_cumsum.size(0);
     for (int j=0;j<nr_of_relevant_boxes;j++){
         if(i==box_cumsum[j][0]){ //if match
@@ -799,7 +792,7 @@ __global__ void get_cheb_idx_data(
     int d = cheb_data.size(1);
     int n = cheb_data.size(0);
     int i = threadIdx.x+blockIdx.x*blockDim.x; // Thread nr
-    if (i>n){return;}
+    if (i>n-1){return;}
     int lap_nodes = cheb_nodes.size(0);
     extern __shared__ scalar_t buffer[];
     if (threadIdx.x<lap_nodes){
@@ -814,6 +807,23 @@ __global__ void get_cheb_idx_data(
     }
 }
 
+__global__ void get_centers(
+        torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> centers
+){
+    int d = centers.size(1);
+    int n = centers.size(0);
+    int i = threadIdx.x+blockIdx.x*blockDim.x; // Thread nr
+    if (i>n-1){return;}
+    int idx;
+    __syncthreads();
+    for (int j=0;j<d;j++){
+        idx = (int) floor((i%(int)pow(2,j+1))/pow(2,j));
+        centers[i][j] = (idx==0) ? -1 : 1;
+    }
+}
+
+
+
 template <typename scalar_t>
 __global__ void boolean_separate_interactions(
         const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers_X,
@@ -825,12 +835,14 @@ __global__ void boolean_separate_interactions(
 ){
     int i = threadIdx.x+blockIdx.x*blockDim.x; // Thread nr
     int n = interactions.size(0);
-    if (i>n){return;}
+    if (i>n-1){return;}
+    int by = interactions[i][1];
+    int bx = interactions[i][0];
     scalar_t distance[nd];
     for (int k=0;k<nd;k++){
-        distance[k]=centers_Y[i][k] - centers_X[i][k];
+        distance[k]=centers_Y[by][k] - centers_X[bx][k];
     }
-    if (get_2_norm(distance)>2**edge){
+    if (get_2_norm(distance)>=(*edge*2+1e-6)){
         is_far_field[i]=true;
     }
 

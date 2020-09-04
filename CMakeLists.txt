@@ -16,3 +16,4 @@ target_link_libraries(cuda_n_body cublas) #remember to add .lib for windows etc
 target_link_libraries(cuda_n_body "${TORCH_LIBRARIES}")
 set_property(TARGET torch_cuda PROPERTY INTERFACE_COMPILE_OPTIONS "")
 set_property(TARGET torch_cpu PROPERTY INTERFACE_COMPILE_OPTIONS "")
+#list( APPEND CUDA_NVCC_FLAGS --std=c++14;--ptxas-options=-v;-g;-G;-lineinfo;)

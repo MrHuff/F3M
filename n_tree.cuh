@@ -13,23 +13,6 @@
 template<typename T>
 at::ScalarType dtype() { return at::typeMetaToScalarType(caffe2::TypeMeta::Make<T>()); }
 
-template <typename scalar_t>
-void update_2d_rows_cpu(
-        torch::Tensor &original,
-        torch::Tensor &update,
-        torch::Tensor &rows){
-    int col = original.size(1);
-    int n = rows.size(0);
-    auto o_accessor = original.accessor<scalar_t,2>();
-    auto row_accessor = rows.accessor<long,1>();
-    auto u_accessor = update.accessor<scalar_t,2>();
-    for (int i = 0;i<n;i++){
-        for (int j=0; j<col;j++) {
-            o_accessor[row_accessor[i]][j]+=u_accessor[i][j];
-        }
-    }
-}
-
 std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> calculate_edge(const torch::Tensor &X,const torch::Tensor &Y){
     torch::Tensor Xmin = std::get<0>(X.min(0));
     torch::Tensor Xmax = std::get<0>(X.max(0));
@@ -39,86 +22,11 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> calculate_edge(const torch
     return std::make_tuple(edge*1.01,Xmin,Ymin);
 };
 
-template<typename T>
-T pop_front_get(std::vector<T> &v)
-{
-    if (!v.empty()) {
-        T t = v.front();
-        v.erase(v.begin());
-        return t;
-    }
-}
 
-std::vector<torch::Tensor> recursive_center(std::vector<torch::Tensor> &input, std::vector<torch::Tensor> &memory){
-    if (input.empty()){
-        return memory;
-    }
-    else{
-        const torch::Tensor &cut = pop_front_get(input);
-        torch::Tensor anti_cut = -1*cut;
-        if (memory.empty()){
-            memory.push_back(cut);
-            memory.push_back(anti_cut);
-            return recursive_center(input,memory);
-        }else{
-            std::vector<torch::Tensor> mem_copy = memory;
-            int d = mem_copy.size();
-            for (int i = 0; i < d; i++) {
-                memory[i] = torch::cat({memory[i],cut});
-            }
-            for (int i = 0; i < d; i++) {
-                memory.push_back(torch::cat({mem_copy[i],anti_cut}));
-            }
-            return recursive_center(input,memory);
-        }
-    }
-};
-
-
-std::vector<torch::Tensor> recursive_divide(std::vector<torch::Tensor> &input, std::vector<torch::Tensor> &memory){
-    if (input.empty()){
-        return memory;
-    }
-    else{
-        const torch::Tensor &cut = pop_front_get(input);
-        torch::Tensor anti_cut =torch::logical_not(cut);
-        if (memory.empty()){
-            memory.push_back(cut);
-            memory.push_back(anti_cut);
-            return recursive_divide(input,memory);
-        }else{
-            std::vector<torch::Tensor> mem_copy = memory;
-            int d = mem_copy.size();
-            for (int i = 0; i < d ; i++) {
-                memory[i] = memory[i] * cut;
-            }
-            for (int i = 0;  i < d; i++) {
-                memory.push_back(mem_copy[i] * anti_cut);
-            }
-            return recursive_divide(input,memory);
-        }
-    }
-
-};
-
-struct n_tree { //might want not have indexing in these to save memory and just the actual points...
-    int index;
-    int n_elems;
-    torch::Tensor row_indices;
-    torch::Tensor center;
-};
-std::ostream& operator<<(std::ostream& os, const n_tree& v)
-{
-    os<< "cube: "<<v.index<<" n_lemens: "<<v.n_elems<<" center: "<<'\n';
-    os<<v.center<<'\n';
-    return os;
-}
 template <typename scalar_t>
 struct n_tree_cuda{
     torch::Tensor &data;
     torch::Tensor edge,xmin,box_indicator,multiply,coord_tensor,sorted_index,unique_counts,box_indices_sorted,centers,tmp;
-    std::vector<torch::Tensor> output_coord = {};
-    std::vector<torch::Tensor> ones = {};
     std::string device;
     int dim,dim_fac,largest_box_n,depth;
     int *dim_fac_pointer;
@@ -139,22 +47,18 @@ struct n_tree_cuda{
         largest_box_n = unique_counts.max().item<int>();
         avg_nr_points =  unique_counts.toType(torch::kFloat32).mean().item<float>();
         multiply = torch::pow(2,torch::arange(dim).toType(torch::kInt32)).to(device);
-        for (int i=0;i<dim;i++){
-            ones.push_back(-1*torch::ones(1));
-        }
-        output_coord = recursive_center(ones,output_coord);
-        coord_tensor = torch::stack(output_coord,0).to(device);
+        coord_tensor = torch::zeros({dim_fac,dim}).toType(torch::kInt32).to(device);
+        get_centers<<<8,192>>>(coord_tensor.packed_accessor32<int,2,torch::RestrictPtrTraits>());
+        cudaDeviceSynchronize();
+
         centers = xmin + 0.5 * edge;
         centers = centers.unsqueeze(0);
         depth = 0;
     }
 
-    torch::Tensor get_centers_expanded(){
-        return centers.repeat_interleave(unique_counts.toType(torch::kLong),0);
-    }
-
     void divide(){
         torch::Tensor tmp_o = torch::zeros_like(box_indicator);
+//        torch::Tensor new_box_indices_sorted,tmp,new_unique_counts;
         dim3 blockSize,gridSize;
         int memory;
         std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(nd, data.size(0));
@@ -170,10 +74,11 @@ struct n_tree_cuda{
         cudaDeviceSynchronize();
         box_indicator = tmp_o;
         sorted_index = torch::argsort(box_indicator).toType(torch::kInt32);
-        std::tie(box_indices_sorted,tmp,unique_counts) = torch::_unique2(box_indicator,true,false,true);
+        std::tie(box_indices_sorted,tmp,unique_counts) = torch::_unique2(box_indicator,true,false,true); //This one is the problem, specifically this call is bad
         unique_counts = unique_counts.toType(torch::kInt32);
         largest_box_n =  unique_counts.max().item<int>();
         avg_nr_points = unique_counts.toType(torch::kFloat32).mean().item<float>();
+
         if (depth==0){
             centers = centers.repeat_interleave(dim_fac,0)+ 0.25 * edge * coord_tensor;
         }else{
@@ -187,19 +92,6 @@ struct n_tree_cuda{
         return std::make_tuple(unique_counts,sorted_index);
     }
 
-    std::tuple<torch::Tensor,torch::Tensor> distance(const n_tree_cuda& other, const torch::Tensor &interactions ) { //give all interactions, i.e. cartesian product of indices
-        torch::Tensor l1_distances = other.centers.index(interactions.slice(1,1,2).squeeze())-centers.index(interactions.slice(1,0,1).squeeze());
-        return std::make_tuple(l1_distances.pow(2).sum(1).sqrt() ,l1_distances);
-    }
-    std::tuple<torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor> far_and_near_field(
-            const torch::Tensor & square_dist,
-            const torch::Tensor &interactions,
-            const torch::Tensor &L1_dist) const{
-        torch::Tensor far_field = square_dist>=(edge*2+1e-6);
-        return std::make_tuple(interactions.index({far_field}),
-                               interactions.index({torch::logical_not(far_field)}),
-                               L1_dist.index({far_field}),L1_dist.index({torch::logical_not(far_field)}));
-    }
 
 };
 
@@ -338,20 +230,6 @@ void call_skip_conv(
 //local variable: x_i, box belonging. How to get loading scheme. [nr of points].cumsum().  Iteration schedual...
 // calculate box belonging.
 
-
-torch::Tensor get_boolean_2d_mask(torch::Tensor & near_field_interactions,
-                                    int nx_box,
-                                    int ny_box){
-    torch::Tensor boolean_mask = torch::zeros({nx_box,ny_box}).toType(torch::kBool);
-    auto accessor_bool =boolean_mask.accessor<bool,2>();
-    auto accessor_interactions =near_field_interactions.accessor<long,2>();
-    int n_int = near_field_interactions.size(0);
-    for (int i=0;i<n_int;i++){
-        accessor_bool[accessor_interactions[i][0]][accessor_interactions[i][1]]=true;
-    };
-    return boolean_mask;
-}
-
 template <typename scalar_t>
 void near_field_compute_v2(
                         torch::Tensor & interactions_x_parsed,
@@ -404,27 +282,6 @@ torch::Tensor chebyshev_nodes_1D(const int & nodes){
     return chebyshev_nodes;
 };
 
-
-void recursive_indices(
-        const int nodes,
-        int d,
-        std::vector<int> & container_small,
-        std::vector< std::vector<int> > & container_big){
-    if (d==1){
-        for (int i =0;i<nodes;i++){
-            std::vector<int> tmp = container_small;
-            tmp.push_back(i);
-            container_big.push_back(tmp);
-        }
-        return;
-    }else{
-        for (int i =0;i<nodes;i++){
-            std::vector<int> tmp = container_small;
-            tmp.push_back(i);
-            recursive_indices(nodes,d-1,tmp,container_big);
-        }
-    }
-}
 
 template <typename scalar_t>
 void apply_laplace_interpolation_v2(
@@ -496,42 +353,6 @@ void apply_laplace_interpolation_v2(
 
 
 template <typename scalar_t>
-torch::Tensor get_cheb_data(
-        torch::Tensor & cheb_nodes,
-        torch::Tensor & laplace_combinations
-        ){
-    torch::Tensor cheb_data = torch::zeros_like(laplace_combinations).toType(torch::kFloat32);
-    auto cheb_node_accessor = cheb_nodes.accessor<scalar_t,1>();
-    auto cheb_data_accessor = cheb_data.accessor<scalar_t,2>();
-    auto laplace_combinations_accessor = laplace_combinations.accessor<int,2>();
-    for(int i =0; i<laplace_combinations.size(0);i++){
-        for(int j =0; j<nd;j++){
-            cheb_data_accessor[i][j] = cheb_node_accessor[laplace_combinations_accessor[i][j]];
-        }
-    }
-    return cheb_data;
-}
-
-
-torch::Tensor get_distance_tensor(torch::Tensor & near_field_interactions,
-                                  int nx_box,
-                                  int ny_box,
-                                  torch::Tensor & distances
-                                  ){
-    torch::Tensor distance_tensor = torch::zeros({nx_box,ny_box,nd}).toType(torch::kFloat32);
-    auto accessor_distance_tensor =distance_tensor.accessor<float,3>();
-    auto accessor_interactions =near_field_interactions.accessor<long,2>();
-    auto accessor_distances = distances.accessor<float,2>();
-    int n_int = near_field_interactions.size(0);
-    for (int i=0;i<n_int;i++){
-        for (int k=0;k<nd;k++){
-            accessor_distance_tensor[accessor_interactions[i][0]][accessor_interactions[i][1]][k]=accessor_distances[i][k];
-        }
-    };
-    return distance_tensor;
-}
-
-template <typename scalar_t>
 torch::Tensor setup_skip_conv(torch::Tensor &cheb_data,
                               torch::Tensor &b_data,
                               torch::Tensor & centers_X,
@@ -548,7 +369,7 @@ torch::Tensor setup_skip_conv(torch::Tensor &cheb_data,
     int *d_cheb_data_size;
     cudaMalloc((void **)&d_ls, sizeof(scalar_t));
     cudaMemcpy(d_ls, &ls, sizeof(scalar_t), cudaMemcpyHostToDevice);
-    torch::Tensor indicator,box_block,output,near_field_interactions;
+    torch::Tensor indicator,box_block,output;
     int cheb_data_size=cheb_data.size(0);
     int blkSize = optimal_blocksize(cheb_data_size);
 //    torch::Tensor boxes_count = min_size*torch::ones({unique_sorted_boxes_idx.size(0)+1}).toType(torch::kInt32);
@@ -558,7 +379,7 @@ torch::Tensor setup_skip_conv(torch::Tensor &cheb_data,
     unique_sorted_boxes_idx = unique_sorted_boxes_idx.toType(torch::kInt32);
     std::tie(blockSize,gridSize,memory,indicator,box_block) = skip_kernel_launch<scalar_t>(nd,blkSize,boxes_count,unique_sorted_boxes_idx);
     output = torch::zeros_like(b_data);
-    required_shared_mem = (cheb_data_size * (nd + 1) + nd) * sizeof(scalar_t);
+    required_shared_mem = (cheb_data_size * (nd + 1) + 2*nd) * sizeof(scalar_t);
     cudaMalloc((void **)&d_cheb_data_size, sizeof(int));
     cudaMemcpy(d_cheb_data_size, &cheb_data_size, sizeof(int), cudaMemcpyHostToDevice);
     //
@@ -597,7 +418,7 @@ torch::Tensor setup_skip_conv(torch::Tensor &cheb_data,
                 interactions_y.packed_accessor32<int,1,torch::RestrictPtrTraits>()
         );
     }
-
+    cudaDeviceSynchronize();
     return output;
 }
 
@@ -611,7 +432,6 @@ void far_field_compute_v2(
                        torch::Tensor & output,
                        torch::Tensor &b,
                        const std::string & device_gpu,
-                       torch::Tensor &dist,
                        scalar_t & ls,
                        rbf_pointer<scalar_t> & op,
                           torch::Tensor & chebnodes_1D,
@@ -730,9 +550,7 @@ std::tuple<torch::Tensor,torch::Tensor> separate_interactions(
             far_field_mask.packed_accessor32<bool,1,torch::RestrictPtrTraits>()
     );
     cudaDeviceSynchronize();
-    return std::make_tuple(interactions.index({far_field_mask,torch::indexing::Slice()}),interactions.index({far_field_mask.logical_not(),torch::indexing::Slice()}));
-
-
+    return std::make_tuple(interactions.index({far_field_mask}),interactions.index({far_field_mask.logical_not()}));
 }
 
 
@@ -746,60 +564,55 @@ torch::Tensor FFM(
         rbf_pointer<scalar_t> & op
         ) {
     torch::Tensor output = torch::zeros({X_data.size(0),b.size(1)}).to(gpu_device); //initialize empty output
-    torch::Tensor edge,xmin,ymin,x_near_unique,tmp,y_near_unique,square_dist,dist,interactions,far_field,near_field,dist_far_field,dist_near_field; //these are needed to figure out which interactions are near/far field
+    torch::Tensor edge,xmin,ymin,interactions,far_field,near_field,interactions_x,interactions_y,interactions_x_parsed,cheb_data_X,laplace_combinations; //these are needed to figure out which interactions are near/far field
     std::tie(edge,xmin,ymin) = calculate_edge(X_data,Y_data); //actually calculate them
     n_tree_cuda<scalar_t> ntree_X = n_tree_cuda<scalar_t>(edge,X_data,xmin,gpu_device);
     n_tree_cuda<scalar_t> ntree_Y = n_tree_cuda<scalar_t>(edge,Y_data,ymin,gpu_device);
     near_field = torch::zeros({1,2}).toType(torch::kInt32).to(gpu_device);
     float min_points = pow((float) laplace_nodes,nd);
     torch::Tensor chebnodes_1D = chebyshev_nodes_1D(laplace_nodes).to(gpu_device); //get chebyshev nodes, laplace_nodes is fixed now, should probably be a variable
-    torch::Tensor cheb_data_X,laplace_combinations;
     std::tie(laplace_combinations,cheb_data_X)=parse_cheb_data<scalar_t>(chebnodes_1D,nd,gpu_device);
 
-    //Could probably rewrite this...
+//    while (near_field.numel()>0 and ntree_X.avg_nr_points > min_points and ntree_Y.avg_nr_points > min_points){
+    ntree_X.divide();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
+//    ntree_Y.divide();//divide ALL boxes recursively once
+    interactions = get_new_interactions(near_field,ntree_X.dim_fac,gpu_device); //fix this. it does something funny
+    std::tie(far_field,near_field) =
+            separate_interactions<scalar_t>(
+            interactions,
+            ntree_X.centers,
+            ntree_Y.centers,
+            ntree_X.edge,
+            gpu_device);
+    std::tie(interactions_x,interactions_y) = unbind_nearfield(far_field);
+    interactions_x_parsed = process_interactions(interactions_x,ntree_X.centers.size(0),gpu_device);
 
-    torch::Tensor interactions_x,interactions_y,interactions_x_parsed;
-    while (near_field.numel()>0 and ntree_X.avg_nr_points > min_points and ntree_Y.avg_nr_points > min_points){
-        ntree_X.divide();//divide ALL boxes recursively once
-        ntree_Y.divide();//divide ALL boxes recursively once
-        interactions = get_new_interactions(near_field,ntree_X.dim_fac,gpu_device); //fix this. it does something funny
-//        interactions_x_parsed = process_interactions(interactions_x,ntree_X.centers.size(0),gpu_device);
-
-        //reconsider approach, might just wanna calculate the far and near field and and then do the sorting and grouping...
-        //Actually this is a much cleaner solution... Implement this and start doing optimizations...
-        torch::Tensor cheb_data = cheb_data_X*ntree_X.edge/2.+ntree_X.edge/2.;
-        std::tie(far_field,near_field) = separate_interactions<scalar_t>(
-                interactions,
-                ntree_X.centers,
-                ntree_Y.centers,
-                ntree_X.edge,
-                gpu_device);
-        if (far_field.numel()>0) {
-            std::tie(interactions_x,interactions_y) = unbind_nearfield(far_field);
-            interactions_x_parsed = process_interactions(interactions_x,ntree_X.centers.size(0),gpu_device);
-            far_field_compute_v2<scalar_t>(
-                    interactions_x_parsed,
-                    interactions_y,
-                    ntree_X,
-                    ntree_Y,
-                    output,
-                    b,
-                    gpu_device,
-                    dist_far_field,
-                    ls,
-                    op,
-                    chebnodes_1D,
-                    laplace_combinations,
-                    cheb_data
-            ); //far field compute
-        }
+//        if (far_field.numel()>0) {
+//            torch::Tensor cheb_data = cheb_data_X*ntree_X.edge/2.+ntree_X.edge/2.;
+//            std::tie(interactions_x,interactions_y) = unbind_nearfield(far_field);
+//            interactions_x_parsed = process_interactions(interactions_x,ntree_X.centers.size(0),gpu_device);
+//            far_field_compute_v2<scalar_t>(
+//                    interactions_x_parsed,
+//                    interactions_y,
+//                    ntree_X,
+//                    ntree_Y,
+//                    output,
+//                    b,
+//                    gpu_device,
+//                    ls,
+//                    op,
+//                    chebnodes_1D,
+//                    laplace_combinations,
+//                    cheb_data
+//            ); //far field compute
 //        }
-    }
-    if (near_field.numel()>0){
-        std::tie(interactions_x,interactions_y) = unbind_nearfield(near_field);
-        interactions_x_parsed = process_interactions(interactions_x,ntree_X.centers.size(0),gpu_device);
-        near_field_compute_v2<scalar_t>(interactions_x_parsed,interactions_y,ntree_X, ntree_Y, output, b, gpu_device,ls,op); //Make sure this thing works first!
-    }
+//        }
+//    }
+//    if (near_field.numel()>0){
+//        std::tie(interactions_x,interactions_y) = unbind_nearfield(near_field);
+//        interactions_x_parsed = process_interactions(interactions_x,ntree_X.centers.size(0),gpu_device);
+//        near_field_compute_v2<scalar_t>(interactions_x_parsed,interactions_y,ntree_X, ntree_Y, output, b, gpu_device,ls,op); //Make sure this thing works first!
+//    }
     return output;
 }
 template <typename scalar_t>
