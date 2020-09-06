@@ -5,3 +5,5 @@ cmake-build-release
 *.nvprof
 .metadata
 *.log
+RemoteSystemsTempFile
+*.project

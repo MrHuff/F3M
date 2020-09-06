@@ -150,7 +150,6 @@ void call_skip_conv(
         rbf_pointer<scalar_t> & op,
         torch::Tensor & centers_X,
         torch::Tensor & centers_Y,
-        torch::Tensor & edge,
         torch::Tensor & x_boxes_count,
         torch::Tensor & y_boxes_count,
         torch::Tensor & x_box_idx,
@@ -191,7 +190,6 @@ void call_skip_conv(
                                                                      box_block_indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
                                                                      x_idx_reordering.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
                                                                      y_idx_reordering.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                                                                     edge.data_ptr<scalar_t>(),
                                                                      interactions_x_parsed.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
                                                                      interactions_y.packed_accessor32<int,1,torch::RestrictPtrTraits>()
                                                                      );
@@ -212,7 +210,6 @@ void call_skip_conv(
                                                               x_boxes_count_cumulative.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
                                                               y_boxes_count_cumulative.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
                                                               x_box_idx.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                                                              edge.data_ptr<scalar_t>(),
                                                               interactions_x_parsed.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
                                                               interactions_y.packed_accessor32<int,1,torch::RestrictPtrTraits>()
                                                                       );
@@ -257,7 +254,6 @@ void near_field_compute_v2(
                              op,
                              x_box.centers,
                              y_box.centers,
-                             x_box.edge,
                              x_boxes_ind_count,
                              y_boxes_ind_count,
                                 x_box.box_indices_sorted,
@@ -356,11 +352,10 @@ torch::Tensor setup_skip_conv(torch::Tensor &cheb_data,
                               scalar_t & ls,
                               const std::string & device_gpu,
                               torch::Tensor & interactions_x_parsed,
-                              torch::Tensor & interactions_y,
-                              torch::Tensor & edge
+                              torch::Tensor & interactions_y
 ){
     scalar_t *d_ls;
-    int *d_cheb_data_size;
+//    int *d_cheb_data_size;
     cudaMalloc((void **)&d_ls, sizeof(scalar_t));
     cudaMemcpy(d_ls, &ls, sizeof(scalar_t), cudaMemcpyHostToDevice);
     torch::Tensor indicator,box_block,output;
@@ -369,49 +364,23 @@ torch::Tensor setup_skip_conv(torch::Tensor &cheb_data,
 //    torch::Tensor boxes_count = min_size*torch::ones({unique_sorted_boxes_idx.size(0)+1}).toType(torch::kInt32);
     torch::Tensor boxes_count = cheb_data_size * torch::ones(unique_sorted_boxes_idx.size(0)).toType(torch::kInt32).to(device_gpu);
     dim3 blockSize,gridSize;
-    int memory,required_shared_mem;
+    int memory;
     unique_sorted_boxes_idx = unique_sorted_boxes_idx.toType(torch::kInt32);
     std::tie(blockSize,gridSize,memory,indicator,box_block) = skip_kernel_launch<scalar_t>(nd,blkSize,boxes_count,unique_sorted_boxes_idx);
     output = torch::zeros_like(b_data);
-    required_shared_mem = (cheb_data_size * (nd + 1) + 2*nd) * sizeof(scalar_t);
-    cudaMalloc((void **)&d_cheb_data_size, sizeof(int));
-    cudaMemcpy(d_cheb_data_size, &cheb_data_size, sizeof(int), cudaMemcpyHostToDevice);
-    //
-
-    if (required_shared_mem<=SHAREDMEMPERBLOCK/8){
-        skip_conv_far_boxes_opt<scalar_t><<<gridSize,blockSize,required_shared_mem>>>(
-                cheb_data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                b_data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                output.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                d_ls,
-                op,
-                centers_X.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                centers_Y.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                box_block.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                d_cheb_data_size,
-                edge.data_ptr<scalar_t>(),
-                interactions_x_parsed.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
-                interactions_y.packed_accessor32<int,1,torch::RestrictPtrTraits>()
-        );
-    }else{
-        memory = memory+nd*sizeof(scalar_t);
-        skip_conv_far_cookie<scalar_t><<<gridSize,blockSize,memory>>>(
-                cheb_data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                b_data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                output.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                d_ls,
-                op,
-                centers_X.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                centers_Y.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                box_block.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                d_cheb_data_size,
-                edge.data_ptr<scalar_t>(),
-                interactions_x_parsed.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
-                interactions_y.packed_accessor32<int,1,torch::RestrictPtrTraits>()
-        );
-    }
+    skip_conv_far_boxes_opt<scalar_t><<<gridSize,blockSize,memory>>>(
+            cheb_data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+            b_data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+            output.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+            d_ls,
+            op,
+            centers_X.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+            centers_Y.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+            indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+            box_block.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+            interactions_x_parsed.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
+            interactions_y.packed_accessor32<int,1,torch::RestrictPtrTraits>()
+    );
     cudaDeviceSynchronize();
     return output;
 }
@@ -452,8 +421,7 @@ void far_field_compute_v2(
             ls,
             device_gpu,
             interactions_x_parsed,
-            interactions_y,
-            x_box.edge
+            interactions_y
             );
 
     apply_laplace_interpolation_v2<scalar_t>(x_box,
@@ -582,7 +550,7 @@ torch::Tensor FFM(
             torch::Tensor cheb_data = cheb_data_X*ntree_X.edge/2.+ntree_X.edge/2.;
             std::tie(interactions_x,interactions_y) = unbind_nearfield(far_field);
             interactions_x_parsed = process_interactions(interactions_x,ntree_X.centers.size(0),gpu_device);
-            far_field_compute_v2<scalar_t>(
+            far_field_compute_v2<scalar_t>( //Very many far field interactions quite fast...
                     interactions_x_parsed,
                     interactions_y,
                     ntree_X,
