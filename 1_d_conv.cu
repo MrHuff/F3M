@@ -6,7 +6,6 @@
 #include <cublas_v2.h>
 #include <random>
 #include <stdexcept>
-#include <ATen/ATen.h> //hardcore lib
 #include <torch/torch.h> //for n00bs like me, direct translation to python rofl
 #include <stdio.h>
 #include <assert.h>
@@ -20,7 +19,7 @@
 #define cube_int 3
 
 #define MAX_STREAMS 32
-#define laplace_nodes 4 //Might wanna be able to fix this...
+#define laplace_nodes 4 //Might wanna be able to fix this... (4,n=10000,156ms,1e-5),(4,n=10000,303ms,1e-6),(3,n=10000,60ms,1e-1)
 
 
 
@@ -63,12 +62,12 @@ std::tuple<dim3,dim3,int,torch::Tensor,torch::Tensor> skip_kernel_launch(int col
 
 template<typename T>
 __device__ T square(T x){
-    return powf(x,square_int);
+    return x*x;
 };
 
 template<typename T>
 __device__ T cube(T x){
-    return powf(x,cube_int);
+    return x*x*x;
 };
 
 template<typename T>
@@ -81,7 +80,7 @@ __device__ T rbf_simple(T x[],T y[]){
 };
 
 template<typename T>
-__device__ T rbf(T x[],T y[],const T *ls){
+__device__ inline static T rbf(T x[],T y[],const T *ls){
     T tmp=0;
     for (int k=0;k<nd;k++){
         tmp += square<T>(x[k]-y[k]);
@@ -89,18 +88,18 @@ __device__ T rbf(T x[],T y[],const T *ls){
     return expf(-tmp/square<T>(*ls));
 };
 template<typename T>
-__device__ T rbf_grad(T x[],T y[],const T *ls){
+__device__ inline static T rbf_grad(T x[],T y[],const T *ls){
     T tmp=0;
     for (int k=0;k<nd;k++){
         tmp += square<T>(x[k]-y[k]);
     };
     return expf(-tmp/square<T>(*ls))*tmp/cube<T>(*ls);
 };
-template<typename T>
-__device__ rbf_pointer<T> rbf_pointer_func = rbf<T>;
-template<typename T>
-__device__ rbf_pointer<T> rbf_pointer_grad = rbf_grad<T>;
-
+//template<typename T>
+//__device__ rbf_pointer<T> rbf_pointer_func = rbf<T>;
+//template<typename T>
+//__device__ rbf_pointer<T> rbf_pointer_grad = rbf_grad<T>;
+//
 
 template <typename scalar_t>
 __global__ void print_test(const scalar_t * data) {
@@ -126,7 +125,7 @@ __global__ void print_torch_cuda_1D(const torch::PackedTensorAccessor32<scalar_t
     }
 }
 template <typename scalar_t>
-__device__ static void torch_load_y(int index, scalar_t *shared_mem, const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> y){
+__device__ inline static void torch_load_y(int index, scalar_t *shared_mem, torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> y){
 #pragma unroll
     for (int k = 0; k < nd; k++) {
         //assert(&((*px)[i * FIRST + k]) != nullptr);
@@ -136,7 +135,7 @@ __device__ static void torch_load_y(int index, scalar_t *shared_mem, const torch
     }
 }
 template <typename scalar_t>
-__device__ static void torch_load_b(
+__device__ inline static void torch_load_b(
         int col_index,
         int index,
         scalar_t *shared_mem,
@@ -144,7 +143,7 @@ __device__ static void torch_load_b(
     shared_mem[threadIdx.x] = b[index][col_index];
 }
 template <typename scalar_t>
-__device__ static void torch_load_y_v2(int index, scalar_t *shared_mem,
+__device__ inline static void torch_load_y_v2(int index, scalar_t *shared_mem,
         const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> y,
         const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> y_idx_reordering
         ){
@@ -157,7 +156,7 @@ __device__ static void torch_load_y_v2(int index, scalar_t *shared_mem,
     }
 }
 template <typename scalar_t>
-__device__ static void torch_load_b_v2(
+__device__ inline static void torch_load_b_v2(
         int col_index,
         int index,
         scalar_t *shared_mem,
@@ -174,8 +173,7 @@ __global__ void rbf_1d_reduce_shared_torch(
                                const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> Y_data,
                                const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data, //also put b's in shared mem for maximum perform.
                                torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output,
-                                scalar_t * ls,
-                                rbf_pointer<scalar_t> op){
+                                scalar_t * ls){
     int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
     unsigned int x_n = X_data.size(0);
     scalar_t x_i[nd];
@@ -201,7 +199,7 @@ __global__ void rbf_1d_reduce_shared_torch(
             if (i < x_n) { // we compute x1i only if needed
                 scalar_t *yjrel = yj; // Loop on the columns of the current block.
                 for (int jrel = 0; (jrel < blockDim.x) && (jrel < y_n - jstart); jrel++, yjrel += nd) {
-                    acc += (*op)(x_i, yjrel,ls) * bj[jrel]; //sums incorrectly cause pointer is fucked not sure if allocating properly
+                    acc += rbf(x_i, yjrel,ls) * bj[jrel]; //sums incorrectly cause pointer is fucked not sure if allocating properly
                 }
             }
             __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
@@ -218,8 +216,7 @@ __global__ void rbf_1d_reduce_simple_torch(const torch::PackedTensorAccessor32<s
                                       const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> Y_data,
                                       const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data, //also put b's in shared mem for maximum perform.
                                       torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output,
-                                      scalar_t * ls,
-                                      rbf_pointer<scalar_t> op){
+                                      scalar_t * ls){
 
     int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
     unsigned int x_n = X_data.size(0);
@@ -237,7 +234,7 @@ __global__ void rbf_1d_reduce_simple_torch(const torch::PackedTensorAccessor32<s
             for (int k=0;k<nd;k++){
                 y_j[k] = Y_data[p][k];
             };
-            acc+= (*op)(x_i,y_j,ls)*b_data[p][b_ind];
+            acc+= rbf(x_i,y_j,ls)*b_data[p][b_ind];
         };
         output[i][b_ind]=acc;
     }
@@ -330,7 +327,6 @@ __global__ void skip_conv_1d(const torch::PackedTensorAccessor32<scalar_t,2,torc
                              const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data,
                              torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output,
                              scalar_t * ls,
-                             rbf_pointer<scalar_t> op,
                              const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers_X,//Actually make a boolean mask
                              const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers_Y,//Actually make a boolean mask
                              const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_boxes_count,
@@ -361,7 +357,7 @@ __global__ void skip_conv_1d(const torch::PackedTensorAccessor32<scalar_t,2,torc
                 for (int k = 0; k < nd; k++) {
                     y_j[k] = Y_data[j_2][k];
                 };
-                acc += (*op)(x_i, y_j, ls) * b_data[j_2][b_ind];
+                acc += rbf(x_i, y_j, ls) * b_data[j_2][b_ind];
 
             }
         }
@@ -378,7 +374,6 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor32<scalar_t
                              const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data,
                              torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output,
                              scalar_t * ls,
-                             rbf_pointer<scalar_t> op,
                              const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers_X,//Actually make a boolean mask
                              const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers_Y,//Actually make a boolean mask
                              const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_boxes_count,
@@ -432,7 +427,7 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor32<scalar_t
                 if (i < b) { // we compute x1i only if needed
                     scalar_t *yjrel = yj; // Loop on the columns of the current block.
                     for (int jrel = 0; (jrel < blockDim.x) && (jrel < end - jstart); jrel++, yjrel += nd) {
-                        acc += (*op)(x_i, yjrel,ls) * bj[jrel]; //sums incorrectly cause pointer is fucked not sure if allocating properly
+                        acc += rbf(x_i, yjrel,ls) * bj[jrel]; //sums incorrectly cause pointer is fucked not sure if allocating properly
                     }
                 }
                 __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
@@ -458,13 +453,13 @@ __global__ void laplace_shared(
         const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> indicator,
         const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> box_block_indicator,
         const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_boxes_count,
-        const int * cheb_data_size,
         const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers,
         const scalar_t * edge,
         const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> idx_reordering
 ){
     int box_ind = indicator[blockIdx.x];
-    int a,b;
+    int a,b,cheb_data_size;
+    cheb_data_size = combinations.size(0);
     scalar_t factor = 2./(*edge);
     a = x_boxes_count[box_ind];
     b = x_boxes_count[box_ind+1];
@@ -488,18 +483,18 @@ __global__ void laplace_shared(
         if (i<b) {
             b_i = b_data[idx_reordering[i]][b_ind];
         }
-        for (int jstart = 0, tile = 0; jstart < *cheb_data_size; jstart += blockDim.x, tile++) {
+        for (int jstart = 0, tile = 0; jstart < cheb_data_size; jstart += blockDim.x, tile++) {
             int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
-            if (j < *cheb_data_size) { // we load yj from device global memory only if j<ny
+            if (j < cheb_data_size) { // we load yj from device global memory only if j<ny
                 torch_load_y<int>(j, yj, combinations);
             }
 
             __syncthreads();
             if (i < b) { // we compute x1i only if needed
                 int *yjrel = yj; // Loop on the columns of the current block.
-                for (int jrel = 0; (jrel < blockDim.x) && (jrel < *cheb_data_size - jstart); jrel++, yjrel += nd) {
+                for (int jrel = 0; (jrel < blockDim.x) && (jrel < cheb_data_size - jstart); jrel++, yjrel += nd) {
                     //Do shuffle if possible...
-                    atomicAdd(&output[jstart+jrel+box_ind**cheb_data_size][b_ind],calculate_laplace_product(l_p, x_i, yjrel,b_i)); //for each p, sum accross x's...
+                    atomicAdd(&output[jstart+jrel+box_ind*cheb_data_size][b_ind],calculate_laplace_product(l_p, x_i, yjrel,b_i)); //for each p, sum accross x's...
                 }
             }
             __syncthreads();
@@ -520,13 +515,13 @@ __global__ void laplace_shared_transpose(
         const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> indicator,
         const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> box_block_indicator,
         const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_boxes_count,
-        const int * cheb_data_size,
         const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers,
         const scalar_t * edge,
         const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> idx_reordering
         ) {
 
-    int box_ind, a, b;
+    int box_ind, a, b,cheb_data_size;
+    cheb_data_size = combinations.size(0);
     scalar_t factor = 2./(*edge);
     box_ind = indicator[blockIdx.x];
     a = x_boxes_count[box_ind];
@@ -549,16 +544,16 @@ __global__ void laplace_shared_transpose(
     }
     for (int b_ind = 0; b_ind < b_data.size(1); b_ind++) { //for all dims of b
         acc = 0.0;
-        for (int jstart = 0, tile = 0; jstart < *cheb_data_size; jstart += blockDim.x, tile++) {
+        for (int jstart = 0, tile = 0; jstart < cheb_data_size; jstart += blockDim.x, tile++) {
             int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
-            if (j < *cheb_data_size) { // we load yj from device global memory only if j<ny
+            if (j < cheb_data_size) { // we load yj from device global memory only if j<ny
                 torch_load_y<int>(j, yj, combinations);
-                torch_load_b<scalar_t>(b_ind, j + box_ind * *cheb_data_size, bj, b_data); //b's are incorrectly loaded
+                torch_load_b<scalar_t>(b_ind, j + box_ind * cheb_data_size, bj, b_data); //b's are incorrectly loaded
             }
             __syncthreads();
             if (i < b) { // we compute x1i only if needed
                 int *yjrel = yj; // Loop on the columns of the current block.
-                for (int jrel = 0; (jrel < blockDim.x) && (jrel < *cheb_data_size - jstart); jrel++, yjrel += nd) {
+                for (int jrel = 0; (jrel < blockDim.x) && (jrel < cheb_data_size - jstart); jrel++, yjrel += nd) {
                     acc += calculate_laplace_product(l_p, x_i, yjrel, bj[jrel]);
                 }
             }
@@ -584,7 +579,6 @@ __global__ void skip_conv_far_boxes_opt(//the slow poke, optimize this to be fas
                                     const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data,
                                     torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output,
                                     scalar_t * ls,
-                                    rbf_pointer<scalar_t> op,
                                     const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers_X,
                                     const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers_Y,
                                     const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> indicator,
@@ -621,22 +615,9 @@ __global__ void skip_conv_far_boxes_opt(//the slow poke, optimize this to be fas
 //    box_ind = calculate_box_ind(i,x_boxes_count,x_box_idx);
 //    printf("thread %i: %i\n",i,box_ind);
     if (interactions_x_parsed[box_ind][0]>-1) {
-        for (int b_ind = 0;
-             b_ind < b_data.size(1); b_ind++) { //for all dims of b A*b, b \in \mathbb{R}^{n\times d}, d>=1.
+        for (int b_ind = 0;b_ind < b_data.size(1); b_ind++) { //for all dims of b A*b, b \in \mathbb{R}^{n\times d}, d>=1.
             acc = 0.0;
-            //Cheap idea: get raw data box data [0;0;0;1...],[1,2,3;0...], [box_ind_X <-interacts with-> box_ind_Y]
-            //mask and load into shared memory... or do indicator vector of start and end
-            //Joan know how: Be careful when transfer data structure. Move it share-memory!
-            //Hmmm think its better to concatenate and pass info as a  -> [x_box_ind, start_idx,end_idx]
-            //interaction should be sorted...
-
             for (int m = interactions_x_parsed[box_ind][0]; m < interactions_x_parsed[box_ind][1]; m++) {
-                //m here is the index of the valid y boxes for box_ind
-                //Access the actual box by taking interactions_y[m]
-//                if (threadIdx.x < nd) {
-//                    distance[threadIdx.x] = centers_Y[interactions_y[m]][threadIdx.x] - cX_i[threadIdx.x];
-//                }
-//                __syncthreads();
                 for (int jstart = 0, tile = 0; jstart < cheb_data_size; jstart += blockDim.x, tile++) {
                     int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
                     if (j < cheb_data_size) {
@@ -649,8 +630,7 @@ __global__ void skip_conv_far_boxes_opt(//the slow poke, optimize this to be fas
                     if (i < b) { // we compute x1i only if needed
                         scalar_t *yjrel = yj; // Loop on the columns of the current block.
                         for (int j = 0; (j < blockDim.x) && (j < cheb_data_size - jstart); j++, yjrel += nd) {
-                            acc += (*op)(x_i, yjrel, ls) *
-                                   bj[j]; //sums incorrectly cause pointer is fucked not sure if allocating properly
+                            acc += rbf(x_i, yjrel, ls)* bj[j]; //sums incorrectly cause pointer is fucked not sure if allocating properly
                         }
                     }
                 }

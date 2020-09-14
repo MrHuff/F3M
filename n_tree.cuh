@@ -97,7 +97,6 @@ void rbf_call(
         torch::Tensor & cuda_b_job,
         torch::Tensor & output_job,
         scalar_t & ls,
-        rbf_pointer<scalar_t> & op,
         bool shared = true
         ){
 
@@ -114,16 +113,14 @@ void rbf_call(
                                                                             cuda_Y_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                                             cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                                             output_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                            d_ls,
-                                                                            op
+                                                                            d_ls
                                                                             );
     }else{
         rbf_1d_reduce_simple_torch<scalar_t><<<gridSize,blockSize,memory>>>(cuda_X_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                                             cuda_Y_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                                             cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                                             output_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                            d_ls,
-                                                                            op
+                                                                            d_ls
                                                                             );
     }
     cudaDeviceSynchronize();
@@ -147,7 +144,6 @@ void call_skip_conv(
         torch::Tensor & cuda_b_job,
         torch::Tensor & output_job,
         scalar_t & ls,
-        rbf_pointer<scalar_t> & op,
         torch::Tensor & centers_X,
         torch::Tensor & centers_Y,
         torch::Tensor & x_boxes_count,
@@ -181,7 +177,6 @@ void call_skip_conv(
                                                                      cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                                      output_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                                      d_ls,
-                                                                     op,
                                                                      centers_X.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                                      centers_Y.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                                      x_boxes_count_cumulative.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
@@ -204,7 +199,6 @@ void call_skip_conv(
                                                               cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                               output_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                               d_ls,
-                                                              op,
                                                               centers_X.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                               centers_Y.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                               x_boxes_count_cumulative.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
@@ -230,8 +224,7 @@ void near_field_compute_v2(
                         torch::Tensor & output,
                         torch::Tensor& b,
                         const std::string & device_gpu,
-                        scalar_t & ls,
-                        rbf_pointer<scalar_t> & op){
+                        scalar_t & ls){
 
     torch::Tensor b_permuted,
     update,
@@ -251,7 +244,6 @@ void near_field_compute_v2(
                              b,
                              output,
                              ls,
-                             op,
                              x_box.centers,
                              y_box.centers,
                              x_boxes_ind_count,
@@ -297,13 +289,8 @@ void apply_laplace_interpolation_v2(
     std::tie(blockSize,gridSize,memory,indicator,box_block) = skip_kernel_launch<scalar_t>(nd,blkSize,boxes_count,n_tree.box_indices_sorted);
     memory = memory+laplace_nodes*sizeof(scalar_t);
     torch::Tensor boxes_count_cumulative = torch::cat({torch::zeros({1}).toType(torch::kInt32).to(device_gpu),boxes_count.cumsum(0).toType(torch::kInt32)});
-//    box_data = (2 / n_tree.edge) * (box_data - n_tree.get_centers_expanded());
-    int l_n=laplace_indices.size(0);
-    int *d_min_size;
-    cudaMalloc((void **)&d_min_size, sizeof(int));
-    cudaMemcpy(d_min_size, &l_n, sizeof(int), cudaMemcpyHostToDevice);
-    if (transpose){
 
+    if (transpose){
 
         laplace_shared<scalar_t><<<gridSize,blockSize,memory>>>(
                 data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
@@ -314,7 +301,6 @@ void apply_laplace_interpolation_v2(
                 indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
                 box_block.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
                 boxes_count_cumulative.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                d_min_size,
                 centers.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                 edge.data_ptr<scalar_t>(),
                 idx_reordering.packed_accessor32<int,1,torch::RestrictPtrTraits>()
@@ -331,7 +317,6 @@ void apply_laplace_interpolation_v2(
                 indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
                 box_block.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
                 boxes_count_cumulative.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                d_min_size,
                 centers.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                 edge.data_ptr<scalar_t>(),
                 idx_reordering.packed_accessor32<int,1,torch::RestrictPtrTraits>()
@@ -348,7 +333,6 @@ torch::Tensor setup_skip_conv(torch::Tensor &cheb_data,
                               torch::Tensor & centers_X,
                               torch::Tensor & centers_Y,
                               torch::Tensor & unique_sorted_boxes_idx,
-                              rbf_pointer<scalar_t> & op,
                               scalar_t & ls,
                               const std::string & device_gpu,
                               torch::Tensor & interactions_x_parsed,
@@ -373,7 +357,6 @@ torch::Tensor setup_skip_conv(torch::Tensor &cheb_data,
             b_data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
             output.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
             d_ls,
-            op,
             centers_X.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
             centers_Y.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
             indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
@@ -396,7 +379,6 @@ void far_field_compute_v2(
                        torch::Tensor &b,
                        const std::string & device_gpu,
                        scalar_t & ls,
-                       rbf_pointer<scalar_t> & op,
                           torch::Tensor & chebnodes_1D,
                           torch::Tensor & laplace_combinations,
                           torch::Tensor & cheb_data_X
@@ -411,13 +393,12 @@ void far_field_compute_v2(
                                             true,
                                             low_rank_y); //no problems here!
     //Consider limiting number of boxes!!!
-    low_rank_y = setup_skip_conv<scalar_t>(
+    low_rank_y = setup_skip_conv<scalar_t>( //error happens here
             cheb_data_X,
             low_rank_y,
             x_box.centers,
             y_box.centers,
             x_box.box_indices_sorted,
-            op,
             ls,
             device_gpu,
             interactions_x_parsed,
@@ -522,8 +503,7 @@ torch::Tensor FFM(
         torch::Tensor &Y_data,
         torch::Tensor &b,
         const std::string & gpu_device,
-        scalar_t & ls,
-        rbf_pointer<scalar_t> & op
+        scalar_t & ls
         ) {
     torch::Tensor output = torch::zeros({X_data.size(0),b.size(1)}).to(gpu_device); //initialize empty output
     torch::Tensor edge,xmin,ymin,interactions,far_field,near_field,interactions_x,interactions_y,interactions_x_parsed,cheb_data_X,laplace_combinations; //these are needed to figure out which interactions are near/far field
@@ -531,7 +511,7 @@ torch::Tensor FFM(
     n_tree_cuda<scalar_t> ntree_X = n_tree_cuda<scalar_t>(edge,X_data,xmin,gpu_device);
     n_tree_cuda<scalar_t> ntree_Y = n_tree_cuda<scalar_t>(edge,Y_data,ymin,gpu_device);
     near_field = torch::zeros({1,2}).toType(torch::kInt32).to(gpu_device);
-    float min_points = pow((float) laplace_nodes,nd);
+    float min_points = 100;
     torch::Tensor chebnodes_1D = chebyshev_nodes_1D(laplace_nodes).to(gpu_device); //get chebyshev nodes, laplace_nodes is fixed now, should probably be a variable
     std::tie(laplace_combinations,cheb_data_X)=parse_cheb_data<scalar_t>(chebnodes_1D,nd,gpu_device);
 
@@ -559,7 +539,6 @@ torch::Tensor FFM(
                     b,
                     gpu_device,
                     ls,
-                    op,
                     chebnodes_1D,
                     laplace_combinations,
                     cheb_data
@@ -570,7 +549,7 @@ torch::Tensor FFM(
     if (near_field.numel()>0){
         std::tie(interactions_x,interactions_y) = unbind_nearfield(near_field);
         interactions_x_parsed = process_interactions(interactions_x,ntree_X.centers.size(0),gpu_device);
-        near_field_compute_v2<scalar_t>(interactions_x_parsed,interactions_y,ntree_X, ntree_Y, output, b, gpu_device,ls,op); //Make sure this thing works first!
+        near_field_compute_v2<scalar_t>(interactions_x_parsed,interactions_y,ntree_X, ntree_Y, output, b, gpu_device,ls); //Make sure this thing works first!
     }
     return output;
 }
@@ -579,7 +558,6 @@ struct FFM_object{
     torch::Tensor & X_data;
     torch::Tensor & Y_data;
     scalar_t & ls;
-    rbf_pointer<scalar_t> & op;
     scalar_t &lambda;
     const std::string & gpu_device;
 
@@ -587,9 +565,8 @@ struct FFM_object{
             torch::Tensor & X_data,
     torch::Tensor & Y_data,
     scalar_t & ls,
-    rbf_pointer<scalar_t> & op,
     scalar_t &lambda,
-    const std::string & gpu_device): X_data(X_data), Y_data(Y_data),ls(ls),op(op),lambda(lambda),gpu_device(gpu_device){
+    const std::string & gpu_device): X_data(X_data), Y_data(Y_data),ls(ls),lambda(lambda),gpu_device(gpu_device){
     };
     virtual torch::Tensor operator* (torch::Tensor & b){
         return FFM<scalar_t>(
@@ -597,8 +574,7 @@ struct FFM_object{
                 Y_data,
                 b,
                 gpu_device,
-                ls,
-                op
+                ls
         )+b*lambda;
     };
 };
@@ -607,9 +583,8 @@ struct exact_MV : FFM_object<scalar_t>{
     exact_MV(torch::Tensor & X_data,
                          torch::Tensor & Y_data,
                          scalar_t & ls,
-                         rbf_pointer<scalar_t> & op,
                          scalar_t &lambda,
-                         const std::string & gpu_device): FFM_object<scalar_t>(X_data, Y_data, ls, op, lambda, gpu_device){};
+                         const std::string & gpu_device): FFM_object<scalar_t>(X_data, Y_data, ls, lambda, gpu_device){};
     torch::Tensor operator* (torch::Tensor & b){
         torch::Tensor output = torch::zeros({FFM_object<scalar_t>::X_data.size(0), b.size(1)}).to(FFM_object<scalar_t>::gpu_device);
         rbf_call<scalar_t>(
@@ -618,7 +593,6 @@ struct exact_MV : FFM_object<scalar_t>{
                 b,
                 output,
                 FFM_object<scalar_t>::ls,
-                FFM_object<scalar_t>::op,
                 true
         );
         output = output+ b * FFM_object<scalar_t>::lambda;
