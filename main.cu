@@ -75,15 +75,15 @@ int main(int argc, char const *argv[]){
     auto start = std::chrono::high_resolution_clock::now();
     res_ref = exact_ref * b_train;
     auto end = std::chrono::high_resolution_clock::now();
-//    res = ffm_obj * b_train; //Fast math creates problems... fast math does a lot!!!
-//    auto end_2 = std::chrono::high_resolution_clock::now();
+    res = ffm_obj * b_train; //Fast math creates problems... fast math does a lot!!!
+    auto end_2 = std::chrono::high_resolution_clock::now();
     auto duration_1 = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
-//    auto duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(end_2-end);
+    auto duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(end_2-end);
     std::cout<<duration_1.count()<<std::endl;
-//    std::cout<<duration_2.count()<<std::endl;
-//    std::cout<<((res_ref-res)/res_ref).abs_().mean()<<std::endl;
-//    cudaProfilerStop();
-//    cudaDeviceReset();
+    std::cout<<duration_2.count()<<std::endl;
+    std::cout<<((res_ref-res)/res_ref).abs_().mean()<<std::endl;
+    cudaProfilerStop();
+    cudaDeviceReset();
 
     return 0;
 }

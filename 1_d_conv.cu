@@ -23,8 +23,8 @@
 
 
 
-template<typename T>
-using rbf_pointer = T (*) (T[], T[],const T *);
+//template<typename T>
+//using rbf_pointer = T (*) (T[], T[],const T *);
 
 template<typename T>
 std::tuple<dim3,dim3,int> get_kernel_launch_params(int cols,int height){

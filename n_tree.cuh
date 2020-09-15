@@ -128,13 +128,13 @@ void rbf_call(
 
 
 int optimal_blocksize(int &min_box_size){
-    std::vector<int> candidates = {0,32,64,96,128,160,192};
+    std::vector<int> candidates = {0,32,64,96,128,160,192,224,256,352};
     for (int i=1;i<candidates.size();i++){
         if( (min_box_size>=candidates[i-1]) and (min_box_size<=candidates[i])){
             return candidates[i];
         }
     }
-    return 192;
+    return 352;
 }
 
 template <typename scalar_t>
@@ -511,7 +511,7 @@ torch::Tensor FFM(
     n_tree_cuda<scalar_t> ntree_X = n_tree_cuda<scalar_t>(edge,X_data,xmin,gpu_device);
     n_tree_cuda<scalar_t> ntree_Y = n_tree_cuda<scalar_t>(edge,Y_data,ymin,gpu_device);
     near_field = torch::zeros({1,2}).toType(torch::kInt32).to(gpu_device);
-    float min_points = 100;
+    float min_points = 1000;
     torch::Tensor chebnodes_1D = chebyshev_nodes_1D(laplace_nodes).to(gpu_device); //get chebyshev nodes, laplace_nodes is fixed now, should probably be a variable
     std::tie(laplace_combinations,cheb_data_X)=parse_cheb_data<scalar_t>(chebnodes_1D,nd,gpu_device);
 
