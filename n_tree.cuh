@@ -287,7 +287,7 @@ void apply_laplace_interpolation_v2(
     int min_size=boxes_count.min().item<int>();
     blkSize = optimal_blocksize(min_size);
     std::tie(blockSize,gridSize,memory,indicator,box_block) = skip_kernel_launch<scalar_t>(nd,blkSize,boxes_count,n_tree.box_indices_sorted);
-    memory = memory+laplace_nodes*sizeof(scalar_t);
+    memory = memory+nodes.size(0)*sizeof(scalar_t)+sizeof(int);
     torch::Tensor boxes_count_cumulative = torch::cat({torch::zeros({1}).toType(torch::kInt32).to(device_gpu),boxes_count.cumsum(0).toType(torch::kInt32)});
 
     if (transpose){
@@ -503,7 +503,9 @@ torch::Tensor FFM(
         torch::Tensor &Y_data,
         torch::Tensor &b,
         const std::string & gpu_device,
-        scalar_t & ls
+        scalar_t & ls,
+        int &laplace_n,
+        float &min_points
         ) {
     torch::Tensor output = torch::zeros({X_data.size(0),b.size(1)}).to(gpu_device); //initialize empty output
     torch::Tensor edge,xmin,ymin,interactions,far_field,near_field,interactions_x,interactions_y,interactions_x_parsed,cheb_data_X,laplace_combinations; //these are needed to figure out which interactions are near/far field
@@ -511,8 +513,7 @@ torch::Tensor FFM(
     n_tree_cuda<scalar_t> ntree_X = n_tree_cuda<scalar_t>(edge,X_data,xmin,gpu_device);
     n_tree_cuda<scalar_t> ntree_Y = n_tree_cuda<scalar_t>(edge,Y_data,ymin,gpu_device);
     near_field = torch::zeros({1,2}).toType(torch::kInt32).to(gpu_device);
-    float min_points = 1000;
-    torch::Tensor chebnodes_1D = chebyshev_nodes_1D(laplace_nodes).to(gpu_device); //get chebyshev nodes, laplace_nodes is fixed now, should probably be a variable
+    torch::Tensor chebnodes_1D = chebyshev_nodes_1D(laplace_n).to(gpu_device); //get chebyshev nodes, laplace_nodes is fixed now, should probably be a variable
     std::tie(laplace_combinations,cheb_data_X)=parse_cheb_data<scalar_t>(chebnodes_1D,nd,gpu_device);
 
     while (near_field.numel()>0 and ntree_X.avg_nr_points > min_points and ntree_Y.avg_nr_points > min_points){
@@ -560,13 +561,17 @@ struct FFM_object{
     scalar_t & ls;
     scalar_t &lambda;
     const std::string & gpu_device;
+    int & laplace_n;
+    float & min_points;
 
     FFM_object( //constructor
             torch::Tensor & X_data,
     torch::Tensor & Y_data,
     scalar_t & ls,
     scalar_t &lambda,
-    const std::string & gpu_device): X_data(X_data), Y_data(Y_data),ls(ls),lambda(lambda),gpu_device(gpu_device){
+    const std::string & gpu_device,
+    int & laplace_n,
+    float & min_points): X_data(X_data), Y_data(Y_data),ls(ls),lambda(lambda),gpu_device(gpu_device), laplace_n(laplace_n),min_points(min_points){
     };
     virtual torch::Tensor operator* (torch::Tensor & b){
         return FFM<scalar_t>(
@@ -574,7 +579,9 @@ struct FFM_object{
                 Y_data,
                 b,
                 gpu_device,
-                ls
+                ls,
+                laplace_n,
+                min_points
         )+b*lambda;
     };
 };
@@ -584,7 +591,9 @@ struct exact_MV : FFM_object<scalar_t>{
                          torch::Tensor & Y_data,
                          scalar_t & ls,
                          scalar_t &lambda,
-                         const std::string & gpu_device): FFM_object<scalar_t>(X_data, Y_data, ls, lambda, gpu_device){};
+                         const std::string & gpu_device,
+                         int &laplace_n,
+                         float &min_points): FFM_object<scalar_t>(X_data, Y_data, ls, lambda, gpu_device,laplace_n,min_points){};
     torch::Tensor operator* (torch::Tensor & b){
         torch::Tensor output = torch::zeros({FFM_object<scalar_t>::X_data.size(0), b.size(1)}).to(FFM_object<scalar_t>::gpu_device);
         rbf_call<scalar_t>(
@@ -695,4 +704,40 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> calculate_loss_and_grad(FF
     grad = ls_grad_calculate<scalar_t>(MV_grad,b_sol,trace_est);
     loss = GP_loss(log_det,b_sol,b);
     return std::make_tuple(loss,grad,b_sol);
+}
+
+
+void benchmark_1(int laplace_n,int n,float min_points){
+    const std::string device_cuda = "cuda:0"; //officially retarded
+    const std::string device_cpu = "cpu";
+//    torch::manual_seed(0);
+
+//    torch::Tensor X_train = read_csv<float>("X_train_PCA.csv",11619,3); something wrong with data probably...
+//    torch::Tensor b_train = read_csv<float>("Y_train.csv",11619,1); something wrong with data probably...
+    torch::Tensor X_train = torch::rand({n,nd});//.to(device_cuda); //Something fishy going on here, probably the boxes stuff...
+    torch::Tensor b_train = torch::randn({n,1});//to(device_cuda);
+    X_train = X_train.to(device_cuda);
+    b_train = b_train.to(device_cuda);
+    float ls = 1.0; //lengthscale
+    float lambda = 1e-1; // ridge parameter
+    torch::Tensor res,res_ref;
+    FFM_object<float> ffm_obj = FFM_object<float>(X_train, X_train, ls, lambda, device_cuda,laplace_n,min_points); //FMM object
+//    FFM_object<float> ffm_obj_grad = FFM_object<float>(X,X,ls,op_grad,lambda,device_cuda);
+    exact_MV<float> exact_ref = exact_MV<float>(X_train, X_train, ls,  lambda, device_cuda,laplace_n,min_points); //Exact method reference
+//    exact_MV<float> ffm_obj_grad_exact = exact_MV<float>(X,X,ls,op_grad,lambda,device_cuda);
+
+    auto start = std::chrono::high_resolution_clock::now();
+    res_ref = exact_ref * b_train;
+    auto end = std::chrono::high_resolution_clock::now();
+    res = ffm_obj * b_train; //Fast math creates problems... fast math does a lot!!!
+    auto end_2 = std::chrono::high_resolution_clock::now();
+    auto duration_1 = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
+    auto duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(end_2-end);
+    std::cout<<"------------- "<<"laplace nodes: "<<laplace_n<<" n: "<<n<<" min_points: "<< min_points <<" -------------"<<std::endl;
+    std::cout<<"Full matmul time (ms): "<<duration_1.count()<<std::endl;
+    std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
+    std::cout<<"Relative error (%): "<<((res_ref-res)/res_ref).abs_().mean()*100<<std::endl;
+
+
+
 }

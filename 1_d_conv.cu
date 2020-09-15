@@ -246,10 +246,11 @@ template <typename scalar_t>
 __device__ scalar_t calculate_laplace(
         scalar_t l_p[],
         scalar_t & x_ij,
-        int & feature_num
+        int & feature_num,
+        int & laplace_n
         ){
     scalar_t res=1.0;
-    for (int i=0; i<laplace_nodes;i++){
+    for (int i=0; i<laplace_n;i++){
         if (i!=feature_num){ //Calculate the Laplace feature if i!=m...
             res = res * (x_ij-l_p[i])/(l_p[i]-l_p[feature_num]);
         }
@@ -262,9 +263,10 @@ __device__ scalar_t calculate_laplace_product(
         scalar_t l_p[],
         scalar_t x_i[],
         int combs[],
-        scalar_t b){
+        scalar_t b,
+        int laplace_n[]){
     for (int i=0; i<nd;i++){
-        b = b*calculate_laplace(l_p, x_i[i], combs[i]);
+        b = b*calculate_laplace(l_p, x_i[i], combs[i],laplace_n[0]);
     }
     return b;
 }
@@ -473,10 +475,15 @@ __global__ void laplace_shared(
     }
     extern __shared__ int int_buffer[];
     extern __shared__ scalar_t buffer[];
-    int *yj = &int_buffer[0];
-    scalar_t *l_p = &buffer[blockDim.x*nd];
+    int *laplace_n = &int_buffer[0];
+    int *yj = &int_buffer[1];
+    scalar_t *l_p = &buffer[blockDim.x*nd+1];
     int b_size = output.size(1);
-    if (threadIdx.x<laplace_nodes){
+    if (threadIdx.x==0){
+        laplace_n[0] = lap_nodes.size(0);
+    }
+    __syncthreads();
+    if (threadIdx.x<laplace_n[0]){
         l_p[threadIdx.x] = lap_nodes[threadIdx.x];
     }
     for (int b_ind=0; b_ind<b_size; b_ind++) {
@@ -494,7 +501,7 @@ __global__ void laplace_shared(
                 int *yjrel = yj; // Loop on the columns of the current block.
                 for (int jrel = 0; (jrel < blockDim.x) && (jrel < cheb_data_size - jstart); jrel++, yjrel += nd) {
                     //Do shuffle if possible...
-                    atomicAdd(&output[jstart+jrel+box_ind*cheb_data_size][b_ind],calculate_laplace_product(l_p, x_i, yjrel,b_i)); //for each p, sum accross x's...
+                    atomicAdd(&output[jstart+jrel+box_ind*cheb_data_size][b_ind],calculate_laplace_product(l_p, x_i, yjrel,b_i,laplace_n)); //for each p, sum accross x's...
                 }
             }
             __syncthreads();
@@ -536,10 +543,15 @@ __global__ void laplace_shared_transpose(
     scalar_t acc;
     extern __shared__ int int_buffer[];
     extern __shared__ scalar_t buffer[];
-    int *yj = &int_buffer[0];
-    scalar_t *bj = &buffer[blockDim.x * nd];
-    scalar_t *l_p = &buffer[blockDim.x * (nd + 1)];
-    if (threadIdx.x < laplace_nodes) {
+    int *laplace_n = &int_buffer[0];
+    int *yj = &int_buffer[1];
+    scalar_t *bj = &buffer[blockDim.x * nd+1];
+    scalar_t *l_p = &buffer[blockDim.x * (nd + 1)+1];
+    if (threadIdx.x==0){
+        laplace_n[0] = lap_nodes.size(0);
+    }
+    __syncthreads();
+    if (threadIdx.x < laplace_n[0]) {
         l_p[threadIdx.x] = lap_nodes[threadIdx.x];
     }
     for (int b_ind = 0; b_ind < b_data.size(1); b_ind++) { //for all dims of b
@@ -554,7 +566,7 @@ __global__ void laplace_shared_transpose(
             if (i < b) { // we compute x1i only if needed
                 int *yjrel = yj; // Loop on the columns of the current block.
                 for (int jrel = 0; (jrel < blockDim.x) && (jrel < cheb_data_size - jstart); jrel++, yjrel += nd) {
-                    acc += calculate_laplace_product(l_p, x_i, yjrel, bj[jrel]);
+                    acc += calculate_laplace_product(l_p, x_i, yjrel, bj[jrel],laplace_n);
                 }
             }
             __syncthreads();
