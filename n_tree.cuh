@@ -40,7 +40,6 @@ struct n_tree_cuda{
         cudaMalloc((void **)&dim_fac_pointer, sizeof(int));
         cudaMemcpy(dim_fac_pointer, &dim_fac, sizeof(int), cudaMemcpyHostToDevice);
         box_indicator = torch::zeros({data.size(0)}).toType(torch::kInt32).to(device);
-        sorted_index = torch::argsort(box_indicator).toType(torch::kInt32);
         box_indices_sorted = torch::tensor(0).to(device);
         unique_counts = torch::tensor(data.size(0)).to(device);
         largest_box_n = unique_counts.max().item<int>();
@@ -78,9 +77,9 @@ struct n_tree_cuda{
         if (depth==0){
             centers = centers.repeat_interleave(dim_fac,0)+ 0.25 * edge * coord_tensor;
         }else{
-            int r = pow(dim_fac,depth);
-            centers = centers.repeat_interleave(dim_fac,0)+ 0.25 * edge * coord_tensor.repeat({r,1});
+            centers = centers.repeat_interleave(dim_fac,0)+ 0.25 * edge * coord_tensor.repeat({centers.size(0),1});
         }
+        centers = centers.index(box_indices_sorted.toType(torch::kLong));
         edge = edge*0.5;
         depth += 1;
     };
@@ -144,8 +143,6 @@ void call_skip_conv(
         torch::Tensor & cuda_b_job,
         torch::Tensor & output_job,
         scalar_t & ls,
-        torch::Tensor & centers_X,
-        torch::Tensor & centers_Y,
         torch::Tensor & x_boxes_count,
         torch::Tensor & y_boxes_count,
         torch::Tensor & x_box_idx,
@@ -177,8 +174,6 @@ void call_skip_conv(
                                                                      cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                                      output_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                                      d_ls,
-                                                                     centers_X.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                     centers_Y.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                                      x_boxes_count_cumulative.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
                                                                      y_boxes_count_cumulative.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
                                                                      indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
@@ -199,8 +194,6 @@ void call_skip_conv(
                                                               cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                               output_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                               d_ls,
-                                                              centers_X.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                              centers_Y.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                               x_boxes_count_cumulative.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
                                                               y_boxes_count_cumulative.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
                                                               x_box_idx.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
@@ -227,7 +220,6 @@ void near_field_compute_v2(
                         scalar_t & ls){
 
     torch::Tensor b_permuted,
-    update,
     x_boxes_ind_count,
     y_boxes_ind_count,
     boolean_interactions,
@@ -236,16 +228,11 @@ void near_field_compute_v2(
     std::tie(x_boxes_ind_count, x_idx_reordering)=x_box.get_box_sorted_data();
     std::tie( y_boxes_ind_count,y_idx_reordering)=y_box.get_box_sorted_data();
 
-    //Fix this mechanic, probably use a different mechanic... ask glaunès!
-    torch::Tensor &x_data = x_box.data;
-    torch::Tensor &y_data = y_box.data;
-    call_skip_conv<scalar_t>(x_data,
-                             y_data,
+    call_skip_conv<scalar_t>(x_box.data,
+                             y_box.data,
                              b,
                              output,
                              ls,
-                             x_box.centers,
-                             y_box.centers,
                              x_boxes_ind_count,
                              y_boxes_ind_count,
                                 x_box.box_indices_sorted,

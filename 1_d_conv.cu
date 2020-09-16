@@ -12,17 +12,7 @@
 #define BLOCK_SIZE 192
 #define MAXTHREADSPERBLOCK 1024
 #define SHAREDMEMPERBLOCK 49152
-#define nx 1000
-#define ny 1000
-#define nd 3
-#define square_int 2
-#define cube_int 3
-
-#define MAX_STREAMS 32
-#define laplace_nodes 4 //Might wanna be able to fix this... (4,n=10000,156ms,1e-5),(4,n=10000,303ms,1e-6),(3,n=10000,60ms,1e-1)
-
-
-
+#define nd 1 //gives error when one dim... might wanna fix that...
 //template<typename T>
 //using rbf_pointer = T (*) (T[], T[],const T *);
 
@@ -61,12 +51,12 @@ std::tuple<dim3,dim3,int,torch::Tensor,torch::Tensor> skip_kernel_launch(int col
 };
 
 template<typename T>
-__device__ T square(T x){
+__device__ inline T square(T x){
     return x*x;
 };
 
 template<typename T>
-__device__ T cube(T x){
+__device__ inline  T cube(T x){
     return x*x*x;
 };
 
@@ -101,29 +91,6 @@ __device__ inline static T rbf_grad(T x[],T y[],const T *ls){
 //__device__ rbf_pointer<T> rbf_pointer_grad = rbf_grad<T>;
 //
 
-template <typename scalar_t>
-__global__ void print_test(const scalar_t * data) {
-    int i = threadIdx.x + blockIdx.x * blockDim.x;
-    if (i > nx) { return; }
-    printf("%i: %f \n", i, data[i]);
-}
-
-template <typename scalar_t>
-__global__ void edit_test(const scalar_t * data) {
-    int i = threadIdx.x + blockIdx.x * blockDim.x;
-    if (i > nx) { return; }
-    atomicAdd(&data[i],1);
-}
-
-
-template <typename scalar_t>
-__global__ void print_torch_cuda_1D(const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data) {
-    int i = threadIdx.x + blockIdx.x * blockDim.x;
-    if (i > nx) { return; }
-    for (int j = 0; j<nd; j++) {
-        printf("%i: %f \n", i, X_data[i][j]);
-    }
-}
 template <typename scalar_t>
 __device__ inline static void torch_load_y(int index, scalar_t *shared_mem, torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> y){
 #pragma unroll
@@ -329,8 +296,6 @@ __global__ void skip_conv_1d(const torch::PackedTensorAccessor32<scalar_t,2,torc
                              const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data,
                              torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output,
                              scalar_t * ls,
-                             const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers_X,//Actually make a boolean mask
-                             const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers_Y,//Actually make a boolean mask
                              const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_boxes_count,
                              const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> y_boxes_count,
                              const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_box_idx,
@@ -339,7 +304,6 @@ __global__ void skip_conv_1d(const torch::PackedTensorAccessor32<scalar_t,2,torc
 ){
     int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
     unsigned int x_n = X_data.size(0);
-    unsigned int M = centers_X.size(0);
     if (i>x_n-1){return;}
     scalar_t x_i[nd];
     scalar_t y_j[nd];
@@ -376,8 +340,6 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor32<scalar_t
                              const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data,
                              torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output,
                              scalar_t * ls,
-                             const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers_X,//Actually make a boolean mask
-                             const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers_Y,//Actually make a boolean mask
                              const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_boxes_count,
                              const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> y_boxes_count,
                              const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> indicator,
@@ -394,16 +356,11 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor32<scalar_t
     b = x_boxes_count[box_ind+1];
     int i = a + threadIdx.x+box_block_indicator[blockIdx.x]*blockDim.x; // Use within box, block index i.e. same size as indicator...
 
-    unsigned int M = centers_X.size(0);
     scalar_t x_i[nd];
     scalar_t acc;
     extern __shared__ scalar_t buffer[];
     scalar_t *yj = &buffer[0];
     scalar_t *bj = &buffer[blockDim.x*nd];
-    scalar_t *cX_i = &buffer[(blockDim.x)*(nd+1)];
-    if (threadIdx.x<nd){
-        cX_i[threadIdx.x] = centers_X[box_ind][threadIdx.x];
-    }
     //Load these points only... the rest gets no points... threadIdx.x +a to b. ...
     if (i<b) {
         for (int k = 0; k < nd; k++) {
