@@ -485,7 +485,7 @@ std::tuple<torch::Tensor,torch::Tensor> separate_interactions(
 
 
 template <typename scalar_t>
-torch::Tensor FFM(
+torch::Tensor FFM_XY(
         torch::Tensor &X_data,
         torch::Tensor &Y_data,
         torch::Tensor &b,
@@ -496,12 +496,12 @@ torch::Tensor FFM(
         ) {
     torch::Tensor output = torch::zeros({X_data.size(0),b.size(1)}).to(gpu_device); //initialize empty output
     torch::Tensor edge,xmin,ymin,interactions,far_field,near_field,interactions_x,interactions_y,interactions_x_parsed,cheb_data_X,laplace_combinations; //these are needed to figure out which interactions are near/far field
-    std::tie(edge,xmin,ymin) = calculate_edge(X_data,Y_data); //actually calculate them
-    n_tree_cuda<scalar_t> ntree_X = n_tree_cuda<scalar_t>(edge,X_data,xmin,gpu_device);
-    n_tree_cuda<scalar_t> ntree_Y = n_tree_cuda<scalar_t>(edge,Y_data,ymin,gpu_device);
     near_field = torch::zeros({1,2}).toType(torch::kInt32).to(gpu_device);
     torch::Tensor chebnodes_1D = chebyshev_nodes_1D(laplace_n).to(gpu_device); //get chebyshev nodes, laplace_nodes is fixed now, should probably be a variable
     std::tie(laplace_combinations,cheb_data_X)=parse_cheb_data<scalar_t>(chebnodes_1D,nd,gpu_device);
+    std::tie(edge,xmin,ymin) = calculate_edge(X_data,Y_data); //actually calculate them
+    n_tree_cuda<scalar_t> ntree_X = n_tree_cuda<scalar_t>(edge,X_data,xmin,gpu_device);
+    n_tree_cuda<scalar_t> ntree_Y = n_tree_cuda<scalar_t>(edge,Y_data,ymin,gpu_device);
 
     while (near_field.numel()>0 and ntree_X.avg_nr_points > min_points and ntree_Y.avg_nr_points > min_points){
         ntree_X.divide();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
@@ -541,6 +541,60 @@ torch::Tensor FFM(
     }
     return output;
 }
+
+template <typename scalar_t>
+torch::Tensor FFM_X(
+        torch::Tensor &X_data,
+        torch::Tensor &b,
+        const std::string & gpu_device,
+        scalar_t & ls,
+        int &laplace_n,
+        float &min_points
+) {
+    torch::Tensor output = torch::zeros({X_data.size(0),b.size(1)}).to(gpu_device); //initialize empty output
+    torch::Tensor edge,xmin,ymin,interactions,far_field,near_field,interactions_x,interactions_y,interactions_x_parsed,cheb_data_X,laplace_combinations; //these are needed to figure out which interactions are near/far field
+    near_field = torch::zeros({1,2}).toType(torch::kInt32).to(gpu_device);
+    torch::Tensor chebnodes_1D = chebyshev_nodes_1D(laplace_n).to(gpu_device); //get chebyshev nodes, laplace_nodes is fixed now, should probably be a variable
+    std::tie(laplace_combinations,cheb_data_X)=parse_cheb_data<scalar_t>(chebnodes_1D,nd,gpu_device);
+    std::tie(edge,xmin,ymin) = calculate_edge(X_data,X_data); //actually calculate them
+    n_tree_cuda<scalar_t> ntree_X = n_tree_cuda<scalar_t>(edge,X_data,xmin,gpu_device);
+    while (near_field.numel()>0 and ntree_X.avg_nr_points > min_points){
+        ntree_X.divide();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
+        interactions = get_new_interactions(near_field,ntree_X.dim_fac,gpu_device); //fix this. it does something funny
+        std::tie(far_field,near_field) =
+                separate_interactions<scalar_t>(
+                        interactions,
+                        ntree_X.centers,
+                        ntree_X.centers,
+                        ntree_X.edge,
+                        gpu_device);
+        if (far_field.numel()>0) {
+            torch::Tensor cheb_data = cheb_data_X*ntree_X.edge/2.+ntree_X.edge/2.;
+            std::tie(interactions_x,interactions_y) = unbind_nearfield(far_field);
+            interactions_x_parsed = process_interactions(interactions_x,ntree_X.centers.size(0),gpu_device);
+            far_field_compute_v2<scalar_t>( //Very many far field interactions quite fast...
+                    interactions_x_parsed,
+                    interactions_y,
+                    ntree_X,
+                    ntree_X,
+                    output,
+                    b,
+                    gpu_device,
+                    ls,
+                    chebnodes_1D,
+                    laplace_combinations,
+                    cheb_data
+            ); //far field compute
+        }
+    }
+
+    if (near_field.numel()>0){
+        std::tie(interactions_x,interactions_y) = unbind_nearfield(near_field);
+        interactions_x_parsed = process_interactions(interactions_x,ntree_X.centers.size(0),gpu_device);
+        near_field_compute_v2<scalar_t>(interactions_x_parsed,interactions_y,ntree_X, ntree_X, output, b, gpu_device,ls); //Make sure this thing works first!
+    }
+    return output;
+}
 template <typename scalar_t>
 struct FFM_object{
     torch::Tensor & X_data;
@@ -561,15 +615,28 @@ struct FFM_object{
     float & min_points): X_data(X_data), Y_data(Y_data),ls(ls),lambda(lambda),gpu_device(gpu_device), laplace_n(laplace_n),min_points(min_points){
     };
     virtual torch::Tensor operator* (torch::Tensor & b){
-        return FFM<scalar_t>(
-                X_data,
-                Y_data,
-                b,
-                gpu_device,
-                ls,
-                laplace_n,
-                min_points
-        )+b*lambda;
+        if (X_data.data_ptr()==Y_data.data_ptr()){
+            return FFM_X<scalar_t>(
+                    X_data,
+                    b,
+                    gpu_device,
+                    ls,
+                    laplace_n,
+                    min_points
+            ) +b*lambda;
+        }else{
+            return FFM_XY<scalar_t>(
+                    X_data,
+                    Y_data,
+                    b,
+                    gpu_device,
+                    ls,
+                    laplace_n,
+                    min_points
+            ) +b*lambda;
+        }
+
+
     };
 };
 template <typename scalar_t>
@@ -710,20 +777,20 @@ void benchmark_1(int laplace_n,int n,float min_points){
     torch::Tensor res,res_ref;
     FFM_object<float> ffm_obj = FFM_object<float>(X_train, X_train, ls, lambda, device_cuda,laplace_n,min_points); //FMM object
 //    FFM_object<float> ffm_obj_grad = FFM_object<float>(X,X,ls,op_grad,lambda,device_cuda);
-    exact_MV<float> exact_ref = exact_MV<float>(X_train, X_train, ls,  lambda, device_cuda,laplace_n,min_points); //Exact method reference
+//    exact_MV<float> exact_ref = exact_MV<float>(X_train, X_train, ls,  lambda, device_cuda,laplace_n,min_points); //Exact method reference
 //    exact_MV<float> ffm_obj_grad_exact = exact_MV<float>(X,X,ls,op_grad,lambda,device_cuda);
 
-    auto start = std::chrono::high_resolution_clock::now();
-    res_ref = exact_ref * b_train;
+//    auto start = std::chrono::high_resolution_clock::now();
+//    res_ref = exact_ref * b_train;
     auto end = std::chrono::high_resolution_clock::now();
     res = ffm_obj * b_train; //Fast math creates problems... fast math does a lot!!!
     auto end_2 = std::chrono::high_resolution_clock::now();
-    auto duration_1 = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
+//    auto duration_1 = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
     auto duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(end_2-end);
     std::cout<<"------------- "<<"laplace nodes: "<<laplace_n<<" n: "<<n<<" min_points: "<< min_points <<" -------------"<<std::endl;
-    std::cout<<"Full matmul time (ms): "<<duration_1.count()<<std::endl;
+//    std::cout<<"Full matmul time (ms): "<<duration_1.count()<<std::endl;
     std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
-    std::cout<<"Relative error (%): "<<((res_ref-res)/res_ref).abs_().mean()*100<<std::endl;
+//    std::cout<<"Relative error (%): "<<((res_ref-res)/res_ref).abs_().mean()*100<<std::endl;
 
 
 

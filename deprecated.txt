@@ -537,7 +537,7 @@ template<typename T>
 
 
 //    X_data=X,X,ls,op,lambda,device_cuda
-//    torch::Tensor output = FFM<float>(X,X,b,device_cuda,ls,op);
+//    torch::Tensor output = FFM_XY<float>(X,X,b,device_cuda,ls,op);
 //    torch::Tensor output_ref = torch::zeros_like(output);
 //    X = X.to(device_cuda);
 //    b = b.to(device_cuda);
