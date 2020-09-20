@@ -12,7 +12,7 @@
 #define BLOCK_SIZE 192
 #define MAXTHREADSPERBLOCK 1024
 #define SHAREDMEMPERBLOCK 49152
-#define nd 1 //gives error when one dim... might wanna fix that...
+#define nd 3 //gives error when one dim... might wanna fix that...
 //template<typename T>
 //using rbf_pointer = T (*) (T[], T[],const T *);
 

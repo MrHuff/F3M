@@ -54,7 +54,6 @@ struct n_tree_cuda{
     }
 
     void divide(){
-        torch::Tensor tmp_o = torch::zeros({box_indicator.size(0)}).toType(torch::kInt32).to(device);
         dim3 blockSize,gridSize;
         int memory;
         std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(nd, data.size(0));
@@ -63,17 +62,17 @@ struct n_tree_cuda{
                 centers.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                 multiply.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
                 box_indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                tmp_o.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
                 dim_fac_pointer
         );
         cudaDeviceSynchronize();
-        box_indicator = tmp_o;
-        std::tie(sort_ref,sorted_index) = torch::sort(box_indicator);
-        std::tie(box_indices_sorted,tmp,unique_counts) = torch::unique_consecutive(sort_ref,false,true);
+        sorted_index = torch::argsort(box_indicator).toType(torch::kInt32);
+        std::tie(box_indices_sorted,tmp,unique_counts) = torch::_unique2(box_indicator,true,false,true);
+
+        //replace with inplace sorting and unique...
+
         unique_counts = unique_counts.toType(torch::kInt32);
         largest_box_n =  unique_counts.max().item<int>();
         avg_nr_points = unique_counts.toType(torch::kFloat32).mean().item<float>();
-        sorted_index = sorted_index.toType(torch::kInt32);
         if (depth==0){
             centers = centers.repeat_interleave(dim_fac,0)+ 0.25 * edge * coord_tensor;
         }else{
@@ -400,7 +399,7 @@ void far_field_compute_v2(
                                             false,
                                             output);
 };
-torch::Tensor get_new_interactions(torch::Tensor & old_near_interactions, int & p,const std::string & gpu_device){
+torch::Tensor get_new_interactions(torch::Tensor & old_near_interactions, int & p,const std::string & gpu_device){//fix tmrw
     int n = old_near_interactions.size(0);
 //    std::vector<torch::Tensor> unbound_old = torch::unbind(old_near_interactions.repeat_interleave(p*p,0),1);
     torch::Tensor arr = torch::arange(p).toType(torch::kInt32).to(gpu_device);
@@ -408,8 +407,12 @@ torch::Tensor get_new_interactions(torch::Tensor & old_near_interactions, int & 
 //    torch::Tensor test_2 = arr.repeat_interleave(p).repeat(n);
 //    torch::Tensor interaction_x = p*unbound_old[0] + arr.repeat_interleave(p).repeat(n);
 //    torch::Tensor interaction_y = p*unbound_old[1] + arr.repeat(p*n);
-
-    torch::Tensor new_interactions_vec = torch::stack({arr.repeat_interleave(p).repeat(n),arr.repeat(p*n)},1)+p*old_near_interactions.repeat_interleave(p*p,0);
+    //memory profiling!
+    torch::Tensor new_interactions_vec = torch::stack({arr.repeat_interleave(p).repeat(n),arr.repeat(p*n)},1);
+    std::cout<<new_interactions_vec<<std::endl;
+    std::cout<<p*old_near_interactions.repeat_interleave(p*p,0)<<std::endl;
+    new_interactions_vec +=+p*old_near_interactions.repeat_interleave(p*p,0);
+    std::cout<<new_interactions_vec<<std::endl;
     new_interactions_vec = new_interactions_vec.index({torch::argsort(new_interactions_vec.slice(1,0,1).squeeze()),torch::indexing::Slice()});
 //    std::vector<torch::Tensor> unbound = torch::unbind(new_interactions_vec,1);
     return new_interactions_vec;
