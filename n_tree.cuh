@@ -7,28 +7,67 @@
 #include "utils.h"
 #include <vector>
 #include "algorithm"
-#include "divide_n_conquer.cu"
+#include "FFM_utils.cu"
 //template<typename T>
+
+
+void print_tensor(torch::Tensor & tensor){
+    std::cout<<tensor<<std::endl;
+}
 
 template<typename T>
 at::ScalarType dtype() { return at::typeMetaToScalarType(caffe2::TypeMeta::Make<T>()); }
 
-std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> calculate_edge(const torch::Tensor &X,const torch::Tensor &Y){
-    torch::Tensor Xmin = std::get<0>(X.min(0));
-    torch::Tensor Xmax = std::get<0>(X.max(0));
-    torch::Tensor Ymin = std::get<0>(Y.min(0));
-    torch::Tensor Ymax = std::get<0>(Y.max(0));
+
+template<typename scalar_t>
+std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> calculate_edge(const torch::Tensor &X,const torch::Tensor &Y,const std::string & gpu_device){
+//    torch::Tensor Xmin = std::get<0>(X.min(0));
+//    torch::Tensor Xmax = std::get<0>(X.max(0));
+//    torch::Tensor Ymin = std::get<0>(Y.min(0));
+//    torch::Tensor Ymax = std::get<0>(Y.max(0));
+    torch::Tensor Xmin = torch::zeros(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device);
+    torch::Tensor Xmax = torch::zeros(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device);
+    torch::Tensor Ymin = torch::zeros(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device);
+    torch::Tensor Ymax = torch::zeros(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device);
+    dim3 blockSize,gridSize;
+    blockSize.x = 1024;
+    gridSize.x = 10;
+    reduceMaxMinOptimizedWarpMatrix<scalar_t><<<gridSize,blockSize,8>>>(X.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                        Xmax.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>(),
+                                                                        Xmin.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>()
+    );
+    cudaDeviceSynchronize();
+    reduceMaxMinOptimizedWarpMatrix<scalar_t><<<gridSize,blockSize,8>>>(Y.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                        Ymax.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>(),
+                                                                        Ymin.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>()
+    );
+    cudaDeviceSynchronize();
     torch::Tensor edge = torch::cat({Xmax - Xmin, Ymax - Ymin}).max();
     return std::make_tuple(edge*1.01,Xmin,Ymin);
+};
+template<typename scalar_t>
+std::tuple<torch::Tensor,torch::Tensor> calculate_edge_X(const torch::Tensor &X,const std::string & gpu_device){
+    torch::Tensor Xmin = torch::zeros(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device);
+    torch::Tensor Xmax = torch::zeros(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device);
+    dim3 blockSize,gridSize;
+    blockSize.x = 1024;
+    gridSize.x = 10;
+    reduceMaxMinOptimizedWarpMatrix<scalar_t><<<gridSize,blockSize,8>>>(X.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                                    Xmax.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>(),
+                                                                                            Xmin.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>()
+                            );
+    cudaDeviceSynchronize();
+    torch::Tensor edge = (Xmax - Xmin).max();
+    return std::make_tuple(edge*1.01,Xmin);
 };
 
 
 template <typename scalar_t>
 struct n_tree_cuda{
     torch::Tensor &data;
-    torch::Tensor edge,xmin,box_indicator,multiply,coord_tensor,sorted_index,unique_counts,box_indices_sorted,centers,tmp,sort_ref;
+    torch::Tensor edge,xmin,box_indicator,multiply,coord_tensor,sorted_index,unique_counts,box_indices_sorted,centers,tmp;
     std::string device;
-    int dim,dim_fac,largest_box_n,depth;
+    int dim,dim_fac,depth;
     int *dim_fac_pointer;
     float avg_nr_points;
     n_tree_cuda(torch::Tensor &e, torch::Tensor &d, torch::Tensor &xm, const std::string &cuda_str):data(d){
@@ -38,11 +77,10 @@ struct n_tree_cuda{
         dim = data.size(1);
         dim_fac = pow(2,dim);
         cudaMalloc((void **)&dim_fac_pointer, sizeof(int));
-        cudaMemcpy(dim_fac_pointer, &dim_fac, sizeof(int), cudaMemcpyHostToDevice);
+        cudaMemcpy(dim_fac_pointer, &dim_fac, sizeof(int), cudaMemcpyHostToDevice);  //Do delete somewhere
         box_indicator = torch::zeros({data.size(0)}).toType(torch::kInt32).to(device);
-        box_indices_sorted = torch::tensor(0).to(device);
         unique_counts = torch::tensor(data.size(0)).to(device);
-        largest_box_n = unique_counts.max().item<int>();
+        sorted_index = torch::arange(data.size(0)).toType(torch::kInt32).to(device);
         avg_nr_points =  unique_counts.toType(torch::kFloat32).mean().item<float>();
         multiply = torch::pow(2,torch::arange(dim).toType(torch::kInt32)).to(device);
         coord_tensor = torch::zeros({dim_fac,dim}).toType(torch::kInt32).to(device);
@@ -62,6 +100,7 @@ struct n_tree_cuda{
                 centers.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                 multiply.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
                 box_indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+                sorted_index.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
                 dim_fac_pointer
         );
         cudaDeviceSynchronize();
@@ -71,7 +110,6 @@ struct n_tree_cuda{
         //replace with inplace sorting and unique...
 
         unique_counts = unique_counts.toType(torch::kInt32);
-        largest_box_n =  unique_counts.max().item<int>();
         avg_nr_points = unique_counts.toType(torch::kFloat32).mean().item<float>();
         if (depth==0){
             centers = centers.repeat_interleave(dim_fac,0)+ 0.25 * edge * coord_tensor;
@@ -273,7 +311,7 @@ void apply_laplace_interpolation_v2(
     int min_size=boxes_count.min().item<int>();
     blkSize = optimal_blocksize(min_size);
     std::tie(blockSize,gridSize,memory,indicator,box_block) = skip_kernel_launch<scalar_t>(nd,blkSize,boxes_count,n_tree.box_indices_sorted);
-    memory = memory+nodes.size(0)*sizeof(scalar_t)+sizeof(int);
+    memory = memory+nodes.size(0)*sizeof(scalar_t)+sizeof(int)+32*sizeof(scalar_t);
     torch::Tensor boxes_count_cumulative = torch::cat({torch::zeros({1}).toType(torch::kInt32).to(device_gpu),boxes_count.cumsum(0).toType(torch::kInt32)});
 
     if (transpose){
@@ -401,19 +439,12 @@ void far_field_compute_v2(
 };
 torch::Tensor get_new_interactions(torch::Tensor & old_near_interactions, int & p,const std::string & gpu_device){//fix tmrw
     int n = old_near_interactions.size(0);
-//    std::vector<torch::Tensor> unbound_old = torch::unbind(old_near_interactions.repeat_interleave(p*p,0),1);
     torch::Tensor arr = torch::arange(p).toType(torch::kInt32).to(gpu_device);
-//    torch::Tensor test = arr.repeat(p*n);
-//    torch::Tensor test_2 = arr.repeat_interleave(p).repeat(n);
-//    torch::Tensor interaction_x = p*unbound_old[0] + arr.repeat_interleave(p).repeat(n);
-//    torch::Tensor interaction_y = p*unbound_old[1] + arr.repeat(p*n);
-    //memory profiling!
-    torch::Tensor new_interactions_vec = torch::stack({arr.repeat_interleave(p).repeat(n),arr.repeat(p*n)},1);
-    std::cout<<new_interactions_vec<<std::endl;
-    std::cout<<p*old_near_interactions.repeat_interleave(p*p,0)<<std::endl;
-    new_interactions_vec +=+p*old_near_interactions.repeat_interleave(p*p,0);
-    std::cout<<new_interactions_vec<<std::endl;
-    new_interactions_vec = new_interactions_vec.index({torch::argsort(new_interactions_vec.slice(1,0,1).squeeze()),torch::indexing::Slice()});
+    torch::Tensor new_interactions_vec = torch::stack({arr.repeat_interleave(p).repeat(n),arr.repeat(p*n)},1)+p*old_near_interactions.repeat_interleave(p*p,0);
+//    std::cout<<new_interactions_vec<<std::endl;
+//    std::cout<<p*old_near_interactions.repeat_interleave(p*p,0)<<std::endl;
+//    new_interactions_vec +=+p*old_near_interactions.repeat_interleave(p*p,0);
+//    std::cout<<new_interactions_vec<<std::endl;
 //    std::vector<torch::Tensor> unbound = torch::unbind(new_interactions_vec,1);
     return new_interactions_vec;
 }
@@ -457,8 +488,9 @@ std::tuple<torch::Tensor,torch::Tensor> parse_cheb_data(
 
 }
 
-std::tuple<torch::Tensor,torch::Tensor> unbind_nearfield(torch::Tensor & near_field){
-    std::vector<torch::Tensor> tmp = near_field.unbind(1);
+std::tuple<torch::Tensor,torch::Tensor> unbind_sort(torch::Tensor & interactions){
+    interactions = interactions.index({torch::argsort(interactions.slice(1,0,1).squeeze()),torch::indexing::Slice()});
+    std::vector<torch::Tensor> tmp = interactions.unbind(1);
     return std::make_tuple(tmp[0],tmp[1]);
 }
 
@@ -495,14 +527,15 @@ torch::Tensor FFM_XY(
         const std::string & gpu_device,
         scalar_t & ls,
         int &laplace_n,
-        float &min_points
-        ) {
+        float &min_points,
+        scalar_t & lambda
+) {
     torch::Tensor output = torch::zeros({X_data.size(0),b.size(1)}).to(gpu_device); //initialize empty output
     torch::Tensor edge,xmin,ymin,interactions,far_field,near_field,interactions_x,interactions_y,interactions_x_parsed,cheb_data_X,laplace_combinations; //these are needed to figure out which interactions are near/far field
     near_field = torch::zeros({1,2}).toType(torch::kInt32).to(gpu_device);
     torch::Tensor chebnodes_1D = chebyshev_nodes_1D(laplace_n).to(gpu_device); //get chebyshev nodes, laplace_nodes is fixed now, should probably be a variable
     std::tie(laplace_combinations,cheb_data_X)=parse_cheb_data<scalar_t>(chebnodes_1D,nd,gpu_device);
-    std::tie(edge,xmin,ymin) = calculate_edge(X_data,Y_data); //actually calculate them
+    std::tie(edge,xmin,ymin) = calculate_edge<scalar_t>(X_data,Y_data,gpu_device); //actually calculate them
     n_tree_cuda<scalar_t> ntree_X = n_tree_cuda<scalar_t>(edge,X_data,xmin,gpu_device);
     n_tree_cuda<scalar_t> ntree_Y = n_tree_cuda<scalar_t>(edge,Y_data,ymin,gpu_device);
 
@@ -519,7 +552,7 @@ torch::Tensor FFM_XY(
                 gpu_device);
         if (far_field.numel()>0) {
             torch::Tensor cheb_data = cheb_data_X*ntree_X.edge/2.+ntree_X.edge/2.;
-            std::tie(interactions_x,interactions_y) = unbind_nearfield(far_field);
+            std::tie(interactions_x,interactions_y) = unbind_sort(far_field);
             interactions_x_parsed = process_interactions(interactions_x,ntree_X.centers.size(0),gpu_device);
             far_field_compute_v2<scalar_t>( //Very many far field interactions quite fast...
                     interactions_x_parsed,
@@ -538,11 +571,11 @@ torch::Tensor FFM_XY(
         }
 
     if (near_field.numel()>0){
-        std::tie(interactions_x,interactions_y) = unbind_nearfield(near_field);
+        std::tie(interactions_x,interactions_y) = unbind_sort(near_field);
         interactions_x_parsed = process_interactions(interactions_x,ntree_X.centers.size(0),gpu_device);
         near_field_compute_v2<scalar_t>(interactions_x_parsed,interactions_y,ntree_X, ntree_Y, output, b, gpu_device,ls); //Make sure this thing works first!
     }
-    return output;
+    return output+lambda*b;
 }
 
 template <typename scalar_t>
@@ -552,14 +585,16 @@ torch::Tensor FFM_X(
         const std::string & gpu_device,
         scalar_t & ls,
         int &laplace_n,
-        float &min_points
+        float &min_points,
+        scalar_t & lambda
+
 ) {
     torch::Tensor output = torch::zeros({X_data.size(0),b.size(1)}).to(gpu_device); //initialize empty output
-    torch::Tensor edge,xmin,ymin,interactions,far_field,near_field,interactions_x,interactions_y,interactions_x_parsed,cheb_data_X,laplace_combinations; //these are needed to figure out which interactions are near/far field
+    torch::Tensor edge,xmin,interactions,far_field,near_field,interactions_x,interactions_y,interactions_x_parsed,cheb_data_X,laplace_combinations; //these are needed to figure out which interactions are near/far field
     near_field = torch::zeros({1,2}).toType(torch::kInt32).to(gpu_device);
     torch::Tensor chebnodes_1D = chebyshev_nodes_1D(laplace_n).to(gpu_device); //get chebyshev nodes, laplace_nodes is fixed now, should probably be a variable
     std::tie(laplace_combinations,cheb_data_X)=parse_cheb_data<scalar_t>(chebnodes_1D,nd,gpu_device);
-    std::tie(edge,xmin,ymin) = calculate_edge(X_data,X_data); //actually calculate them
+    std::tie(edge,xmin) = calculate_edge_X<scalar_t>(X_data,gpu_device); //actually calculate them
     n_tree_cuda<scalar_t> ntree_X = n_tree_cuda<scalar_t>(edge,X_data,xmin,gpu_device);
     while (near_field.numel()>0 and ntree_X.avg_nr_points > min_points){
         ntree_X.divide();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
@@ -573,7 +608,7 @@ torch::Tensor FFM_X(
                         gpu_device);
         if (far_field.numel()>0) {
             torch::Tensor cheb_data = cheb_data_X*ntree_X.edge/2.+ntree_X.edge/2.;
-            std::tie(interactions_x,interactions_y) = unbind_nearfield(far_field);
+            std::tie(interactions_x,interactions_y) = unbind_sort(far_field);
             interactions_x_parsed = process_interactions(interactions_x,ntree_X.centers.size(0),gpu_device);
             far_field_compute_v2<scalar_t>( //Very many far field interactions quite fast...
                     interactions_x_parsed,
@@ -592,11 +627,11 @@ torch::Tensor FFM_X(
     }
 
     if (near_field.numel()>0){
-        std::tie(interactions_x,interactions_y) = unbind_nearfield(near_field);
+        std::tie(interactions_x,interactions_y) = unbind_sort(near_field);
         interactions_x_parsed = process_interactions(interactions_x,ntree_X.centers.size(0),gpu_device);
         near_field_compute_v2<scalar_t>(interactions_x_parsed,interactions_y,ntree_X, ntree_X, output, b, gpu_device,ls); //Make sure this thing works first!
     }
-    return output;
+    return output+lambda*b;
 }
 template <typename scalar_t>
 struct FFM_object{
@@ -625,8 +660,9 @@ struct FFM_object{
                     gpu_device,
                     ls,
                     laplace_n,
-                    min_points
-            ) +b*lambda;
+                    min_points,
+                    lambda
+            );
         }else{
             return FFM_XY<scalar_t>(
                     X_data,
@@ -635,8 +671,9 @@ struct FFM_object{
                     gpu_device,
                     ls,
                     laplace_n,
-                    min_points
-            ) +b*lambda;
+                    min_points,
+                    lambda
+            );
         }
 
 
@@ -649,7 +686,7 @@ struct exact_MV : FFM_object<scalar_t>{
                          scalar_t & ls,
                          scalar_t &lambda,
                          const std::string & gpu_device,
-                         int &laplace_n,
+                                                                                                                                                                                                                                                  int &laplace_n,
                          float &min_points): FFM_object<scalar_t>(X_data, Y_data, ls, lambda, gpu_device,laplace_n,min_points){};
     torch::Tensor operator* (torch::Tensor & b){
         torch::Tensor output = torch::zeros({FFM_object<scalar_t>::X_data.size(0), b.size(1)}).to(FFM_object<scalar_t>::gpu_device);
@@ -771,29 +808,27 @@ void benchmark_1(int laplace_n,int n,float min_points){
 
 //    torch::Tensor X_train = read_csv<float>("X_train_PCA.csv",11619,3); something wrong with data probably...
 //    torch::Tensor b_train = read_csv<float>("Y_train.csv",11619,1); something wrong with data probably...
-    torch::Tensor X_train = torch::rand({n,nd});//.to(device_cuda); //Something fishy going on here, probably the boxes stuff...
-    torch::Tensor b_train = torch::randn({n,1});//to(device_cuda);
-    X_train = X_train.to(device_cuda);
-    b_train = b_train.to(device_cuda);
+    torch::Tensor X_train = torch::rand({n,nd}).to(device_cuda); //Something fishy going on here, probably the boxes stuff...
+    torch::Tensor b_train = torch::randn({n,1}).to(device_cuda);
     float ls = 1.0; //lengthscale
     float lambda = 1e-1; // ridge parameter
     torch::Tensor res,res_ref;
     FFM_object<float> ffm_obj = FFM_object<float>(X_train, X_train, ls, lambda, device_cuda,laplace_n,min_points); //FMM object
 //    FFM_object<float> ffm_obj_grad = FFM_object<float>(X,X,ls,op_grad,lambda,device_cuda);
-//    exact_MV<float> exact_ref = exact_MV<float>(X_train, X_train, ls,  lambda, device_cuda,laplace_n,min_points); //Exact method reference
+    exact_MV<float> exact_ref = exact_MV<float>(X_train, X_train, ls,  lambda, device_cuda,laplace_n,min_points); //Exact method reference
 //    exact_MV<float> ffm_obj_grad_exact = exact_MV<float>(X,X,ls,op_grad,lambda,device_cuda);
 
-//    auto start = std::chrono::high_resolution_clock::now();
-//    res_ref = exact_ref * b_train;
+    auto start = std::chrono::high_resolution_clock::now();
+    res_ref = exact_ref * b_train;
     auto end = std::chrono::high_resolution_clock::now();
     res = ffm_obj * b_train; //Fast math creates problems... fast math does a lot!!!
     auto end_2 = std::chrono::high_resolution_clock::now();
-//    auto duration_1 = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
+    auto duration_1 = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
     auto duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(end_2-end);
     std::cout<<"------------- "<<"laplace nodes: "<<laplace_n<<" n: "<<n<<" min_points: "<< min_points <<" -------------"<<std::endl;
-//    std::cout<<"Full matmul time (ms): "<<duration_1.count()<<std::endl;
+    std::cout<<"Full matmul time (ms): "<<duration_1.count()<<std::endl;
     std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
-//    std::cout<<"Relative error (%): "<<((res_ref-res)/res_ref).abs_().mean()*100<<std::endl;
+    std::cout<<"Relative error: "<<((res_ref-res)/res_ref).abs_().mean()<<std::endl;
 
 
 
