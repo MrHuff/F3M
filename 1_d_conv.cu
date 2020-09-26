@@ -7,8 +7,6 @@
 #include <random>
 #include <stdexcept>
 #include <torch/torch.h> //for n00bs like me, direct translation to python rofl
-#include <stdio.h>
-#include <assert.h>
 #define BLOCK_SIZE 192
 #define MAXTHREADSPERBLOCK 1024
 #define SHAREDMEMPERBLOCK 49152
@@ -506,7 +504,7 @@ __global__ void laplace_shared(
                     val = calculate_laplace_product(l_p, x_i, yjrel, b_i, laplace_n);
                 }
                 __syncthreads();
-                val = blockReduceSum<scalar_t>(val, shared_sum);
+                val = blockReduceSum<scalar_t>(val, shared_sum); //Make sure entire block actually does reduction! Else funny business ensues
                 if (threadIdx.x == 0) {
                     atomicAdd(&output[jstart + jrel + box_ind * cheb_data_size][b_ind], val);
                 }

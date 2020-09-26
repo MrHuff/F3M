@@ -31,7 +31,7 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> calculate_edge(const torch
     torch::Tensor Ymax = torch::zeros(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device);
     dim3 blockSize,gridSize;
     blockSize.x = 1024;
-    gridSize.x = 10;
+    gridSize.x = 20;
     reduceMaxMinOptimizedWarpMatrix<scalar_t><<<gridSize,blockSize,8>>>(X.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                                         Xmax.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>(),
                                                                         Xmin.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>()
@@ -78,9 +78,8 @@ struct n_tree_cuda{
         dim_fac = pow(2,dim);
         cudaMalloc((void **)&dim_fac_pointer, sizeof(int));
         cudaMemcpy(dim_fac_pointer, &dim_fac, sizeof(int), cudaMemcpyHostToDevice);  //Do delete somewhere
-        box_indicator = torch::zeros({data.size(0)}).toType(torch::kInt32).to(device);
+        box_indicator = torch::zeros({data.size(0)}).toType(torch::kInt32).contiguous().to(device);
         unique_counts = torch::tensor(data.size(0)).to(device);
-        sorted_index = torch::arange(data.size(0)).toType(torch::kInt32).to(device);
         avg_nr_points =  unique_counts.toType(torch::kFloat32).mean().item<float>();
         multiply = torch::pow(2,torch::arange(dim).toType(torch::kInt32)).to(device);
         coord_tensor = torch::zeros({dim_fac,dim}).toType(torch::kInt32).to(device);
@@ -92,19 +91,22 @@ struct n_tree_cuda{
     }
 
     void divide(){
+        sorted_index = torch::arange(data.size(0)).contiguous().toType(torch::kInt32).to(device);
         dim3 blockSize,gridSize;
         int memory;
         std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(nd, data.size(0));
-        box_division<scalar_t><<<gridSize,blockSize>>>(
+        box_division<scalar_t><<<gridSize,blockSize,192*4>>>(
                 data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                 centers.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                 multiply.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                box_indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                sorted_index.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+                        box_indicator.data_ptr<int>(),
+//                box_indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+                sorted_index.data_ptr<int>(),
                 dim_fac_pointer
         );
         cudaDeviceSynchronize();
-        sorted_index = torch::argsort(box_indicator).toType(torch::kInt32);
+        sorted_index = torch::argsort(box_indicator).toType(torch::kInt32);//REPLACE WITH IN-PLACE SORTING
+
         std::tie(box_indices_sorted,tmp,unique_counts) = torch::_unique2(box_indicator,true,false,true);
 
         //replace with inplace sorting and unique...

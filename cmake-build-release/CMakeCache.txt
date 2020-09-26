@@ -244,6 +244,9 @@ CMAKE_STRIP:FILEPATH=/usr/bin/strip
 // Studio IDE projects all commands are done without /nologo.
 CMAKE_VERBOSE_MAKEFILE:BOOL=FALSE
 
+//The directory containing a CMake configuration file for CUB.
+CUB_DIR:PATH=CUB_DIR-NOTFOUND
+
 //Compile device code in 64 bit mode
 CUDA_64_BIT_DEVICE_CODE:BOOL=ON
 
@@ -427,6 +430,9 @@ TORCH_LIBRARY:FILEPATH=/home/rhu/C_pp_libs/libtorch-cxx11-abi-shared-with-deps-1
 
 //The directory containing a CMake configuration file for Torch.
 Torch_DIR:PATH=/home/rhu/C_pp_libs/libtorch-cxx11-abi-shared-with-deps-1.5.0+cu101/libtorch/share/cmake/Torch
+
+//The directory containing a CMake configuration file for cub.
+cub_DIR:PATH=cub_DIR-NOTFOUND
 
 //Value Computed by CMake
 cuda_n_body_BINARY_DIR:STATIC=/home/rhu/Documents/phd_projects/cuda_n_body/cmake-build-release
