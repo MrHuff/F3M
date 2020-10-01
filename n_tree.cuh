@@ -104,8 +104,9 @@ struct n_tree_cuda{
                 dim_fac_pointer
         );
         cudaDeviceSynchronize();
-        BlockSortKernel<int,1024,4><<<2,1024,32>>>(box_indicator.data_ptr<int>(),sorted_index.data_ptr<int>(),sorted_index.data_ptr<int>());
-//        sorted_index = torch::argsort(box_indicator).toType(torch::kInt32);//REPLACE WITH IN-PLACE SORTING
+        sorted_index = torch::argsort(box_indicator).toType(torch::kInt32);//REPLACE WITH IN-PLACE SORTING
+
+//        BlockSortKernel<int,1024,4><<<1,1024,32>>>(box_indicator.data_ptr<int>(),sorted_index.data_ptr<int>(),sorted_index.data_ptr<int>());
 //        void     *d_temp_storage = NULL;
 //        size_t   temp_storage_bytes = 0;
 //        cub::DeviceRadixSort::SortPairs(d_temp_storage, temp_storage_bytes,
@@ -119,7 +120,6 @@ struct n_tree_cuda{
         std::tie(box_indices_sorted,tmp,unique_counts) = torch::_unique2(box_indicator,true,false,true);
 
         //replace with inplace sorting and unique...
-
         unique_counts = unique_counts.toType(torch::kInt32);
         avg_nr_points = unique_counts.toType(torch::kFloat32).mean().item<float>();
         if (depth==0){

@@ -5,6 +5,7 @@
 #pragma once
 #include <torch/torch.h> //for n00bs like me, direct translation to python rofl
 #include <cub/cub.cuh>
+#include <npp.h>
 using namespace cub;
 template <typename scalar_t, int nd>
 __global__ void box_division(const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
@@ -25,7 +26,18 @@ __global__ void box_division(const torch::PackedTensorAccessor32<scalar_t,2,torc
     for (int k=0;k<nd;k++){
         old_indices[i]+= (centers[old_ind][k]<=X_data[i][k])*b[k];
     }
+
+    int col = atomicAdd(&global_vector_counter[old_indices[i]],1);
+//    matrix[old_indices[i]][col] = i;
 }
+//
+
+//box_idx , data_point_idx.
+//0 : [- 1- 1- 1- 1-]
+//1 : [- 1- -1- -1- -1- 1]
+//global_vector_counter: [32 50 ... 64] cumsum [0 32 82 ... n]
+//n [0 0 0 0 0 0 0 0 ] indices in the sorted box order
+// new global vector counter... + cumsum[box_indx] + value of col. 
 
 
 template <
@@ -250,14 +262,14 @@ __global__ void reduceMaxMinOptimizedWarpMatrix(
         torch::PackedTensorAccessor32<scalar_t,1,torch::RestrictPtrTraits> minOut
         )
 {
-    __shared__ float sharedMax;
-    __shared__ float sharedMin;
+    __shared__ scalar_t sharedMax;
+    __shared__ scalar_t sharedMin;
     int size = input.size(0);
     int increment = gridDim.x*blockDim.x;
     if(threadIdx.x+blockDim.x*blockIdx.x>size-1){return;}
     for(int j=0;j<cols;j++){
-        scalar_t localMax = -4286578688.;
-        scalar_t localMin = 4286578688.;
+        scalar_t localMax = -NPP_MAXABS_32F;
+        scalar_t localMin = NPP_MAXABS_32F;
         for (int i = threadIdx.x+blockDim.x*blockIdx.x; i < size; i += increment) //iterate through warps...
         {
             if (localMax < input[i][j])
@@ -288,4 +300,16 @@ __global__ void reduceMaxMinOptimizedWarpMatrix(
 
     }
 }
-
+//template < typename TYPE >
+//struct PLUS_INFINITY;
+//
+//
+//template <>
+//struct PLUS_INFINITY< float > {
+//    static constexpr float value = INFINITY_FLOAT;
+//};
+//
+//template <>
+//struct PLUS_INFINITY< double > {
+//    static constexpr double value = INFINITY_DOUBLE;
+//};
