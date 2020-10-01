@@ -52,7 +52,7 @@ int main(int argc, char const *argv[]){
     int l_n = std::stoi(argv[1]);
     int n = std::stoi(argv[2]);
     float min_points = std::stof(argv[3]);
-    benchmark_1(l_n,n,min_points);
+    benchmark_1<3>(l_n,n,min_points);
     cudaProfilerStop();
     cudaDeviceReset();
     //chart out nodes, n, speed etc...

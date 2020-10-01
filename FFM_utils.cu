@@ -4,7 +4,9 @@
 
 #pragma once
 #include <torch/torch.h> //for n00bs like me, direct translation to python rofl
-template <typename scalar_t>
+#include <cub/cub.cuh>
+using namespace cub;
+template <typename scalar_t, int nd>
 __global__ void box_division(const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
                              const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers,
                              const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> b,
@@ -24,6 +26,52 @@ __global__ void box_division(const torch::PackedTensorAccessor32<scalar_t,2,torc
         old_indices[i]+= (centers[old_ind][k]<=X_data[i][k])*b[k];
     }
 }
+
+
+template <
+        typename    Key,
+        int         BLOCK_THREADS,
+        int         ITEMS_PER_THREAD>
+__launch_bounds__ (BLOCK_THREADS)
+__global__ void BlockSortKernel(
+        Key         *d_in,          // Tile of input
+        Key         *d_out,
+        Key         *d_val
+        // Tile of output
+        )     // Elapsed cycle count of block scan
+{
+    enum { TILE_SIZE = BLOCK_THREADS * ITEMS_PER_THREAD };
+    // Specialize BlockLoad type for our thread block (uses warp-striped loads for coalescing, then transposes in shared memory to a blocked arrangement)
+    typedef BlockLoad<Key, BLOCK_THREADS, ITEMS_PER_THREAD, BLOCK_LOAD_WARP_TRANSPOSE> BlockLoadT;
+    // Specialize BlockRadixSort type for our thread block
+    typedef BlockRadixSort<Key, BLOCK_THREADS, ITEMS_PER_THREAD,Key> BlockRadixSortT;
+    // Shared memory
+    __shared__ union TempStorage
+    {
+        typename BlockLoadT::TempStorage        load;
+        typename BlockLoadT::TempStorage        load_val;
+        typename BlockRadixSortT::TempStorage   sort;
+    } temp_storage;
+    // Per-thread tile items
+    Key items[ITEMS_PER_THREAD];
+    Key values[ITEMS_PER_THREAD];
+    // Our current block's offset
+    int block_offset = blockIdx.x * TILE_SIZE;
+    // Load items into a blocked arrangement
+    BlockLoadT(temp_storage.load).Load(d_in + block_offset, items);
+    // Barrier for smem reuse
+    __syncthreads();
+    BlockLoadT(temp_storage.load_val).Load(d_val + block_offset, values);
+    __syncthreads();
+
+    // Sort keys
+    BlockRadixSortT(temp_storage.sort).SortBlockedToStriped(items,values);
+    // Store output in striped fashion
+    StoreDirectStriped<BLOCK_THREADS>(threadIdx.x, d_out + block_offset, values);
+    // Store elapsed clocks
+}
+
+
 
 
 __global__ void parse_x_boxes(
@@ -48,13 +96,12 @@ __global__ void parse_x_boxes(
     __syncthreads();
 }
 
-template <typename scalar_t>
+template <typename scalar_t, int nd>
 __global__ void get_cheb_idx_data(
         const torch::PackedTensorAccessor32<scalar_t,1,torch::RestrictPtrTraits> cheb_nodes,
         torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> cheb_data,
         torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> cheb_idx
 ){
-    int d = cheb_data.size(1);
     int n = cheb_data.size(0);
     int i = threadIdx.x+blockIdx.x*blockDim.x; // Thread nr
     if (i>n-1){return;}
@@ -65,22 +112,21 @@ __global__ void get_cheb_idx_data(
     }
     int idx;
     __syncthreads();
-    for (int j=0;j<d;j++){
+    for (int j=0;j<nd;j++){
         idx = (int) floor((i%(int)pow(lap_nodes,j+1))/pow(lap_nodes,j));
         cheb_idx[i][j] = idx;
         cheb_data[i][j] = cheb_nodes[idx];
     }
 }
-
+template <int nd>
 __global__ void get_centers(
         torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> centers
 ){
-    int d = centers.size(1);
     int n = centers.size(0);
     int i = threadIdx.x+blockIdx.x*blockDim.x; // Thread nr
     if (i>n-1){return;}
     int idx;
-    for (int j=0;j<d;j++){
+    for (int j=0;j<nd;j++){
         idx = (int) floor((i%(int)pow(2,j+1))/pow(2,j));
         centers[i][j] = (idx==0) ? -1 : 1;
     }
@@ -88,7 +134,7 @@ __global__ void get_centers(
 
 
 
-template <typename scalar_t>
+template <typename scalar_t, int nd>
 __global__ void boolean_separate_interactions(
         const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers_X,
         const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers_Y,
@@ -106,7 +152,7 @@ __global__ void boolean_separate_interactions(
     for (int k=0;k<nd;k++){
         distance[k]=centers_Y[by][k] - centers_X[bx][k];
     }
-    if (get_2_norm(distance)>=(*edge*2+1e-6)){
+    if (get_2_norm<scalar_t,nd>(distance)>=(*edge*2+1e-6)){
         is_far_field[i]=true;
     }
 }
@@ -197,7 +243,7 @@ __device__ __forceinline__ float atomicMinFloat (float * addr, float value) {
 
     return old;
 }
-template<typename scalar_t>
+template<typename scalar_t,int cols>
 __global__ void reduceMaxMinOptimizedWarpMatrix(
         const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> input,
         torch::PackedTensorAccessor32<scalar_t,1,torch::RestrictPtrTraits> maxOut,
@@ -207,7 +253,6 @@ __global__ void reduceMaxMinOptimizedWarpMatrix(
     __shared__ float sharedMax;
     __shared__ float sharedMin;
     int size = input.size(0);
-    int cols = input.size(1);
     int increment = gridDim.x*blockDim.x;
     if(threadIdx.x+blockDim.x*blockIdx.x>size-1){return;}
     for(int j=0;j<cols;j++){
