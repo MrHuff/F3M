@@ -65,7 +65,7 @@ std::tuple<torch::Tensor,torch::Tensor> calculate_edge_X(const torch::Tensor &X,
 template <typename scalar_t,int dim>
 struct n_tree_cuda{
     torch::Tensor &data;
-    torch::Tensor edge,xmin,box_indicator,multiply,coord_tensor,sorted_index,unique_counts,box_indices_sorted,centers,tmp;
+    torch::Tensor edge,xmin,box_indicator,multiply,coord_tensor,sorted_index,unique_counts,box_indices_sorted,centers,unique_counts_cum,tmp;
     std::string device;
     int dim_fac,depth;
     int *dim_fac_pointer;
@@ -78,8 +78,8 @@ struct n_tree_cuda{
         cudaMalloc((void **)&dim_fac_pointer, sizeof(int));
         cudaMemcpy(dim_fac_pointer, &dim_fac, sizeof(int), cudaMemcpyHostToDevice);  //Do delete somewhere
         box_indicator = torch::zeros({data.size(0)}).toType(torch::kInt32).contiguous().to(device);
-        unique_counts = torch::tensor(data.size(0)).to(device);
-        avg_nr_points =  unique_counts.toType(torch::kFloat32).mean().item<float>();
+        sorted_index  = torch::zeros({data.size(0)}).toType(torch::kInt32).contiguous().to(device);
+        avg_nr_points =  (float)d.size(0);
         multiply = torch::pow(2,torch::arange(dim).toType(torch::kInt32)).to(device);
         coord_tensor = torch::zeros({dim_fac,dim}).toType(torch::kInt32).to(device);
         get_centers<dim><<<8,192>>>(coord_tensor.packed_accessor32<int,2,torch::RestrictPtrTraits>());
@@ -90,37 +90,32 @@ struct n_tree_cuda{
     }
 
     void divide(){
-        sorted_index = torch::arange(data.size(0)).contiguous().toType(torch::kInt32).to(device);
         dim3 blockSize,gridSize;
         int memory;
         std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(dim, data.size(0));
-        box_division<scalar_t,dim><<<gridSize,blockSize,192*4>>>(
+        unique_counts_cum = torch::zeros(centers.size(0)*dim_fac+1).toType(torch::kInt32).contiguous().to(device);;
+        unique_counts= torch::zeros(centers.size(0)*dim_fac).toType(torch::kInt32).contiguous().to(device);;
+        box_division<scalar_t,dim><<<gridSize,blockSize>>>(
                 data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                 centers.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                 multiply.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                        box_indicator.data_ptr<int>(),
-//                box_indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                sorted_index.data_ptr<int>(),
+                box_indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+                unique_counts_cum.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
                 dim_fac_pointer
+
         );
         cudaDeviceSynchronize();
-        sorted_index = torch::argsort(box_indicator).toType(torch::kInt32);//REPLACE WITH IN-PLACE SORTING
-
-//        BlockSortKernel<int,1024,4><<<1,1024,32>>>(box_indicator.data_ptr<int>(),sorted_index.data_ptr<int>(),sorted_index.data_ptr<int>());
-//        void     *d_temp_storage = NULL;
-//        size_t   temp_storage_bytes = 0;
-//        cub::DeviceRadixSort::SortPairs(d_temp_storage, temp_storage_bytes,
-//                                        box_indicator.data_ptr<int>(), box_indicator.data_ptr<int>(), sorted_index.data_ptr<int>(), sorted_index.data_ptr<int>(), data.size(0));
-//// Allocate temporary storage
-//        cudaMalloc(&d_temp_storage, temp_storage_bytes);
-//// Run sorting operation
-//        cub::DeviceRadixSort::SortPairs(d_temp_storage, temp_storage_bytes,
-//                                        box_indicator.data_ptr<int>(), box_indicator.data_ptr<int>(), sorted_index.data_ptr<int>(), sorted_index.data_ptr<int>(), data.size(0));
-
-        std::tie(box_indices_sorted,tmp,unique_counts) = torch::_unique2(box_indicator,true,false,true);
+        unique_counts_cum = unique_counts_cum.cumsum(0).toType(torch::kInt32);
+        group_index<<<gridSize,blockSize>>>(
+                box_indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+                unique_counts_cum.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+                unique_counts.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+                sorted_index.packed_accessor32<int,1,torch::RestrictPtrTraits>()
+                );
+        cudaDeviceSynchronize();
+        std::tie(box_indices_sorted,tmp) = torch::_unique(box_indicator,true,false);
 
         //replace with inplace sorting and unique...
-        unique_counts = unique_counts.toType(torch::kInt32);
         avg_nr_points = unique_counts.toType(torch::kFloat32).mean().item<float>();
         if (depth==0){
             centers = centers.repeat_interleave(dim_fac,0)+ 0.25 * edge * coord_tensor;
@@ -171,6 +166,7 @@ void rbf_call(
                                                                             );
     }
     cudaDeviceSynchronize();
+
 }
 
 
@@ -587,7 +583,8 @@ torch::Tensor FFM_XY(
         interactions_x_parsed = process_interactions<nd>(interactions_x,ntree_X.centers.size(0),gpu_device);
         near_field_compute_v2<scalar_t,nd>(interactions_x_parsed,interactions_y,ntree_X, ntree_Y, output, b, gpu_device,ls); //Make sure this thing works first!
     }
-    return output+lambda*b;
+    return output;
+//    +lambda*b;
 }
 
 template <typename scalar_t, int nd>
@@ -711,7 +708,6 @@ struct exact_MV : FFM_object<scalar_t,nd>{
                 FFM_object<scalar_t,nd>::ls,
                 true
         );
-        output = output+ b * FFM_object<scalar_t,nd>::lambda;
         return output;
     };
 };
@@ -814,7 +810,7 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> calculate_loss_and_grad(FF
 }
 
 template <int nd>
-void benchmark_1(int laplace_n,int n,float min_points){
+void benchmark_1(int laplace_n,int n,float min_points, int threshold){
     const std::string device_cuda = "cuda:0"; //officially retarded
     const std::string device_cpu = "cpu";
 //    torch::manual_seed(0);
@@ -828,20 +824,38 @@ void benchmark_1(int laplace_n,int n,float min_points){
     torch::Tensor res,res_ref;
     FFM_object<float,nd> ffm_obj = FFM_object<float,nd>(X_train, X_train, ls, lambda, device_cuda,laplace_n,min_points); //FMM object
 //    FFM_object<float> ffm_obj_grad = FFM_object<float>(X,X,ls,op_grad,lambda,device_cuda);
-    exact_MV<float,nd> exact_ref = exact_MV<float,nd>(X_train, X_train, ls,  lambda, device_cuda,laplace_n,min_points); //Exact method reference
 //    exact_MV<float> ffm_obj_grad_exact = exact_MV<float>(X,X,ls,op_grad,lambda,device_cuda);
 
-    auto start = std::chrono::high_resolution_clock::now();
-    res_ref = exact_ref * b_train;
-    auto end = std::chrono::high_resolution_clock::now();
-    res = ffm_obj * b_train; //Fast math creates problems... fast math does a lot!!!
-    auto end_2 = std::chrono::high_resolution_clock::now();
-    auto duration_1 = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
-    auto duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(end_2-end);
-    std::cout<<"------------- "<<"laplace nodes: "<<laplace_n<<" n: "<<n<<" min_points: "<< min_points <<" -------------"<<std::endl;
-    std::cout<<"Full matmul time (ms): "<<duration_1.count()<<std::endl;
-    std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
-    std::cout<<"Relative error: "<<((res_ref-res)/res_ref).abs_().mean()<<std::endl;
+    if (n>threshold){
+        torch::Tensor subsampled_X = X_train.slice(0,0,threshold);
+        exact_MV<float,nd> exact_ref = exact_MV<float,nd>(subsampled_X, X_train, ls,  lambda, device_cuda,laplace_n,min_points); //Exact method reference
+        auto start = std::chrono::high_resolution_clock::now();
+        res_ref = exact_ref *b_train;
+        auto end = std::chrono::high_resolution_clock::now();
+        res = ffm_obj * b_train; //Fast math creates problems... fast math does a lot!!!
+        auto end_2 = std::chrono::high_resolution_clock::now();
+        auto duration_1 = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
+        auto duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(end_2-end);
+        std::cout<<"------------- "<<"laplace nodes: "<<laplace_n<<" n: "<<n<<" min_points: "<< min_points <<" -------------"<<std::endl;
+        std::cout<<"Full matmul time (ms): "<<duration_1.count()<<std::endl;
+        std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
+        std::cout<<"Relative error: "<<((res_ref-res.slice(0,0,threshold))/res_ref).abs_().mean()<<std::endl;
+    }else{
+        exact_MV<float,nd> exact_ref = exact_MV<float,nd>(X_train, X_train, ls,  lambda, device_cuda,laplace_n,min_points); //Exact method reference
+        auto start = std::chrono::high_resolution_clock::now();
+        res_ref = exact_ref * b_train;
+        auto end = std::chrono::high_resolution_clock::now();
+        res = ffm_obj * b_train; //Fast math creates problems... fast math does a lot!!!
+        auto end_2 = std::chrono::high_resolution_clock::now();
+        auto duration_1 = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
+        auto duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(end_2-end);
+        std::cout<<"------------- "<<"laplace nodes: "<<laplace_n<<" n: "<<n<<" min_points: "<< min_points <<" -------------"<<std::endl;
+        std::cout<<"Full matmul time (ms): "<<duration_1.count()<<std::endl;
+        std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
+        std::cout<<"Relative error: "<<((res_ref-res)/res_ref).abs_().mean()<<std::endl;
+    }
+
+
 
 
 

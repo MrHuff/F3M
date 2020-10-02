@@ -78,8 +78,7 @@ std::tuple<dim3,dim3,int,torch::Tensor,torch::Tensor> skip_kernel_launch(int col
         int b = accessor[i];
         cont.push_back(torch::arange(b));
     }
-    torch::Tensor block_idx_within_box = torch::cat(cont).toType(torch::kInt32).to(output_block.device());
-    //from_blob not fucking working...
+    torch::Tensor block_idx_within_box = torch::cat(cont).toType(torch::kInt32).to(output_block.device());//fix this...
     gridSize.x = output_block.size(0);
     return std::make_tuple(blockSize,gridSize,(blockSize.x * (cols+1)+cols) * sizeof(T),output_block,block_idx_within_box);
 };

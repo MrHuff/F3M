@@ -11,12 +11,9 @@ template <typename scalar_t, int nd>
 __global__ void box_division(const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
                              const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers,
                              const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> b,
-                            int * old_indices,
-//                             torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> old_indices,
-                             int * sort_indices,
+                             torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> old_indices,
+                             torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> global_vector_counter_cum,
                              const int * divide_num
-
-
 ){
 
     int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
@@ -26,10 +23,23 @@ __global__ void box_division(const torch::PackedTensorAccessor32<scalar_t,2,torc
     for (int k=0;k<nd;k++){
         old_indices[i]+= (centers[old_ind][k]<=X_data[i][k])*b[k];
     }
-
-    int col = atomicAdd(&global_vector_counter[old_indices[i]],1);
-//    matrix[old_indices[i]][col] = i;
+    atomicAdd(&global_vector_counter_cum[old_indices[i]+1],1);
 }
+
+__global__ void  group_index(
+                             torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> old_indices,
+                             torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> global_vector_counter_cum,
+                             torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> global_unique,
+                             torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> sorted_index
+){
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    if (i>old_indices.size(0)-1){return;}
+    int box_ind = old_indices[i];
+    int index = atomicAdd(&global_unique[box_ind],1);
+    sorted_index[index+global_vector_counter_cum[box_ind]] = i;
+}
+
+
 //
 
 //box_idx , data_point_idx.
@@ -37,7 +47,7 @@ __global__ void box_division(const torch::PackedTensorAccessor32<scalar_t,2,torc
 //1 : [- 1- -1- -1- -1- 1]
 //global_vector_counter: [32 50 ... 64] cumsum [0 32 82 ... n]
 //n [0 0 0 0 0 0 0 0 ] indices in the sorted box order
-// new global vector counter... + cumsum[box_indx] + value of col. 
+// new global vector counter... + cumsum[box_indx] + value of col.
 
 
 template <
