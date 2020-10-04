@@ -5,7 +5,6 @@
 #pragma once
 #include <torch/torch.h> //for n00bs like me, direct translation to python rofl
 #include <npp.h>
-using namespace cub;
 template <typename scalar_t, int nd>
 __global__ void box_division(const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
                              const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers,
