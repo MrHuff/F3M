@@ -47,53 +47,6 @@ __global__ void  group_index(
 //n [0 0 0 0 0 0 0 0 ] indices in the sorted box order
 // new global vector counter... + cumsum[box_indx] + value of col.
 
-
-template <
-        typename    Key,
-        int         BLOCK_THREADS,
-        int         ITEMS_PER_THREAD>
-__launch_bounds__ (BLOCK_THREADS)
-__global__ void BlockSortKernel(
-        Key         *d_in,          // Tile of input
-        Key         *d_out,
-        Key         *d_val
-        // Tile of output
-        )     // Elapsed cycle count of block scan
-{
-    enum { TILE_SIZE = BLOCK_THREADS * ITEMS_PER_THREAD };
-    // Specialize BlockLoad type for our thread block (uses warp-striped loads for coalescing, then transposes in shared memory to a blocked arrangement)
-    typedef BlockLoad<Key, BLOCK_THREADS, ITEMS_PER_THREAD, BLOCK_LOAD_WARP_TRANSPOSE> BlockLoadT;
-    // Specialize BlockRadixSort type for our thread block
-    typedef BlockRadixSort<Key, BLOCK_THREADS, ITEMS_PER_THREAD,Key> BlockRadixSortT;
-    // Shared memory
-    __shared__ union TempStorage
-    {
-        typename BlockLoadT::TempStorage        load;
-        typename BlockLoadT::TempStorage        load_val;
-        typename BlockRadixSortT::TempStorage   sort;
-    } temp_storage;
-    // Per-thread tile items
-    Key items[ITEMS_PER_THREAD];
-    Key values[ITEMS_PER_THREAD];
-    // Our current block's offset
-    int block_offset = blockIdx.x * TILE_SIZE;
-    // Load items into a blocked arrangement
-    BlockLoadT(temp_storage.load).Load(d_in + block_offset, items);
-    // Barrier for smem reuse
-    __syncthreads();
-    BlockLoadT(temp_storage.load_val).Load(d_val + block_offset, values);
-    __syncthreads();
-
-    // Sort keys
-    BlockRadixSortT(temp_storage.sort).SortBlockedToStriped(items,values);
-    // Store output in striped fashion
-    StoreDirectStriped<BLOCK_THREADS>(threadIdx.x, d_out + block_offset, values);
-    // Store elapsed clocks
-}
-
-
-
-
 __global__ void parse_x_boxes(
         const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> box_cumsum,
         torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> results
