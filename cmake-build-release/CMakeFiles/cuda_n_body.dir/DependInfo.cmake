@@ -15,7 +15,6 @@ set(CMAKE_TARGET_DEFINITIONS_CUDA
 
 # The include file search paths:
 set(CMAKE_CUDA_TARGET_INCLUDE_PATH
-  "/home/rhu/C_pp_libs/cub"
   "/home/rhu/C_pp_libs/libtorch-cxx11-abi-shared-with-deps-1.5.0+cu101/libtorch/include"
   "/home/rhu/C_pp_libs/libtorch-cxx11-abi-shared-with-deps-1.5.0+cu101/libtorch/include/torch/csrc/api/include"
   )

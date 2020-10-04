@@ -45,7 +45,6 @@
 				<Option compiler="gcc"/>
 				<Compiler>
 					<Add option="-DAT_PARALLEL_OPENMP=1"/>
-					<Add directory="/home/rhu/C_pp_libs/cub"/>
 					<Add directory="/home/rhu/C_pp_libs/libtorch-cxx11-abi-shared-with-deps-1.5.0+cu101/libtorch/include"/>
 					<Add directory="/home/rhu/C_pp_libs/libtorch-cxx11-abi-shared-with-deps-1.5.0+cu101/libtorch/include/torch/csrc/api/include"/>
 					<Add directory="/usr/local/cuda/include"/>
@@ -65,7 +64,6 @@
 				<Option compiler="gcc"/>
 				<Compiler>
 					<Add option="-DAT_PARALLEL_OPENMP=1"/>
-					<Add directory="/home/rhu/C_pp_libs/cub"/>
 					<Add directory="/home/rhu/C_pp_libs/libtorch-cxx11-abi-shared-with-deps-1.5.0+cu101/libtorch/include"/>
 					<Add directory="/home/rhu/C_pp_libs/libtorch-cxx11-abi-shared-with-deps-1.5.0+cu101/libtorch/include/torch/csrc/api/include"/>
 					<Add directory="/usr/local/cuda/include"/>

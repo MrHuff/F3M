@@ -4,7 +4,6 @@
 
 #pragma once
 #include <torch/torch.h> //for n00bs like me, direct translation to python rofl
-#include <cub/cub.cuh>
 #include <npp.h>
 using namespace cub;
 template <typename scalar_t, int nd>
