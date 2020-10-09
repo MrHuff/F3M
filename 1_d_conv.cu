@@ -64,13 +64,16 @@ template<typename T>
 std::tuple<dim3,dim3,int,torch::Tensor,torch::Tensor> skip_kernel_launch(int cols,
         int & blksize,
         torch::Tensor & box_sizes,
-        torch::Tensor & box_idx){
+        torch::Tensor& box_idx){
     dim3 blockSize;
     dim3 gridSize;
     blockSize.x = blksize;
 
     torch::Tensor boxes_needed = torch::ceil(box_sizes.toType(torch::kFloat32)/(float)blksize).toType(torch::kLong); //blkSize is wrong and fix stuff
-    torch::Tensor output_block = box_idx.repeat_interleave({boxes_needed});// Adjust for special case
+//    torch::Tensor idx = boxes_needed.nonzero();
+//    torch::Tensor output_block = box_idx.index(idx).squeeze();
+//    output_block = output_block.repeat_interleave({boxes_needed.index(idx).squeeze()}).toType(torch::kInt32);// Adjust for special case
+    torch::Tensor output_block = box_idx.repeat_interleave(boxes_needed).toType(torch::kInt32);// Adjust for special case
     std::vector<torch::Tensor> cont = {};
     boxes_needed = boxes_needed.to("cpu").toType(torch::kInt32);
     auto accessor = boxes_needed.accessor<int,1>();
@@ -374,7 +377,7 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor32<scalar_t
                              scalar_t * ls,
                              const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_boxes_count,
                              const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> y_boxes_count,
-                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> indicator,
+                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> block_box_indicator,
                              const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> box_block_indicator,
                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_idx_reordering,
                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> y_idx_reordering,
@@ -383,7 +386,7 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor32<scalar_t
 
 ){
     int box_ind,start,end,a,b,int_m,x_idx_reorder,b_size,interactions_a,interactions_b;
-    box_ind = indicator[blockIdx.x];
+    box_ind = block_box_indicator[blockIdx.x];
     a = x_boxes_count[box_ind];
     b = x_boxes_count[box_ind+1];
     int i = a + threadIdx.x+box_block_indicator[blockIdx.x]*blockDim.x; // Use within box, block index i.e. same size as indicator...
@@ -448,7 +451,7 @@ __global__ void laplace_shared(
         torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output,
         const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> indicator,
         const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> box_block_indicator,
-        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_boxes_count,
+        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_boxes_count, //error is here! I think it does an access here when its not supposed to...
         const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers,
         const scalar_t * edge,
         const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> idx_reordering
