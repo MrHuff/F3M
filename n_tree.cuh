@@ -80,8 +80,8 @@ struct n_tree_cuda{
     pos_neg,
     tmp,
     coord_tensor,
-    box_indicator,
-    multiply;
+    centers_sorted,
+    perm;
     std::string device;
     int dim_fac,depth;
     int *dim_fac_pointer;
@@ -93,20 +93,19 @@ struct n_tree_cuda{
         dim_fac = pow(2,dim);
         cudaMalloc((void **)&dim_fac_pointer, sizeof(int));
         cudaMemcpy(dim_fac_pointer, &dim_fac, sizeof(int), cudaMemcpyHostToDevice);  //Do delete somewhere
-        box_indicator = torch::zeros({data.size(0)}).toType(torch::kInt32).contiguous().to(device);
         sorted_index  = torch::zeros({data.size(0)}).toType(torch::kInt32).contiguous().to(device);
         avg_nr_points =  (float)d.size(0);
         multiply_cpu_base = torch::pow(2, torch::arange(dim - 1, -1, -1).toType(torch::kInt32));
         multiply_gpu_base = multiply_cpu_base.toType(torch::kInt32).to(device);
         multiply_cpu= multiply_cpu_base;
         multiply_gpu = multiply_gpu_base;
-        multiply = torch::pow(2,torch::arange(dim).toType(torch::kInt32)).to(device);
         coord_tensor = torch::zeros({dim_fac,dim}).toType(torch::kInt32).to(device);
         get_centers<dim><<<8,192>>>(coord_tensor.packed_accessor32<int,2,torch::RestrictPtrTraits>());
         cudaDeviceSynchronize();
         centers_unique = xmin + 0.5 * edge;
         centers_unique = centers_unique.unsqueeze(0);
-        centers = centers_unique;
+        centers = xmin + 0.5 * edge;
+        centers = centers.unsqueeze(0);
         pos_neg = torch::cat({-torch::ones({1,dim}).toType(dtype<scalar_t>()),torch::ones({1,dim}).toType(dtype<scalar_t>()) },0).to(device);
         depth = 0;
     }
@@ -118,7 +117,6 @@ struct n_tree_cuda{
             pos_neg = pos_neg.repeat({2,1});
             centers_unique = centers_unique.repeat_interleave(2,0)+0.25*edge*pos_neg;
         }
-        edge = edge*0.5;
     }
 
     void generate_centers_grouped_by(){
@@ -128,34 +126,50 @@ struct n_tree_cuda{
             tmp = centers_unique.slice(1,j,j+1).repeat_interleave(m_accesor[j]).repeat(m_accesor[dim-1-j]);
             container.push_back(tmp);
         }
-        centers = torch::stack(container,1);
+        centers_sorted = torch::stack(container,1);
 
+    }
+    void natural_center_divide(){
+        if (depth==0){
+            centers = centers.repeat_interleave(dim_fac,0)+ 0.25 * edge * coord_tensor;
+        }else{
+            centers = centers.repeat_interleave(dim_fac,0)+ 0.25 * edge * coord_tensor.repeat({centers.size(0),1});
+        }
     }
     void divide(){
         expand_center_unique();
         generate_centers_grouped_by();
+        natural_center_divide();
+        edge = edge*0.5;
         unique_counts_cum = torch::zeros(centers.size(0)+1).toType(torch::kInt32).contiguous().to(device);
         unique_counts= torch::zeros(centers.size(0)).toType(torch::kInt32).contiguous().to(device);
+        perm = torch::zeros(centers.size(0)).toType(torch::kInt32).contiguous().to(device);
         dim3 blockSize,gridSize;
         int memory;
+        std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(dim, centers.size(0));
+        find_center_perm<scalar_t,dim><<<gridSize,blockSize>>>(centers_sorted.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                centers.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                        perm.packed_accessor32<int,1,torch::RestrictPtrTraits>());
         std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(dim, data.size(0));
         box_division_cum<scalar_t,dim><<<gridSize,blockSize>>>(
                 data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                 edge.data_ptr<scalar_t>(),
-                centers.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                centers_sorted.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                 multiply_gpu.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                unique_counts_cum.packed_accessor32<int,1,torch::RestrictPtrTraits>()
+                unique_counts_cum.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+                perm.packed_accessor32<int,1,torch::RestrictPtrTraits>()
         );
         cudaDeviceSynchronize();
         unique_counts_cum = unique_counts_cum.cumsum(0).toType(torch::kInt32);
         box_division_assign<scalar_t,dim><<<gridSize,blockSize>>>(
                 data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                 edge.data_ptr<scalar_t>(),
-                centers.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                centers_sorted.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                 multiply_gpu.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
                 unique_counts_cum.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
                 unique_counts.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                sorted_index.packed_accessor32<int,1,torch::RestrictPtrTraits>()
+                sorted_index.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+                perm.packed_accessor32<int,1,torch::RestrictPtrTraits>()
         );
         cudaDeviceSynchronize();
 
@@ -166,45 +180,42 @@ struct n_tree_cuda{
         multiply_cpu = multiply_cpu*multiply_cpu_base ;
         multiply_gpu = multiply_gpu*multiply_gpu_base;
         depth += 1;
+
     };
 
-    void divide_old(){
-        dim3 blockSize,gridSize;
-        int memory;
-        std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(dim, data.size(0));
-        unique_counts_cum = torch::zeros(centers.size(0)*dim_fac+1).toType(torch::kInt32).contiguous().to(device);;
-        unique_counts= torch::zeros(centers.size(0)*dim_fac).toType(torch::kInt32).contiguous().to(device);;
-        box_division<scalar_t,dim><<<gridSize,blockSize>>>(
-                data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                centers.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                multiply.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                box_indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                unique_counts_cum.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                dim_fac_pointer
-
-        );
-        cudaDeviceSynchronize();
-        unique_counts_cum = unique_counts_cum.cumsum(0).toType(torch::kInt32);
-        group_index<<<gridSize,blockSize>>>(
-                box_indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                unique_counts_cum.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                unique_counts.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                sorted_index.packed_accessor32<int,1,torch::RestrictPtrTraits>()
-        );
-        cudaDeviceSynchronize();
-        std::tie(box_indices_sorted,tmp) = torch::_unique(box_indicator,true,false);
-
-        //replace with inplace sorting and unique...
-        avg_nr_points = unique_counts.toType(torch::kFloat32).mean().item<float>();
-        if (depth==0){
-            centers = centers.repeat_interleave(dim_fac,0)+ 0.25 * edge * coord_tensor;
-        }else{
-            centers = centers.repeat_interleave(dim_fac,0)+ 0.25 * edge * coord_tensor.repeat({centers.size(0),1});
-        }
-        centers = centers.index(box_indices_sorted.toType(torch::kLong));
-        edge = edge*0.5;
-        depth += 1;
-    };
+//    void divide_old(){
+//        dim3 blockSize,gridSize;
+//        int memory;
+//        std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(dim, data.size(0));
+//        unique_counts_cum = torch::zeros(centers.size(0)*dim_fac+1).toType(torch::kInt32).contiguous().to(device);;
+//        unique_counts= torch::zeros(centers.size(0)*dim_fac).toType(torch::kInt32).contiguous().to(device);;
+//        box_division<scalar_t,dim><<<gridSize,blockSize>>>(
+//                data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+//                centers.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+//                multiply.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+//                box_indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+//                unique_counts_cum.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+//                dim_fac_pointer
+//
+//        );
+//        cudaDeviceSynchronize();
+//        unique_counts_cum = unique_counts_cum.cumsum(0).toType(torch::kInt32);
+//        group_index<<<gridSize,blockSize>>>(
+//                box_indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+//                unique_counts_cum.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+//                unique_counts.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+//                sorted_index.packed_accessor32<int,1,torch::RestrictPtrTraits>()
+//        );
+//        cudaDeviceSynchronize();
+//        std::tie(box_indices_sorted,tmp) = torch::_unique(box_indicator,true,false);
+//
+//        //replace with inplace sorting and unique...
+//        avg_nr_points = unique_counts.toType(torch::kFloat32).mean().item<float>();
+//        natural_center_divide();
+//        centers = centers.index(box_indices_sorted.toType(torch::kLong));
+//        edge = edge*0.5;
+//        depth += 1;
+//    };
     std::tuple<torch::Tensor,torch::Tensor> get_box_sorted_data(){
         return std::make_tuple(unique_counts,sorted_index);
     }
@@ -496,6 +507,7 @@ void far_field_compute_v2(
                                             laplace_combinations,
                                             true,
                                             low_rank_y); //no problems here!
+
     //Consider limiting number of boxes!!!
     low_rank_y = setup_skip_conv<scalar_t,nd>( //error happens here
             cheb_data_X,
@@ -508,7 +520,7 @@ void far_field_compute_v2(
             interactions_x_parsed,
             interactions_y
             );
-
+    //std::cout<<low_rank_y.slice(0,0,5)<<std::endl;
     apply_laplace_interpolation_v2<scalar_t,nd>(x_box,
                                             low_rank_y,
                                             device_gpu,
@@ -521,13 +533,9 @@ torch::Tensor get_new_interactions(torch::Tensor & old_near_interactions, int & 
     int n = old_near_interactions.size(0);
     torch::Tensor arr = torch::arange(p).toType(torch::kInt32).to(gpu_device);
     torch::Tensor new_interactions_vec = torch::stack({arr.repeat_interleave(p).repeat(n),arr.repeat(p*n)},1)+p*old_near_interactions.repeat_interleave(p*p,0);
-//    std::cout<<new_interactions_vec<<std::endl;
-//    std::cout<<p*old_near_interactions.repeat_interleave(p*p,0)<<std::endl;
-//    new_interactions_vec +=+p*old_near_interactions.repeat_interleave(p*p,0);
-//    std::cout<<new_interactions_vec<<std::endl;
-//    std::vector<torch::Tensor> unbound = torch::unbind(new_interactions_vec,1);
     return new_interactions_vec;
 }
+
 
 template <int nd>
 torch::Tensor process_interactions(torch::Tensor & interactions,int x_boxes,const std::string & gpu_device){
@@ -611,7 +619,7 @@ torch::Tensor far_field_run(
                             const std::string & gpu_device
 ){
     torch::Tensor interactions,far_field,interactions_x,interactions_y,interactions_x_parsed;
-    interactions = get_new_interactions(near_field,ntree_X.dim_fac,gpu_device); //fix this. it does something funny
+    interactions = get_new_interactions(near_field,ntree_X.dim_fac,gpu_device); //Doesn't work for new setup since the division is changed...
     std::tie(far_field,near_field) =
             separate_interactions<scalar_t,nd>(
                     interactions,
@@ -620,6 +628,8 @@ torch::Tensor far_field_run(
                     ntree_X.edge,
                     gpu_device);
     if (far_field.numel()>0) {
+//        std::cout<<"near field: "<<near_field.size(0)<<std::endl;
+//        std::cout<<"far field: "<<far_field.size(0)<<std::endl;
         torch::Tensor cheb_data = cheb_data_X*ntree_X.edge/2.+ntree_X.edge/2.;
         std::tie(interactions_x,interactions_y) = unbind_sort(far_field);
         interactions_x_parsed = process_interactions<nd>(interactions_x,ntree_X.centers.size(0),gpu_device);
@@ -708,34 +718,32 @@ torch::Tensor FFM_X(
     xmin,
     near_field,
     cheb_data_X,
-    laplace_combinations,
-    near_field_ref; //these are needed to figure out which interactions are near/far field
+    laplace_combinations;//these are needed to figure out which interactions are near/far field
     near_field = torch::zeros({1,2}).toType(torch::kInt32).to(gpu_device);
-    near_field_ref = torch::zeros({1,2}).toType(torch::kInt32).to(gpu_device);
+//    near_field_ref = torch::zeros({1,2}).toType(torch::kInt32).to(gpu_device);
     torch::Tensor chebnodes_1D = chebyshev_nodes_1D<scalar_t>(laplace_n).to(gpu_device); //get chebyshev nodes, laplace_nodes is fixed now, should probably be a variable
     std::tie(laplace_combinations,cheb_data_X)=parse_cheb_data<scalar_t,nd>(chebnodes_1D,gpu_device);
     std::tie(edge,xmin) = calculate_edge_X<scalar_t,nd>(X_data,gpu_device); //actually calculate them
     n_tree_cuda<scalar_t,nd> ntree_X = n_tree_cuda<scalar_t,nd>(edge,X_data,xmin,gpu_device);
-    n_tree_cuda<scalar_t,nd> ntree_X_ref =  n_tree_cuda<scalar_t,nd>(edge,X_data,xmin,gpu_device);
+//    n_tree_cuda<scalar_t,nd> ntree_X_ref =  n_tree_cuda<scalar_t,nd>(edge,X_data,xmin,gpu_device);
     while (near_field.numel()>0 and ntree_X.avg_nr_points > min_points){
         ntree_X.divide();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
         near_field = far_field_run<scalar_t,nd>(ntree_X,ntree_X,near_field,cheb_data_X,output,b,chebnodes_1D,laplace_combinations,ls,gpu_device);
-        std::cout<<output.slice(0,0,5)<<std::endl;
+        //std::cout<<output.slice(0,0,5)<<std::endl;
     }
     if (near_field.numel()>0){
         near_field_run<scalar_t,nd>(ntree_X,ntree_X,near_field,output,b,ls,gpu_device);
     }
 
-    std::cout<<"-------------------------------"<<std::endl;
-    while (near_field_ref.numel()>0 and ntree_X_ref.avg_nr_points > min_points){
-        ntree_X_ref.divide_old();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
-        near_field_ref = far_field_run<scalar_t,nd>(ntree_X_ref,ntree_X_ref,near_field_ref,cheb_data_X,output_ref,b,chebnodes_1D,laplace_combinations,ls,gpu_device);
-        std::cout<<output_ref.slice(0,0,5)<<std::endl;
-    }
-    if (near_field_ref.numel()>0){
-        near_field_run<scalar_t,nd>(ntree_X_ref,ntree_X_ref,near_field_ref,output_ref,b,ls,gpu_device);
-    }
-    return output_ref;
+//    while (near_field_ref.numel()>0 and ntree_X_ref.avg_nr_points > min_points){
+//        ntree_X_ref.divide_old();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
+//        near_field_ref = far_field_run<scalar_t,nd>(ntree_X_ref,ntree_X_ref,near_field_ref,cheb_data_X,output_ref,b,chebnodes_1D,laplace_combinations,ls,gpu_device);
+//        //std::cout<<output_ref.slice(0,0,5)<<std::endl;
+//    }
+//    if (near_field_ref.numel()>0){
+//        near_field_run<scalar_t,nd>(ntree_X_ref,ntree_X_ref,near_field_ref,output_ref,b,ls,gpu_device);
+//    }
+    return output;
     //+lambda*b;
 }
 template <typename scalar_t, int nd>
