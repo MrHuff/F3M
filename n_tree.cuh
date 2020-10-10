@@ -174,7 +174,8 @@ struct n_tree_cuda{
         cudaDeviceSynchronize();
 
         box_indices_sorted = unique_counts.nonzero().squeeze();
-        centers = centers.index(box_indices_sorted.toType(torch::kLong)).squeeze();
+        centers = centers.index({box_indices_sorted.toType(torch::kLong),torch::indexing::Slice()});
+        unique_counts = unique_counts.index({box_indices_sorted.toType(torch::kLong)});
         //replace with inplace sorting and unique...
         avg_nr_points = unique_counts.toType(torch::kFloat32).mean().item<float>();
         multiply_cpu = multiply_cpu*multiply_cpu_base ;
