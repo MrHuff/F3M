@@ -16,6 +16,7 @@
 
 template<typename scalar_t>
 __inline__ __device__ scalar_t warpReduceSum(scalar_t val) {
+#pragma unroll
     for (int offset = warpSize/2; offset > 0; offset /= 2)
         val += __shfl_down_sync(0xFFFFFFFF,val, offset);
     return val;
