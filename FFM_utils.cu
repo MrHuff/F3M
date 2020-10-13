@@ -161,11 +161,10 @@ __global__ void boolean_separate_interactions(
 template<typename scalar_t>
 __inline__ __device__ scalar_t warpReduceMax(scalar_t val)
 {
-    const unsigned int FULL_MASK = 0xffffffff;
 #pragma unroll
     for (int mask = warpSize / 2; mask > 0; mask /= 2)
     {
-        val = max(__shfl_xor_sync(FULL_MASK, val, mask), val);
+        val = max(__shfl_xor_sync(0xFFFFFFFF, val, mask), val);
     }
 
     return val;
@@ -173,61 +172,13 @@ __inline__ __device__ scalar_t warpReduceMax(scalar_t val)
 template<typename scalar_t>
 __inline__ __device__ scalar_t warpReduceMin(scalar_t val)
 {
-    const unsigned int FULL_MASK = 0xffffffff;
 #pragma unroll
     for (int mask = warpSize / 2; mask > 0; mask /= 2)
     {
-        val = min(__shfl_xor_sync(FULL_MASK, val, mask), val);
+        val = min(__shfl_xor_sync(0xFFFFFFFF, val, mask), val);
     }
 
     return val;
-}
-
-
-template <class T >
-__inline__ __device__ int warpBroadcast(T val, int predicate)
-{
-    const unsigned int FULL_MASK = 0xffffffff;
-
-    unsigned int mask = __ballot_sync(FULL_MASK, predicate);
-
-    int lane = 0;
-    for (;!(mask & 1); ++lane)
-    {
-        mask >>= 1;
-    }
-
-    return __shfl_sync(FULL_MASK, val, lane);
-}
-
-__global__ void reduceMaxIdxOptimizedWarp(const float* __restrict__ input, const int size, float* maxOut, int* maxIdxOut)
-{
-    float localMax = 0.f;
-    int localMaxIdx = 0;
-
-    for (int i = threadIdx.x; i < size; i += blockDim.x)
-    {
-        float val = input[i];
-
-        if (localMax < abs(val))
-        {
-            localMax = abs(val);
-            localMaxIdx = i;
-        }
-    }
-
-    const float warpMax = warpReduceMax(localMax);
-
-    const int warpMaxIdx = warpBroadcast(localMaxIdx, warpMax == localMax);
-
-    const int lane = threadIdx.x % warpSize;
-
-    if (lane == 0)
-    {
-        int warpIdx = threadIdx.x / warpSize;
-        maxOut[warpIdx] = warpMax;
-        maxIdxOut[warpIdx] = warpMaxIdx;
-    }
 }
 
 __device__ __forceinline__ float atomicMinFloat (float * addr, float value) {
@@ -236,8 +187,8 @@ __device__ __forceinline__ float atomicMinFloat (float * addr, float value) {
           __uint_as_float(atomicMax((unsigned int *)addr, __float_as_uint(value)));
 
     return old;
-
-}__device__ __forceinline__ float atomicMaxFloat (float * addr, float value) {
+}
+__device__ __forceinline__ float atomicMaxFloat (float * addr, float value) {
     float old;
     old = (value >= 0) ? __int_as_float(atomicMax((int *)addr, __float_as_int(value))) :
           __uint_as_float(atomicMin((unsigned int *)addr, __float_as_uint(value)));
@@ -255,26 +206,30 @@ __global__ void reduceMaxMinOptimizedWarpMatrix(
     __shared__ scalar_t sharedMin;
     int size = input.size(0);
     int increment = gridDim.x*blockDim.x;
-    if(threadIdx.x+blockDim.x*blockIdx.x>size-1){return;}
+    int tid = threadIdx.x+blockDim.x*blockIdx.x;
     for(int j=0;j<cols;j++){
+        sharedMax = -NPP_MAXABS_32F;
+        sharedMin = NPP_MAXABS_32F;
         scalar_t localMax = -NPP_MAXABS_32F;
         scalar_t localMin = NPP_MAXABS_32F;
-        for (int i = threadIdx.x+blockDim.x*blockIdx.x; i < size; i += increment) //iterate through warps...
+        if (tid<size){
+        for (int i = tid; i < size; i += increment) //iterate through warps...
         {
-            if (localMax < input[i][j])
+            if (input[i][j] > localMax)
             {
                 localMax = input[i][j];
             }
-            if (localMin > input[i][j])
+            if (input[i][j] < localMin )
             {
                 localMin = input[i][j];
             }
         }
+        }
         __syncthreads();
 
-        const scalar_t warpMax = warpReduceMax(localMax);
-        const scalar_t warpMin = warpReduceMin(localMin);
-        const int lane = threadIdx.x % warpSize;
+        scalar_t warpMax = warpReduceMax(localMax);
+        scalar_t warpMin = warpReduceMin(localMin);
+        int lane = threadIdx.x % warpSize;
         if (lane == 0)
         {
             atomicMaxFloat(&sharedMax, warpMax);
@@ -286,7 +241,7 @@ __global__ void reduceMaxMinOptimizedWarpMatrix(
             atomicMaxFloat(&maxOut[j],sharedMax);
             atomicMinFloat(&minOut[j],sharedMin);
         }
-
+        __syncthreads();
     }
 }
 //template < typename TYPE >

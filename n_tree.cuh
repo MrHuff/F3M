@@ -8,6 +8,9 @@
 #include <vector>
 #include "algorithm"
 #include "FFM_utils.cu"
+#include <iostream>
+#include <fstream>
+#include <npp.h>
 //template<typename T>
 
 
@@ -20,7 +23,7 @@ at::ScalarType dtype() { return at::typeMetaToScalarType(caffe2::TypeMeta::Make<
 
 
 template<typename scalar_t, int nd>
-std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> calculate_edge(const torch::Tensor &X,const torch::Tensor &Y,const std::string & gpu_device){
+std::tuple<torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor> calculate_edge(const torch::Tensor &X,const torch::Tensor &Y,const std::string & gpu_device){
     torch::Tensor Xmin = torch::zeros(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device);
     torch::Tensor Xmax = torch::zeros(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device);
     torch::Tensor Ymin = torch::zeros(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device);
@@ -39,12 +42,12 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> calculate_edge(const torch
     );
     cudaDeviceSynchronize();
     torch::Tensor edge = torch::cat({Xmax - Xmin, Ymax - Ymin}).max();
-    return std::make_tuple(edge*1.01,Xmin,Ymin);
+    return std::make_tuple(edge*1.01,Xmin,Ymin,Xmax,Ymax);
 };
 template<typename scalar_t, int nd>
-std::tuple<torch::Tensor,torch::Tensor> calculate_edge_X(const torch::Tensor &X,const std::string & gpu_device){
-    torch::Tensor Xmin = torch::zeros(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device);
-    torch::Tensor Xmax = torch::zeros(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device);
+std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> calculate_edge_X(const torch::Tensor &X,const std::string & gpu_device){
+    torch::Tensor Xmin = torch::ones(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device)*NPP_MAXABS_32F;
+    torch::Tensor Xmax = -torch::ones(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device)*NPP_MAXABS_32F;
     dim3 blockSize,gridSize;
     blockSize.x = 1024;
     gridSize.x = 10;
@@ -54,7 +57,7 @@ std::tuple<torch::Tensor,torch::Tensor> calculate_edge_X(const torch::Tensor &X,
                             );
     cudaDeviceSynchronize();
     torch::Tensor edge = (Xmax - Xmin).max();
-    return std::make_tuple(edge*1.01,Xmin);
+    return std::make_tuple(edge*1.01,Xmin,Xmax);
 };
 
 
@@ -63,6 +66,7 @@ struct n_tree_cuda{
     torch::Tensor &data;
     torch::Tensor edge,edge_og,
     xmin,
+    xmax,
     side_base,
     side,
     sorted_index,
@@ -78,9 +82,10 @@ struct n_tree_cuda{
     std::string device;
     int dim_fac,depth;
     float avg_nr_points;
-    n_tree_cuda(const torch::Tensor& e, torch::Tensor &d, torch::Tensor &xm, const std::string &cuda_str ):data(d){
+    n_tree_cuda(const torch::Tensor& e, torch::Tensor &d, torch::Tensor &xm,torch::Tensor &xma, const std::string &cuda_str ):data(d){
         device = cuda_str;
         xmin = xm;
+        xmax = xma;
         edge = e;
         edge_og = e;
         dim_fac = pow(2,dim);
@@ -621,13 +626,13 @@ torch::Tensor FFM_XY(
 
 ) {
     torch::Tensor output = torch::zeros({X_data.size(0),b.size(1)}).to(gpu_device); //initialize empty output
-    torch::Tensor edge,xmin,ymin,interactions,far_field,near_field,interactions_x,interactions_y,interactions_x_parsed,cheb_data_X,laplace_combinations; //these are needed to figure out which interactions are near/far field
+    torch::Tensor edge,xmin,ymin,xmax,ymax,interactions,far_field,near_field,interactions_x,interactions_y,interactions_x_parsed,cheb_data_X,laplace_combinations; //these are needed to figure out which interactions are near/far field
     near_field = torch::zeros({1,2}).toType(torch::kInt32).to(gpu_device);
     torch::Tensor chebnodes_1D = chebyshev_nodes_1D<scalar_t>(laplace_n).to(gpu_device); //get chebyshev nodes, laplace_nodes is fixed now, should probably be a variable
     std::tie(laplace_combinations,cheb_data_X)=parse_cheb_data<scalar_t,nd>(chebnodes_1D,gpu_device);
-    std::tie(edge,xmin,ymin) = calculate_edge<scalar_t,nd>(X_data,Y_data,gpu_device); //actually calculate them
-    n_tree_cuda<scalar_t,nd> ntree_X = n_tree_cuda<scalar_t,nd>(edge,X_data,xmin,gpu_device);
-    n_tree_cuda<scalar_t,nd> ntree_Y = n_tree_cuda<scalar_t,nd>(edge,Y_data,ymin,gpu_device);
+    std::tie(edge,xmin,ymin,xmax,ymax) = calculate_edge<scalar_t,nd>(X_data,Y_data,gpu_device); //actually calculate them
+    n_tree_cuda<scalar_t,nd> ntree_X = n_tree_cuda<scalar_t,nd>(edge,X_data,xmin,xmax,gpu_device);
+    n_tree_cuda<scalar_t,nd> ntree_Y = n_tree_cuda<scalar_t,nd>(edge,Y_data,ymin,ymax,gpu_device);
 
     while (near_field.numel()>0 and ntree_X.avg_nr_points > min_points and ntree_Y.avg_nr_points > min_points){
         ntree_X.divide();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
@@ -658,6 +663,7 @@ torch::Tensor FFM_X(
     torch::Tensor output_ref =torch::zeros({X_data.size(0),b.size(1)}).to(gpu_device); //initialize empty output
     torch::Tensor edge,
     xmin,
+    xmax,
     near_field,
     cheb_data_X,
     laplace_combinations;//these are needed to figure out which interactions are near/far field
@@ -665,8 +671,8 @@ torch::Tensor FFM_X(
 //    near_field_ref = torch::zeros({1,2}).toType(torch::kInt32).to(gpu_device);
     torch::Tensor chebnodes_1D = chebyshev_nodes_1D<scalar_t>(laplace_n).to(gpu_device); //get chebyshev nodes, laplace_nodes is fixed now, should probably be a variable
     std::tie(laplace_combinations,cheb_data_X)=parse_cheb_data<scalar_t,nd>(chebnodes_1D,gpu_device);
-    std::tie(edge,xmin) = calculate_edge_X<scalar_t,nd>(X_data,gpu_device); //actually calculate them
-    n_tree_cuda<scalar_t,nd> ntree_X = n_tree_cuda<scalar_t,nd>(edge,X_data,xmin,gpu_device);
+    std::tie(edge,xmin,xmax) = calculate_edge_X<scalar_t,nd>(X_data,gpu_device); //actually calculate them
+    n_tree_cuda<scalar_t,nd> ntree_X = n_tree_cuda<scalar_t,nd>(edge,X_data,xmin,xmax,gpu_device);
 //    n_tree_cuda<scalar_t,nd> ntree_X_ref =  n_tree_cuda<scalar_t,nd>(edge,X_data,xmin,gpu_device);
     while (near_field.numel()>0 and ntree_X.avg_nr_points > min_points){
         ntree_X.divide();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
@@ -856,24 +862,21 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> calculate_loss_and_grad(FF
 }
 
 template <int nd>
-void benchmark_1(int laplace_n,int n,float min_points, int threshold){
+void benchmark_1(int laplace_n,int n,float min_points, int threshold,float a,float b,float ls){
     const std::string device_cuda = "cuda:0"; //officially retarded
     const std::string device_cpu = "cpu";
 //    torch::manual_seed(0);
-
 //    torch::Tensor X_train = read_csv<float>("X_train_PCA.csv",11619,3); something wrong with data probably...
 //    torch::Tensor b_train = read_csv<float>("Y_train.csv",11619,1); something wrong with data probably...
-    torch::Tensor X_train = torch::rand({n,nd}).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
+    torch::Tensor X_train = torch::empty({n,nd}).uniform_(a, b).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
     torch::Tensor b_train = torch::randn({n,1}).to(device_cuda);
-    float ls = 1.0; //lengthscale
     float lambda = 1e-1; // ridge parameter
     torch::Tensor res,res_ref;
     FFM_object<float,nd> ffm_obj = FFM_object<float,nd>(X_train, X_train, ls, lambda, device_cuda,laplace_n,min_points); //FMM object
 //    FFM_object<float> ffm_obj_grad = FFM_object<float>(X,X,ls,op_grad,lambda,device_cuda);
 //    exact_MV<float> ffm_obj_grad_exact = exact_MV<float>(X,X,ls,op_grad,lambda,device_cuda);
-
+    std::cout<<"------------- "<<"Uniform distribution : "<< "a "<<a<<" b "<<b<<" laplace nodes: "<<laplace_n<<" n: "<<n<<" min_points: "<< min_points <<" -------------"<<std::endl;
     if (n>threshold){
-        std::cout<<"------------- "<<"laplace nodes: "<<laplace_n<<" n: "<<n<<" min_points: "<< min_points <<" -------------"<<std::endl;
         torch::Tensor subsampled_X = X_train.slice(0,0,threshold);
         exact_MV<float,nd> exact_ref = exact_MV<float,nd>(subsampled_X, X_train, ls,  lambda, device_cuda,laplace_n,min_points); //Exact method reference
         auto start = std::chrono::high_resolution_clock::now();
@@ -888,7 +891,6 @@ void benchmark_1(int laplace_n,int n,float min_points, int threshold){
         std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
         std::cout<<"Relative error: "<<((res_ref-res_compare)/res_ref).abs_().mean()<<std::endl;
     }else{
-        std::cout<<"------------- "<<"laplace nodes: "<<laplace_n<<" n: "<<n<<" min_points: "<< min_points <<" -------------"<<std::endl;
         exact_MV<float,nd> exact_ref = exact_MV<float,nd>(X_train, X_train, ls,  lambda, device_cuda,laplace_n,min_points); //Exact method reference
         auto start = std::chrono::high_resolution_clock::now();
         res_ref = exact_ref * b_train;
@@ -901,9 +903,49 @@ void benchmark_1(int laplace_n,int n,float min_points, int threshold){
         std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
         std::cout<<"Relative error: "<<((res_ref-res)/res_ref).abs_().mean()<<std::endl;
     }
+}
 
+template <int nd>
+void benchmark_2(int laplace_n,int n,float min_points, int threshold,float mean,float var,float ls){
+    const std::string device_cuda = "cuda:0"; //officially retarded
+    const std::string device_cpu = "cpu";
+//    torch::manual_seed(0);
 
-
-
-
+//    torch::Tensor X_train = read_csv<float>("X_train_PCA.csv",11619,3); something wrong with data probably...
+//    torch::Tensor b_train = read_csv<float>("Y_train.csv",11619,1); something wrong with data probably...
+    torch::Tensor X_train = torch::empty({n,nd}).normal_(mean, var).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
+    torch::Tensor b_train = torch::randn({n,1}).to(device_cuda);
+    float lambda = 1e-1; // ridge parameter
+    torch::Tensor res,res_ref;
+    FFM_object<float,nd> ffm_obj = FFM_object<float,nd>(X_train, X_train, ls, lambda, device_cuda,laplace_n,min_points); //FMM object
+//    FFM_object<float> ffm_obj_grad = FFM_object<float>(X,X,ls,op_grad,lambda,device_cuda);
+//    exact_MV<float> ffm_obj_grad_exact = exact_MV<float>(X,X,ls,op_grad,lambda,device_cuda);
+    std::cout<<"------------- "<<"Normal distribution: "<< "mean "<<mean<<" variance "<<var<<" laplace nodes: "<<laplace_n<<" n: "<<n<<" min_points: "<< min_points <<" -------------"<<std::endl;
+    if (n>threshold){
+        torch::Tensor subsampled_X = X_train.slice(0,0,threshold);
+        exact_MV<float,nd> exact_ref = exact_MV<float,nd>(subsampled_X, X_train, ls,  lambda, device_cuda,laplace_n,min_points); //Exact method reference
+        auto start = std::chrono::high_resolution_clock::now();
+        res_ref = exact_ref *b_train;
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration_1 = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
+        std::cout<<"Full matmul time (ms): "<<duration_1.count()<<std::endl;
+        res = ffm_obj * b_train; //Fast math creates problems... fast math does a lot!!!
+        auto end_2 = std::chrono::high_resolution_clock::now();
+        auto duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(end_2-end);
+        torch::Tensor res_compare = res.slice(0,0,threshold);
+        std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
+        std::cout<<"Relative error: "<<((res_ref-res_compare)/res_ref).abs_().mean()<<std::endl;
+    }else{
+        exact_MV<float,nd> exact_ref = exact_MV<float,nd>(X_train, X_train, ls,  lambda, device_cuda,laplace_n,min_points); //Exact method reference
+        auto start = std::chrono::high_resolution_clock::now();
+        res_ref = exact_ref * b_train;
+        auto end = std::chrono::high_resolution_clock::now();
+        auto duration_1 = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
+        std::cout<<"Full matmul time (ms): "<<duration_1.count()<<std::endl;
+        res = ffm_obj * b_train; //Fast math creates problems... fast math does a lot!!!
+        auto end_2 = std::chrono::high_resolution_clock::now();
+        auto duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(end_2-end);
+        std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
+        std::cout<<"Relative error: "<<((res_ref-res)/res_ref).abs_().mean()<<std::endl;
+    }
 }
