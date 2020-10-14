@@ -24,10 +24,10 @@ at::ScalarType dtype() { return at::typeMetaToScalarType(caffe2::TypeMeta::Make<
 
 template<typename scalar_t, int nd>
 std::tuple<torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor> calculate_edge(const torch::Tensor &X,const torch::Tensor &Y,const std::string & gpu_device){
-    torch::Tensor Xmin = torch::zeros(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device);
-    torch::Tensor Xmax = torch::zeros(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device);
-    torch::Tensor Ymin = torch::zeros(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device);
-    torch::Tensor Ymax = torch::zeros(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device);
+    torch::Tensor Xmin = torch::ones(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device)*NPP_MAXABS_32F;
+    torch::Tensor Xmax = -torch::ones(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device)*NPP_MAXABS_32F;
+    torch::Tensor Ymin = torch::ones(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device)*NPP_MAXABS_32F;
+    torch::Tensor Ymax = -torch::ones(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device)*NPP_MAXABS_32F;
     dim3 blockSize,gridSize;
     blockSize.x = 1024;
     gridSize.x = 20;
@@ -75,7 +75,6 @@ struct n_tree_cuda{
     multiply_gpu,
     box_indices_sorted,
     centers,
-    centers_ref,
     unique_counts_cum,
     coord_tensor,
     perm;
@@ -98,16 +97,14 @@ struct n_tree_cuda{
         cudaDeviceSynchronize();
         centers = xmin + 0.5 * edge;
         centers = centers.unsqueeze(0);
-        centers_ref = xmin + 0.5 * edge;
-        centers_ref = centers_ref.unsqueeze(0);
         depth = 0;
         side_base = torch::tensor(2.0).toType(dtype<scalar_t>()).to(device);
     }
     void natural_center_divide(){
         if (depth==0){
-            centers_ref = centers_ref.repeat_interleave(dim_fac,0)+ 0.25 * edge * coord_tensor;
+            centers = centers.repeat_interleave(dim_fac,0)+ 0.25 * edge * coord_tensor;
         }else{
-            centers_ref = centers_ref.repeat_interleave(dim_fac,0)+ 0.25 * edge * coord_tensor.repeat({centers_ref.size(0),1});
+            centers = centers.repeat_interleave(dim_fac,0)+ 0.25 * edge * coord_tensor.repeat({centers.size(0),1});
         }
     }
     void divide(){
@@ -115,14 +112,14 @@ struct n_tree_cuda{
         edge = edge*0.5;
         depth += 1;
         side = side_base.pow(depth);
-        unique_counts_cum = torch::zeros(centers_ref.size(0)+1).toType(torch::kInt32).contiguous().to(device);
-        unique_counts= torch::zeros(centers_ref.size(0)).toType(torch::kInt32).contiguous().to(device);
-        perm = torch::zeros(centers_ref.size(0)).toType(torch::kInt32).contiguous().to(device);
+        unique_counts_cum = torch::zeros(centers.size(0)+1).toType(torch::kInt32).contiguous().to(device);
+        unique_counts= torch::zeros(centers.size(0)).toType(torch::kInt32).contiguous().to(device);
+        perm = torch::zeros(centers.size(0)).toType(torch::kInt32).contiguous().to(device);
         dim3 blockSize,gridSize;
         int memory;
-        std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(dim, centers_ref.size(0));
+        std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(dim, centers.size(0));
         center_perm<scalar_t,dim><<<gridSize,blockSize>>>(
-                        centers_ref.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                        centers.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                         xmin.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>(),
                         multiply_gpu.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
                         side.data_ptr<scalar_t>(),
@@ -157,7 +154,6 @@ struct n_tree_cuda{
         );
         cudaDeviceSynchronize();
         box_indices_sorted = unique_counts.nonzero().squeeze();
-        centers = centers_ref.index({box_indices_sorted.toType(torch::kLong),torch::indexing::Slice()});
         unique_counts = unique_counts.index({box_indices_sorted.toType(torch::kLong)});
         avg_nr_points = unique_counts.toType(torch::kFloat32).mean().item<float>();
         multiply_gpu = multiply_gpu*multiply_gpu_base;
@@ -446,7 +442,7 @@ void far_field_compute_v2(
                           torch::Tensor & cheb_data_X
 ){
     torch::Tensor low_rank_y;
-    low_rank_y = torch::zeros({cheb_data_X.size(0)*x_box.box_indices_sorted.size(0),b.size(1)}).to(device_gpu);
+    low_rank_y = torch::zeros({cheb_data_X.size(0)*x_box.centers.size(0),b.size(1)}).to(device_gpu);
     apply_laplace_interpolation_v2<scalar_t,nd>(y_box,
                                             b,
                                             device_gpu,

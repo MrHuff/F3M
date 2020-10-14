@@ -56,7 +56,7 @@ int main(int argc, char const *argv[]){
     float a = std::stof(argv[5]);
     float b = std::stof(argv[6]);
     float ls = std::stof(argv[7]);
-    benchmark_1<3>(l_n,n,min_points,threshold,a,b,ls);
+//    benchmark_1<3>(l_n,n,min_points,threshold,a,b,ls);
     benchmark_2<3>(l_n,n,min_points,threshold,a,b,ls);
     cudaProfilerStop();
     cudaDeviceReset();

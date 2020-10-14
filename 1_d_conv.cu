@@ -71,9 +71,6 @@ std::tuple<dim3,dim3,int,torch::Tensor,torch::Tensor> skip_kernel_launch(int col
     blockSize.x = blksize;
 
     torch::Tensor boxes_needed = torch::ceil(box_sizes.toType(torch::kFloat32)/(float)blksize).toType(torch::kLong); //blkSize is wrong and fix stuff
-//    torch::Tensor idx = boxes_needed.nonzero();
-//    torch::Tensor output_block = box_idx.index(idx).squeeze();
-//    output_block = output_block.repeat_interleave({boxes_needed.index(idx).squeeze()}).toType(torch::kInt32);// Adjust for special case
     torch::Tensor output_block = box_idx.repeat_interleave(boxes_needed).toType(torch::kInt32);// Adjust for special case
     std::vector<torch::Tensor> cont = {};
     boxes_needed = boxes_needed.to("cpu").toType(torch::kInt32);
