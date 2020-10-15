@@ -244,16 +244,14 @@ __global__ void reduceMaxMinOptimizedWarpMatrix(
         __syncthreads();
     }
 }
-//template < typename TYPE >
-//struct PLUS_INFINITY;
-//
-//
-//template <>
-//struct PLUS_INFINITY< float > {
-//    static constexpr float value = INFINITY_FLOAT;
-//};
-//
-//template <>
-//struct PLUS_INFINITY< double > {
-//    static constexpr double value = INFINITY_DOUBLE;
-//};
+
+__global__ void get_keep_mask(
+        const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> interactions,
+        torch::PackedTensorAccessor32<bool,1,torch::RestrictPtrTraits> keep_x_box,
+        torch::PackedTensorAccessor32<bool,1,torch::RestrictPtrTraits> keep_y_box,
+        torch::PackedTensorAccessor32<bool,1,torch::RestrictPtrTraits> output
+        ){
+    int tid = threadIdx.x+blockDim.x*blockIdx.x;
+    if (tid>interactions.size(0)-1){return;}
+    output[tid] = keep_x_box[interactions[tid][0]]*keep_y_box[interactions[tid][1]];
+}

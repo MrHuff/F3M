@@ -75,6 +75,8 @@ struct n_tree_cuda{
     multiply_gpu,
     box_indices_sorted,
     centers,
+    non_empty_mask,
+    box_idxs,
     unique_counts_cum,
     coord_tensor,
     perm;
@@ -99,6 +101,8 @@ struct n_tree_cuda{
         centers = centers.unsqueeze(0);
         depth = 0;
         side_base = torch::tensor(2.0).toType(dtype<scalar_t>()).to(device);
+        box_idxs = torch::arange(centers.size(0)).toType(torch::kInt32).contiguous().to(device);
+
     }
     void natural_center_divide(){
         if (depth==0){
@@ -112,6 +116,7 @@ struct n_tree_cuda{
         edge = edge*0.5;
         depth += 1;
         side = side_base.pow(depth);
+        box_idxs = torch::arange(centers.size(0)).toType(torch::kInt32).contiguous().to(device);
         unique_counts_cum = torch::zeros(centers.size(0)+1).toType(torch::kInt32).contiguous().to(device);
         unique_counts= torch::zeros(centers.size(0)).toType(torch::kInt32).contiguous().to(device);
         perm = torch::zeros(centers.size(0)).toType(torch::kInt32).contiguous().to(device);
@@ -153,8 +158,9 @@ struct n_tree_cuda{
 
         );
         cudaDeviceSynchronize();
-        box_indices_sorted = unique_counts.nonzero().squeeze();
-        unique_counts = unique_counts.index({box_indices_sorted.toType(torch::kLong)});
+        non_empty_mask = unique_counts != 0;
+        box_indices_sorted = box_idxs.index({non_empty_mask});
+        unique_counts = unique_counts.index({non_empty_mask});
         avg_nr_points = unique_counts.toType(torch::kFloat32).mean().item<float>();
         multiply_gpu = multiply_gpu*multiply_gpu_base;
 
@@ -549,6 +555,27 @@ std::tuple<torch::Tensor,torch::Tensor> separate_interactions(
     return std::make_tuple(interactions.index({far_field_mask}),interactions.index({far_field_mask.logical_not()}));
 }
 template <typename scalar_t, int nd>
+torch::Tensor filter_out_interactions(torch::Tensor & interactions,
+                                      n_tree_cuda<scalar_t,nd> & ntree_X,
+                                      n_tree_cuda<scalar_t,nd> & ntree_Y){
+    dim3 blockSize,gridSize;
+    int memory;
+    std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<int>(nd, interactions.size(0));
+    torch::Tensor mask = torch::zeros(interactions.size(0)).toType(torch::kBool).to(interactions.device());
+    torch::Tensor &x_keep = ntree_X.non_empty_mask;
+    torch::Tensor &y_keep = ntree_Y.non_empty_mask;
+    get_keep_mask<<<gridSize,blockSize>>>(
+            interactions.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
+            x_keep.packed_accessor32<bool,1,torch::RestrictPtrTraits>(),
+            y_keep.packed_accessor32<bool,1,torch::RestrictPtrTraits>(),
+            mask.packed_accessor32<bool,1,torch::RestrictPtrTraits>()
+            );
+    return interactions.index({mask});
+
+}
+
+
+template <typename scalar_t, int nd>
 torch::Tensor far_field_run(
                             n_tree_cuda<scalar_t,nd> & ntree_X,
                             n_tree_cuda<scalar_t,nd> & ntree_Y,
@@ -571,6 +598,8 @@ torch::Tensor far_field_run(
                     ntree_X.edge,
                     gpu_device);
     if (far_field.numel()>0) {
+        //Normal 0 1 has really bad precision for some reason... also removing the far_field doesn't work here... WHY?!
+//        far_field = filter_out_interactions(far_field,ntree_X,ntree_Y);
 //        std::cout<<"near field: "<<near_field.size(0)<<std::endl;
 //        std::cout<<"far field: "<<far_field.size(0)<<std::endl;
         torch::Tensor cheb_data = cheb_data_X*ntree_X.edge/2.+ntree_X.edge/2.;
