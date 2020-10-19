@@ -79,19 +79,16 @@ __global__ void parse_x_boxes(
         const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> box_cumsum,
         torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> results
 ){
-    unsigned int nr_x_boxes = results.size(0);
-    int i = threadIdx.x+blockIdx.x*blockDim.x; // Thread nr
-    if (i>nr_x_boxes-1){return;}
-    unsigned int nr_of_relevant_boxes = box_cumsum.size(0);
-    for (int j=0;j<nr_of_relevant_boxes;j++){
-        if(i==box_cumsum[j][0]){ //if match
-            if (j==0){
-                results[i][0]=0;
-            }else{
-                results[i][0]=box_cumsum[j-1][1];
-            }
-            results[i][1]=box_cumsum[j][1];
-
+    int tid  = threadIdx.x + blockDim.x*blockIdx.x;
+    int n = box_cumsum.size(0);
+    if (tid<n){
+        int box_nr = box_cumsum[tid][0];
+        if (tid==0){
+            results[box_nr][0] = 0;
+            results[box_nr][1] = box_cumsum[tid][1];
+        }else{
+            results[box_nr][0] = box_cumsum[tid-1][1];
+            results[box_nr][1] = box_cumsum[tid][1];
         }
     }
     __syncthreads();

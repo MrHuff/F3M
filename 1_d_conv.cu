@@ -406,37 +406,39 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor32<scalar_t
 //    printf("thread %i: %i\n",i,box_ind);
     interactions_a = interactions_x_parsed[box_ind][0];
     interactions_b= interactions_x_parsed[box_ind][1];
-    for (int b_ind=0; b_ind < b_size; b_ind++) { //for all dims of b
-        acc=0.0;
+    if (interactions_a>-1) {
+        for (int b_ind = 0; b_ind < b_size; b_ind++) { //for all dims of b
+            acc = 0.0;
 
-        for (int m = interactions_a; m < interactions_b; m++) {
-            //Pass near field interactions...
-            int_m = interactions_y[m];
-            start = y_boxes_count[int_m]; // 0 to something
-            end = y_boxes_count[int_m + 1]; // seomthing
-            for (int jstart = start, tile = 0; jstart < end; jstart += blockDim.x, tile++) {
-                int j = start+tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
-                if (j < end) { // we load yj from device global memory only if j<ny
-                    torch_load_y_v2<scalar_t,nd>(y_idx_reordering[j], yj, Y_data);
-                    torch_load_b_v2<scalar_t,nd>(b_ind ,y_idx_reordering[j], bj, b_data);
-                }
-                __syncthreads();
-                if (i < b) { // we compute x1i only if needed
-                    scalar_t *yjrel = yj; // Loop on the columns of the current block.
-                    for (int jrel = 0; (jrel < blockDim.x) && (jrel < end - jstart); jrel++, yjrel += nd) {
-                        acc += rbf<scalar_t,nd>(x_i, yjrel,ls) * bj[jrel]; //sums incorrectly cause pointer is fucked not sure if allocating properly
+            for (int m = interactions_a; m < interactions_b; m++) {
+                //Pass near field interactions...
+                int_m = interactions_y[m];
+                start = y_boxes_count[int_m]; // 0 to something
+                end = y_boxes_count[int_m + 1]; // seomthing
+                for (int jstart = start, tile = 0; jstart < end; jstart += blockDim.x, tile++) {
+                    int j = start + tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
+                    if (j < end) { // we load yj from device global memory only if j<ny
+                        torch_load_y_v2<scalar_t, nd>(y_idx_reordering[j], yj, Y_data);
+                        torch_load_b_v2<scalar_t, nd>(b_ind, y_idx_reordering[j], bj, b_data);
                     }
-                }
-                __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
-            };
+                    __syncthreads();
+                    if (i < b) { // we compute x1i only if needed
+                        scalar_t *yjrel = yj; // Loop on the columns of the current block.
+                        for (int jrel = 0; (jrel < blockDim.x) && (jrel < end - jstart); jrel++, yjrel += nd) {
+                            acc += rbf<scalar_t, nd>(x_i, yjrel, ls) *
+                                   bj[jrel]; //sums incorrectly cause pointer is fucked not sure if allocating properly
+                        }
+                    }
+                    __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
+                };
 
+            }
+            if (i < b) {
+                output[x_idx_reorder][b_ind] += acc;
+            }
         }
-        if (i < b) {
-            output[x_idx_reorder][b_ind] += acc;
-        }
+        __syncthreads();
     }
-    __syncthreads();
-
 }
 
 //Implement shuffle reduce.

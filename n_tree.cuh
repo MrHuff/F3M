@@ -251,9 +251,6 @@ void call_skip_conv(
         int min_size=x_boxes_count.min().item<int>();
         blkSize = optimal_blocksize(min_size);
         std::tie(blockSize, gridSize, memory, block_box_indicator, box_block_indicator) = skip_kernel_launch<scalar_t>(nd, blkSize, x_boxes_count, x_box_idx);
-        block_box_indicator = block_box_indicator.to(device_gpu);
-        box_block_indicator = box_block_indicator.to(device_gpu);
-
         skip_conv_1d_shared<scalar_t,nd><<<gridSize,blockSize,memory>>>(cuda_X_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                                         cuda_Y_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                                                                         cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
@@ -271,7 +268,6 @@ void call_skip_conv(
 
     }else{
         std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(nd, cuda_X_job.size(0));
-        x_box_idx = x_box_idx.to(device_gpu);
         torch::Tensor x_boxes_count_cumulative_alt = x_boxes_count.cumsum(0).toType(torch::kInt32).to(device_gpu);
         torch::Tensor y_boxes_count_cumulative_alt = y_boxes_count.cumsum(0).toType(torch::kInt32).to(device_gpu);
         skip_conv_1d<scalar_t,nd><<<gridSize,blockSize,memory>>>(cuda_X_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
@@ -590,6 +586,7 @@ torch::Tensor far_field_run(
 ){
     torch::Tensor interactions,far_field,interactions_x,interactions_y,interactions_x_parsed;
     interactions = get_new_interactions(near_field,ntree_X.dim_fac,gpu_device); //Doesn't work for new setup since the division is changed...
+    interactions = filter_out_interactions(interactions,ntree_X,ntree_Y);
     std::tie(far_field,near_field) =
             separate_interactions<scalar_t,nd>(
                     interactions,
@@ -633,8 +630,30 @@ void near_field_run(
         const std::string & gpu_device
 ){
     torch::Tensor interactions_x,interactions_y,interactions_x_parsed;
+//    std::cout<<near_field.size(0)<<std::endl;
+//    near_field = filter_out_interactions(near_field,ntree_X,ntree_Y); //Just adding this blows things upp..
     std::tie(interactions_x,interactions_y) = unbind_sort(near_field);
     interactions_x_parsed = process_interactions<nd>(interactions_x,ntree_X.centers.size(0),gpu_device);
+//    std::cout<<interactions_x_parsed<<std::endl;
+    near_field_compute_v2<scalar_t,nd>(interactions_x_parsed,interactions_y,ntree_X, ntree_Y, output, b, gpu_device,ls); //Make sure this thing works first!
+}
+
+template <typename scalar_t, int nd>
+void near_field_run_debug(
+        n_tree_cuda<scalar_t,nd> & ntree_X,
+        n_tree_cuda<scalar_t,nd> & ntree_Y,
+        torch::Tensor & near_field,
+        torch::Tensor & output,
+        torch::Tensor & b,
+        scalar_t & ls,
+        const std::string & gpu_device
+){
+    torch::Tensor interactions_x,interactions_y,interactions_x_parsed;
+    near_field = filter_out_interactions(near_field,ntree_X,ntree_Y); //Just adding this blows things upp..
+//    std::cout<<near_field.size(0)<<std::endl;
+    std::tie(interactions_x,interactions_y) = unbind_sort(near_field);
+    interactions_x_parsed = process_interactions<nd>(interactions_x,ntree_X.centers.size(0),gpu_device);//buggie here, last elememnt should be length of y but not after removing stuff...
+//    std::cout<<interactions_x_parsed<<std::endl;
     near_field_compute_v2<scalar_t,nd>(interactions_x_parsed,interactions_y,ntree_X, ntree_Y, output, b, gpu_device,ls); //Make sure this thing works first!
 }
 
@@ -705,7 +724,12 @@ torch::Tensor FFM_X(
         //std::cout<<output.slice(0,0,5)<<std::endl;
     }
     if (near_field.numel()>0){
+        torch::Tensor output_copy = torch::clone(output);
         near_field_run<scalar_t,nd>(ntree_X,ntree_X,near_field,output,b,ls,gpu_device);
+//        near_field_run_debug<scalar_t,nd>(ntree_X,ntree_X,near_field,output_copy,b,ls,gpu_device);
+//        std::cout<<output.slice(0,0,10)<<std::endl;
+//        std::cout<<output_copy.slice(0,0,10)<<std::endl;
+
     }
 
 //    while (near_field_ref.numel()>0 and ntree_X_ref.avg_nr_points > min_points){
