@@ -369,7 +369,8 @@ CMakeFiles/cuda_n_body.dir/main.cu.o: /home/rhu/C_pp_libs/libtorch-cxx11-abi-sha
 CMakeFiles/cuda_n_body.dir/main.cu.o: /home/rhu/C_pp_libs/libtorch-cxx11-abi-shared-with-deps-1.5.0+cu101/libtorch/include/torch/csrc/utils/variadic.h
 CMakeFiles/cuda_n_body.dir/main.cu.o: /home/rhu/C_pp_libs/libtorch-cxx11-abi-shared-with-deps-1.5.0+cu101/libtorch/include/torch/extension.h
 CMakeFiles/cuda_n_body.dir/main.cu.o: ../1_d_conv.cu
-CMakeFiles/cuda_n_body.dir/main.cu.o: ../divide_n_conquer.cu
+CMakeFiles/cuda_n_body.dir/main.cu.o: ../FFM_utils.cu
+CMakeFiles/cuda_n_body.dir/main.cu.o: ../GP_utils.cuh
 CMakeFiles/cuda_n_body.dir/main.cu.o: ../main.cu
 CMakeFiles/cuda_n_body.dir/main.cu.o: ../n_tree.cuh
 CMakeFiles/cuda_n_body.dir/main.cu.o: ../utils.h

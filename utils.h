@@ -7,31 +7,38 @@
 #include "GP_utils.cuh"
 #include <fstream>
 
+
 int writeOnfile_exp_1(char * filename,float a, float b, int l_p, int n, int d, float min_points, int time,float error) {
-    std::fstream job_results(filename);
-    if (!job_results.good())
-    {
-        job_results.open(filename,std::fstream::app);
-        job_results<<"uniform_a,uniform_b,l_p,n,d,min_points,FFM_time,relative_error\n";
+    std::fstream job_results;
+    job_results.open(filename, std::fstream::in | std::fstream::out | std::fstream::app);
+    if (job_results.is_open()){
+        std::cout<<"file found, appending"<<std::endl;
+        job_results<<a<<","<<b<<","<<l_p<<","<<n<<","<<d<<","<<min_points<<","<<time<<","<<error<<std::endl;
+        job_results.close();
     }else{
-        job_results.open(filename,std::ios_base::app);
+        std::cout<<"file not found, creating new one"<<std::endl;
+        job_results<<"uniform_a,uniform_b,l_p,n,d,min_points,FFM_time,relative_error\n";
+        job_results<<a<<","<<b<<","<<l_p<<","<<n<<","<<d<<","<<min_points<<","<<time<<","<<error<<std::endl;
     }
-    job_results<<a<<","<<b<<","<<l_p<<","<<n<<","<<d<<","<<min_points<<","<<time<<","<<error<<std::endl;
     job_results.close();
+
     return 0;
 }
 
 int writeOnfile_exp_2(char* filename,float a, float b, int l_p, int n, int d, float min_points, int time,float error) {
-    std::fstream job_results(filename);
-    if (!job_results.good())
-    {
-        job_results.open(filename,std::fstream::app);
-        job_results<<"normal mean,normal std,l_p,n,d,min_points,FFM_time,relative_error\n";
+    std::fstream job_results;
+    job_results.open(filename, std::fstream::in | std::fstream::out | std::fstream::app);
+    if (job_results.is_open()){
+        std::cout<<"file found, appending"<<std::endl;
+        job_results<<a<<","<<b<<","<<l_p<<","<<n<<","<<d<<","<<min_points<<","<<time<<","<<error<<std::endl;
+        job_results.close();
     }else{
-        job_results.open(filename,std::fstream::app);
+        std::cout<<"file not found, creating new one"<<std::endl;
+        job_results<<"normal mean,normal std,l_p,n,d,min_points,FFM_time,relative_error\n";
+        job_results<<a<<","<<b<<","<<l_p<<","<<n<<","<<d<<","<<min_points<<","<<time<<","<<error<<std::endl;
     }
-    job_results<<a<<","<<b<<","<<l_p<<","<<n<<","<<d<<","<<min_points<<","<<time<<","<<error<<","<<std::endl;
     job_results.close();
+
     return 0;
 }
 
@@ -66,7 +73,7 @@ torch::Tensor read_csv(const std::string filename,const int rows,const int cols)
 }
 
 template <int nd>
-void benchmark_1(int laplace_n,int n,float min_points, int threshold,float a,float b,float ls){
+void benchmark_1(int laplace_n,int n,float min_points, int threshold,float a,float b,float ls,char* fname){
     const std::string device_cuda = "cuda:0"; //officially retarded
     const std::string device_cpu = "cpu";
 //    torch::manual_seed(0);
@@ -95,13 +102,12 @@ void benchmark_1(int laplace_n,int n,float min_points, int threshold,float a,flo
     float rel_error_float = rel_error.item<float>();
     std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
     std::cout<<"Relative error: "<<rel_error_float<<std::endl;
-    char fname[] = "test.csv";
     writeOnfile_exp_1(fname,a,b,laplace_n,n,nd,min_points,duration_2.count(),rel_error_float);
 
 }
 
 template <int nd>
-void benchmark_2(int laplace_n,int n,float min_points, int threshold,float mean,float var,float ls){
+void benchmark_2(int laplace_n,int n,float min_points, int threshold,float mean,float var,float ls,char* fname){
     const std::string device_cuda = "cuda:0"; //officially retarded
     const std::string device_cpu = "cpu";
 //    torch::manual_seed(0);
@@ -127,7 +133,10 @@ void benchmark_2(int laplace_n,int n,float min_points, int threshold,float mean,
     auto end_2 = std::chrono::high_resolution_clock::now();
     auto duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(end_2-end);
     torch::Tensor res_compare = res.slice(0,0,threshold);
+    torch::Tensor rel_error  = ((res_ref-res_compare)/res_ref).abs_().mean();
+    float rel_error_float = rel_error.item<float>();
     std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
-    std::cout<<"Relative error: "<<((res_ref-res_compare)/res_ref).abs_().mean()<<std::endl;
+    std::cout<<"Relative error: "<<rel_error_float<<std::endl;
+    writeOnfile_exp_2(fname,mean,var,laplace_n,n,nd,min_points,duration_2.count(),rel_error_float);
 
 }

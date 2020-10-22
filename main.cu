@@ -54,12 +54,13 @@ int main(int argc, char const *argv[]){
     float b = std::stof(argv[6]);
     float ls = std::stof(argv[7]);
     int job = std::stoi(argv[8]);
+    char * fname = const_cast<char *>(argv[9]);
 
     if (job==1){
-        benchmark_1<3>(l_n,n,min_points,threshold,a,b,ls);
+        benchmark_1<3>(l_n,n,min_points,threshold,a,b,ls,fname);
     }
     if(job==2){
-        benchmark_2<3>(l_n,n,min_points,threshold,a,b,ls);
+        benchmark_2<3>(l_n,n,min_points,threshold,a,b,ls,fname);
     }
 
     cudaProfilerStop();
