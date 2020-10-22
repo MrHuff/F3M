@@ -1,1 +1,0 @@
-/usr/local/cuda-10.1/bin/nvcc  -O3 -DNDEBUG -Xcompiler=-fPIC -Wno-deprecated-gpu-targets -shared -dlink CMakeFiles/cuda_n_body.dir/main.cu.o -o CMakeFiles/cuda_n_body.dir/cmake_device_link.o  -lcublas  -lpthread 
