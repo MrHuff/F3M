@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 set(CMAKE_VERBOSE_MAKEFILE ON)
-set(CMAKE_CUDA_COMPILER "/usr/local/cuda-10.1/bin/nvcc")
+set(CMAKE_CUDA_COMPILER "nvcc")
 set(CMAKE_CUDA_STANDARD 14)
 project(cuda_n_body CUDA)
 enable_language(C)
