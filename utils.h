@@ -7,12 +7,26 @@
 #include "GP_utils.cuh"
 #include <fstream>
 
-int writeOnfile_exp_1(char* filename,float a, float b, int l_p, int n, int d, int min_points, float time,float error) {
+int writeOnfile_exp_1(char * filename,float a, float b, int l_p, int n, int d, float min_points, int time,float error) {
     std::fstream job_results(filename);
     if (!job_results.good())
     {
         job_results.open(filename,std::fstream::app);
         job_results<<"uniform_a,uniform_b,l_p,n,d,min_points,FFM_time,relative_error\n";
+    }else{
+        job_results.open(filename,std::ios_base::app);
+    }
+    job_results<<a<<","<<b<<","<<l_p<<","<<n<<","<<d<<","<<min_points<<","<<time<<","<<error<<std::endl;
+    job_results.close();
+    return 0;
+}
+
+int writeOnfile_exp_2(char* filename,float a, float b, int l_p, int n, int d, float min_points, int time,float error) {
+    std::fstream job_results(filename);
+    if (!job_results.good())
+    {
+        job_results.open(filename,std::fstream::app);
+        job_results<<"normal mean,normal std,l_p,n,d,min_points,FFM_time,relative_error\n";
     }else{
         job_results.open(filename,std::fstream::app);
     }
@@ -20,6 +34,7 @@ int writeOnfile_exp_1(char* filename,float a, float b, int l_p, int n, int d, in
     job_results.close();
     return 0;
 }
+
 template <typename type>
 torch::Tensor read_csv(const std::string filename,const int rows,const int cols){
     std::ifstream file(filename);
@@ -65,33 +80,24 @@ void benchmark_1(int laplace_n,int n,float min_points, int threshold,float a,flo
 //    FFM_object<float> ffm_obj_grad = FFM_object<float>(X,X,ls,op_grad,lambda,device_cuda);
 //    exact_MV<float> ffm_obj_grad_exact = exact_MV<float>(X,X,ls,op_grad,lambda,device_cuda);
     std::cout<<"------------- "<<"Uniform distribution : "<< "a "<<a<<" b "<<b<<" laplace nodes: "<<laplace_n<<" n: "<<n<<" min_points: "<< min_points <<" -------------"<<std::endl;
-    if (n>threshold){
-        torch::Tensor subsampled_X = X_train.slice(0,0,threshold);
-        exact_MV<float,nd> exact_ref = exact_MV<float,nd>(subsampled_X, X_train, ls,  lambda, device_cuda,laplace_n,min_points); //Exact method reference
-        auto start = std::chrono::high_resolution_clock::now();
-        res_ref = exact_ref *b_train;
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration_1 = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
-        std::cout<<"Full matmul time (ms): "<<duration_1.count()<<std::endl;
-        res = ffm_obj * b_train; //Fast math creates problems... fast math does a lot!!!
-        auto end_2 = std::chrono::high_resolution_clock::now();
-        auto duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(end_2-end);
-        torch::Tensor res_compare = res.slice(0,0,threshold);
-        std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
-        std::cout<<"Relative error: "<<((res_ref-res_compare)/res_ref).abs_().mean()<<std::endl;
-    }else{
-        exact_MV<float,nd> exact_ref = exact_MV<float,nd>(X_train, X_train, ls,  lambda, device_cuda,laplace_n,min_points); //Exact method reference
-        auto start = std::chrono::high_resolution_clock::now();
-        res_ref = exact_ref * b_train;
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration_1 = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
-        std::cout<<"Full matmul time (ms): "<<duration_1.count()<<std::endl;
-        res = ffm_obj * b_train; //Fast math creates problems... fast math does a lot!!!
-        auto end_2 = std::chrono::high_resolution_clock::now();
-        auto duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(end_2-end);
-        std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
-        std::cout<<"Relative error: "<<((res_ref-res)/res_ref).abs_().mean()<<std::endl;
-    }
+    torch::Tensor subsampled_X = X_train.slice(0,0,threshold);
+    exact_MV<float,nd> exact_ref = exact_MV<float,nd>(subsampled_X, X_train, ls,  lambda, device_cuda,laplace_n,min_points); //Exact method reference
+    auto start = std::chrono::high_resolution_clock::now();
+    res_ref = exact_ref *b_train;
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration_1 = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
+    std::cout<<"Full matmul time (ms): "<<duration_1.count()<<std::endl;
+    res = ffm_obj * b_train; //Fast math creates problems... fast math does a lot!!!
+    auto end_2 = std::chrono::high_resolution_clock::now();
+    auto duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(end_2-end);
+    torch::Tensor res_compare = res.slice(0,0,threshold);
+    torch::Tensor rel_error  = ((res_ref-res_compare)/res_ref).abs_().mean();
+    float rel_error_float = rel_error.item<float>();
+    std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
+    std::cout<<"Relative error: "<<rel_error_float<<std::endl;
+    char fname[] = "test.csv";
+    writeOnfile_exp_1(fname,a,b,laplace_n,n,nd,min_points,duration_2.count(),rel_error_float);
+
 }
 
 template <int nd>
@@ -110,31 +116,18 @@ void benchmark_2(int laplace_n,int n,float min_points, int threshold,float mean,
 //    FFM_object<float> ffm_obj_grad = FFM_object<float>(X,X,ls,op_grad,lambda,device_cuda);
 //    exact_MV<float> ffm_obj_grad_exact = exact_MV<float>(X,X,ls,op_grad,lambda,device_cuda);
     std::cout<<"------------- "<<"Normal distribution: "<< "mean "<<mean<<" variance "<<var<<" laplace nodes: "<<laplace_n<<" n: "<<n<<" min_points: "<< min_points <<" -------------"<<std::endl;
-    if (n>threshold){
-        torch::Tensor subsampled_X = X_train.slice(0,0,threshold);
-        exact_MV<float,nd> exact_ref = exact_MV<float,nd>(subsampled_X, X_train, ls,  lambda, device_cuda,laplace_n,min_points); //Exact method reference
-        auto start = std::chrono::high_resolution_clock::now();
-        res_ref = exact_ref *b_train;
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration_1 = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
-        std::cout<<"Full matmul time (ms): "<<duration_1.count()<<std::endl;
-        res = ffm_obj * b_train; //Fast math creates problems... fast math does a lot!!!
-        auto end_2 = std::chrono::high_resolution_clock::now();
-        auto duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(end_2-end);
-        torch::Tensor res_compare = res.slice(0,0,threshold);
-        std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
-        std::cout<<"Relative error: "<<((res_ref-res_compare)/res_ref).abs_().mean()<<std::endl;
-    }else{
-        exact_MV<float,nd> exact_ref = exact_MV<float,nd>(X_train, X_train, ls,  lambda, device_cuda,laplace_n,min_points); //Exact method reference
-        auto start = std::chrono::high_resolution_clock::now();
-        res_ref = exact_ref * b_train;
-        auto end = std::chrono::high_resolution_clock::now();
-        auto duration_1 = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
-        std::cout<<"Full matmul time (ms): "<<duration_1.count()<<std::endl;
-        res = ffm_obj * b_train; //Fast math creates problems... fast math does a lot!!!
-        auto end_2 = std::chrono::high_resolution_clock::now();
-        auto duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(end_2-end);
-        std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
-        std::cout<<"Relative error: "<<((res_ref-res)/res_ref).abs_().mean()<<std::endl;
-    }
+    torch::Tensor subsampled_X = X_train.slice(0,0,threshold);
+    exact_MV<float,nd> exact_ref = exact_MV<float,nd>(subsampled_X, X_train, ls,  lambda, device_cuda,laplace_n,min_points); //Exact method reference
+    auto start = std::chrono::high_resolution_clock::now();
+    res_ref = exact_ref *b_train;
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration_1 = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
+    std::cout<<"Full matmul time (ms): "<<duration_1.count()<<std::endl;
+    res = ffm_obj * b_train; //Fast math creates problems... fast math does a lot!!!
+    auto end_2 = std::chrono::high_resolution_clock::now();
+    auto duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(end_2-end);
+    torch::Tensor res_compare = res.slice(0,0,threshold);
+    std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
+    std::cout<<"Relative error: "<<((res_ref-res_compare)/res_ref).abs_().mean()<<std::endl;
+
 }
