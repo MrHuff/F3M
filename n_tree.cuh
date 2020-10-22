@@ -12,7 +12,6 @@
 #include <npp.h>
 //template<typename T>
 
-
 void print_tensor(torch::Tensor & tensor){
     std::cout<<tensor<<std::endl;
 }
