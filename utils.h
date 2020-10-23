@@ -11,34 +11,26 @@
 int writeOnfile_exp_1(char * filename,float a, float b, int l_p, int n, int d, float min_points, int time,float error) {
     std::fstream job_results;
     job_results.open(filename, std::fstream::in | std::fstream::out | std::fstream::app);
-    if (job_results.is_open()){
-        std::cout<<"file found, appending"<<std::endl;
-        job_results<<a<<","<<b<<","<<l_p<<","<<n<<","<<d<<","<<min_points<<","<<time<<","<<error<<std::endl;
-        job_results.close();
-    }else{
-        std::cout<<"file not found, creating new one"<<std::endl;
-        job_results<<"uniform_a,uniform_b,l_p,n,d,min_points,FFM_time,relative_error\n";
-        job_results<<a<<","<<b<<","<<l_p<<","<<n<<","<<d<<","<<min_points<<","<<time<<","<<error<<std::endl;
+    job_results.seekg(0, std::ios::end);
+    if (job_results.tellg() == 0) {
+        std::cout << "file empty appending columns" << std::endl;
+        job_results << "uniform_a,uniform_b,l_p,n,d,min_points,FFM_time,relative_error"<< std::endl;
     }
+    job_results<<a<<","<<b<<","<<l_p<<","<<n<<","<<d<<","<<min_points<<","<<time<<","<<error<<std::endl;
     job_results.close();
-
     return 0;
 }
 
 int writeOnfile_exp_2(char* filename,float a, float b, int l_p, int n, int d, float min_points, int time,float error) {
     std::fstream job_results;
     job_results.open(filename, std::fstream::in | std::fstream::out | std::fstream::app);
-    if (job_results.is_open()){
-        std::cout<<"file found, appending"<<std::endl;
-        job_results<<a<<","<<b<<","<<l_p<<","<<n<<","<<d<<","<<min_points<<","<<time<<","<<error<<std::endl;
-        job_results.close();
-    }else{
-        std::cout<<"file not found, creating new one"<<std::endl;
-        job_results<<"normal mean,normal std,l_p,n,d,min_points,FFM_time,relative_error\n";
-        job_results<<a<<","<<b<<","<<l_p<<","<<n<<","<<d<<","<<min_points<<","<<time<<","<<error<<std::endl;
+    job_results.seekg(0, std::ios::end);
+    if (job_results.tellg() == 0) {
+        std::cout << "file empty appending columns" << std::endl;
+        job_results << "normal mean,normal std,l_p,n,d,min_points,FFM_time,relative_error"<< std::endl;
     }
+    job_results<<a<<","<<b<<","<<l_p<<","<<n<<","<<d<<","<<min_points<<","<<time<<","<<error<<std::endl;
     job_results.close();
-
     return 0;
 }
 
