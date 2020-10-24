@@ -8,7 +8,7 @@ def parse_job(l_p,n,min_points,ref_size,a,b,ls,string):
 
 if __name__ == '__main__':
     for l_p in [4,5,6,7]:
-        for n in [100000,1000000,10000000,100000000,1000000000]:
+        for n in [1000000000]:
             if n==100000:
                 min_points_list = [500,1000]
             elif n==1000000:
