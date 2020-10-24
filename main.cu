@@ -57,10 +57,10 @@ int main(int argc, char const *argv[]){
     char * fname = const_cast<char *>(argv[9]);
 
     if (job==1){
-        benchmark_1<3>(l_n,n,min_points,threshold,a,b,ls,fname);
+        benchmark_1<1>(l_n,n,min_points,threshold,a,b,ls,fname); //Can't do a billion points for 3 dim...
     }
     if(job==2){
-        benchmark_2<3>(l_n,n,min_points,threshold,a,b,ls,fname);
+        benchmark_2<1>(l_n,n,min_points,threshold,a,b,ls,fname);
     }
 
     cudaProfilerStop();
