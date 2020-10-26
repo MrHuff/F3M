@@ -621,9 +621,9 @@ __global__ void skip_conv_far_boxes_opt(//the slow poke, optimize this to be fas
     scalar_t acc;
     extern __shared__ scalar_t buffer[];
     scalar_t *yj = &buffer[0];
-    scalar_t *bj = &buffer[cheb_data_size*nd];
+    scalar_t *bj = &buffer[blockDim.x*nd];
 //    scalar_t *distance = &buffer[cheb_data_size*(nd+1)];
-    scalar_t *cX_i = &buffer[cheb_data_size*(nd+1)]; //Get another shared memory pointer.
+    scalar_t *cX_i = &buffer[blockDim.x*(nd+1)]; //Get another shared memory pointer.
 
     if (threadIdx.x<nd){
         cX_i[threadIdx.x] = centers_X[box_ind][threadIdx.x];
@@ -649,15 +649,15 @@ __global__ void skip_conv_far_boxes_opt(//the slow poke, optimize this to be fas
                     int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
                     if (j < cheb_data_size) {
                         for (int k = 0; k < nd; k++) {
-                            yj[j*nd+k] = cheb_data[j][k]+centers_Y[int_m][k] - cX_i[k];
+                            yj[nd * threadIdx.x+k] = cheb_data[j][k]+centers_Y[int_m][k] - cX_i[k];
                         }
-                        bj[j] = b_data[j + int_m * cheb_data_size][b_ind];
+                        bj[threadIdx.x] = b_data[j + int_m * cheb_data_size][b_ind];
                     }
                     __syncthreads(); //Need to be smart with this, don't slow down the others!
                     if (i < b) { // we compute x1i only if needed
                         scalar_t *yjrel = yj; // Loop on the columns of the current block.
-                        for (int j = 0; (j < blockDim.x) && (j < cheb_data_size - jstart); j++, yjrel += nd) {
-                            acc += rbf<scalar_t,nd>(x_i, yjrel, ls)* bj[j]; //sums incorrectly cause pointer is fucked not sure if allocating properly
+                        for (int p = 0; (p < blockDim.x) && (p < cheb_data_size - jstart); p++, yjrel += nd) {
+                            acc += rbf<scalar_t,nd>(x_i, yjrel, ls)* bj[p]; //sums incorrectly cause pointer is fucked not sure if allocating properly
                         }
                     }
                 }

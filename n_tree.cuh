@@ -44,8 +44,8 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor
 };
 template<typename scalar_t, int nd>
 std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> calculate_edge_X(const torch::Tensor &X,const std::string & gpu_device){
-    torch::Tensor Xmin = torch::ones(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device)*NPP_MAXABS_32F;
-    torch::Tensor Xmax = -torch::ones(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device)*NPP_MAXABS_32F;
+    torch::Tensor Xmin = torch::ones(nd).toType(dtype<scalar_t>()).to(gpu_device)*NPP_MAXABS_32F;
+    torch::Tensor Xmax = -torch::ones(nd).toType(dtype<scalar_t>()).to(gpu_device)*NPP_MAXABS_32F;
     dim3 blockSize,gridSize;
     blockSize.x = 1024;
     gridSize.x = 10;
@@ -682,6 +682,7 @@ torch::Tensor FFM_X(
         scalar_t & lambda
 
 ) {
+
     torch::Tensor output = torch::zeros({X_data.size(0),b.size(1)}).to(gpu_device); //initialize empty output
     torch::Tensor output_ref =torch::zeros({X_data.size(0),b.size(1)}).to(gpu_device); //initialize empty output
     torch::Tensor edge,
