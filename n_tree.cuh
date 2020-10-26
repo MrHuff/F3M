@@ -319,7 +319,7 @@ template <typename scalar_t>
 torch::Tensor chebyshev_nodes_1D(const int & nodes){
     float PI = atan(1.)*4.;
     torch::Tensor chebyshev_nodes = torch::arange(1, nodes+1).toType(dtype<scalar_t>());
-    chebyshev_nodes = cos((chebyshev_nodes*2.-1.)*PI/(2*chebyshev_nodes.size(0)));
+    chebyshev_nodes = torch::cos((chebyshev_nodes*2.-1.)*PI/(2*nodes));
     return chebyshev_nodes;
 };
 

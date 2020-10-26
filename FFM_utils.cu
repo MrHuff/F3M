@@ -109,9 +109,11 @@ __global__ void get_cheb_idx_data(
         buffer[threadIdx.x] = cheb_nodes[threadIdx.x];
     }
     int idx;
+    int tmp;
     __syncthreads();
     for (int j=0;j<nd;j++){
-        idx = (int) floor((i%(int)pow(lap_nodes,j+1))/pow(lap_nodes,j));
+        tmp = i % (int)round(pow(lap_nodes,j+1));
+        idx = (int) floor((float)tmp/(float)pow(lap_nodes,j));
         cheb_idx[i][j] = idx;
         cheb_data[i][j] = cheb_nodes[idx];
     }
@@ -125,11 +127,10 @@ __global__ void get_centers(
     if (i>n-1){return;}
     int idx;
     for (int j=0;j<nd;j++){
-        idx = (int) floor((i%(int)pow(2,j+1))/pow(2,j));
+        idx = (int) floor((float)(i%(int)pow(2,j+1))/(float)pow(2,j));
         centers[i][j] = (idx==0) ? -1 : 1;
     }
 }
-
 
 
 template <typename scalar_t, int nd>
