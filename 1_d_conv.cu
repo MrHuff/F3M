@@ -258,19 +258,17 @@ __device__ scalar_t calculate_laplace(
 }
 
 template <typename scalar_t,int nd>
-__device__ scalar_t calculate_laplace_product(
+__device__ scalar_t calculate_laplace_product( //Tends to become really inaccurate for high dims and "too many lagrange nodes"
         scalar_t l_p[],
         scalar_t x_i[],
         int combs[],
         scalar_t b,
         int laplace_n[]){
     for (int i=0; i<nd;i++){
-        b = b*calculate_laplace(l_p, x_i[i], combs[i],laplace_n[0]);
+        b = b*calculate_laplace(l_p, x_i[i], combs[i],laplace_n[0]); //Interpolating b by constructing langrange interpolation at x's
     }
     return b;
 }
-
-
 
 __device__ int calculate_box_ind(int &current_thread_idx,
         torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> counts,
@@ -459,7 +457,7 @@ __global__ void laplace_shared(
     int box_ind = indicator[blockIdx.x];
     int a,b,cheb_data_size,idx_reorder;
     cheb_data_size = combinations.size(0);
-    scalar_t factor = 2./(*edge);
+    scalar_t factor = 2./(*edge); //rescaling data to langrange node interval (-1,1)
     a = x_boxes_count[box_ind];
     b = x_boxes_count[box_ind+1];
     int i = a+ threadIdx.x+box_block_indicator[blockIdx.x]*blockDim.x; // current thread

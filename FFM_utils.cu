@@ -98,26 +98,65 @@ template <typename scalar_t, int nd>
 __global__ void get_cheb_idx_data(
         const torch::PackedTensorAccessor32<scalar_t,1,torch::RestrictPtrTraits> cheb_nodes,
         torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> cheb_data,
-        torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> cheb_idx
+        torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> cheb_idx,
+        torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> indices
 ){
     int n = cheb_data.size(0);
     int i = threadIdx.x+blockIdx.x*blockDim.x; // Thread nr
     if (i>n-1){return;}
+    int sampled_i = indices[i];
     int lap_nodes = cheb_nodes.size(0);
+    int idx;
+    int tmp;
     extern __shared__ scalar_t buffer[];
     if (threadIdx.x<lap_nodes){
         buffer[threadIdx.x] = cheb_nodes[threadIdx.x];
     }
-    int idx;
-    int tmp;
     __syncthreads();
     for (int j=0;j<nd;j++){
-        tmp = i % (int)round(pow(lap_nodes,j+1));
+        tmp = sampled_i % (int)round(pow(lap_nodes,j+1));
         idx = (int) floor((float)tmp/(float)pow(lap_nodes,j));
         cheb_idx[i][j] = idx;
-        cheb_data[i][j] = cheb_nodes[idx];
+        cheb_data[i][j] = buffer[idx];
     }
 }
+
+template <typename scalar_t, int nd>
+__global__ void get_smolyak_indices(
+        const torch::PackedTensorAccessor32<scalar_t,1,torch::RestrictPtrTraits> cheb_nodes,
+        torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> cheb_data,
+        torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> cheb_idx,
+        torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> size_per_dim,
+        torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> cum_prod
+){
+    int n = cheb_data.size(0);
+    int i = threadIdx.x+blockIdx.x*blockDim.x; // Thread nr
+    if (i>n-1){return;}
+    extern __shared__ scalar_t buffer[];
+    int lap_nodes = cheb_nodes.size(0);
+    int idx;
+    int tmp;
+    int acc = 0;
+    if (threadIdx.x<lap_nodes){
+        buffer[threadIdx.x] = cheb_nodes[threadIdx.x];
+    }
+    __syncthreads();
+    for (int j=0;j<nd;j++){
+        if (j==0){
+            tmp = i % cum_prod[j];
+            idx = (int) floor((float)tmp/1.0);
+        }
+        else{
+            tmp = i % cum_prod[j];
+            idx = (int) floor((float)tmp/(float)cum_prod[j-1]);
+            acc += size_per_dim[j-1];
+        }
+        cheb_idx[i][j] = idx+acc;
+        cheb_data[i][j] = buffer[cheb_idx[i][j]];
+    }
+}
+
+
 template <int nd>
 __global__ void get_centers(
         torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> centers

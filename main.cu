@@ -53,14 +53,15 @@ int main(int argc, char const *argv[]){
     float a = std::stof(argv[5]);
     float b = std::stof(argv[6]);
     float ls = std::stof(argv[7]);
-    int job = std::stoi(argv[8]);
-    char * fname = const_cast<char *>(argv[9]);
+    int nr_of_interpolation_nodes = std::stoi(argv[8]);
+    int job = std::stoi(argv[9]);
+    char * fname = const_cast<char *>(argv[10]);
 
     if (job==1){
-        benchmark_1<3>(l_n,n,min_points,threshold,a,b,ls,fname); //Can't do a billion points for 3 dim...
+        benchmark_1<1>(l_n,n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,fname); //Can't do a billion points for 3 dim...
     }
     if(job==2){
-        benchmark_2<3>(l_n,n,min_points,threshold,a,b,ls,fname);
+        benchmark_2<1>(l_n,n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,fname);
     }
 
     cudaProfilerStop();
