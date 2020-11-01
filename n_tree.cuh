@@ -328,30 +328,33 @@ template <typename scalar_t>
 torch::Tensor concat_many_nodes(torch::Tensor & node_list){
     std::vector<torch::Tensor> list_of_cheb = {};
     auto node_list_accessor = node_list.accessor<int,1>();
-    for (int i;i<node_list.size(0);i++){
+    for (int i=0;i<node_list.size(0);i++){
         list_of_cheb.push_back(chebyshev_nodes_1D<scalar_t>(node_list_accessor[i]));
     }
     torch::Tensor chebyshev_nodes = torch::cat({list_of_cheb},0);
     return chebyshev_nodes;
 };
+
 template<int nd>
 torch::Tensor get_node_list(int & max_nodes){ //do variance weighted selective interpolation?
-    std::vector<int> node_list =  {};
     float ref_val = pow(max_nodes, 1.0/(float)nd);
     int highest_mult = (int) std::ceil(ref_val);
     int safe_mult = (int) std::floor(ref_val);
     int acc = 1;
     int future;
+    torch::Tensor torch_node_list = torch::zeros({nd}).toType(torch::kInt32);
+    auto torch_node_list_accessor = torch_node_list.accessor<int,1>();
     for (int i=0;i<nd;i++){
         future = acc*pow(safe_mult,nd-(i+1))*highest_mult;
         if (future<=max_nodes){
-            node_list.push_back(highest_mult);
+            torch_node_list_accessor[i]=highest_mult;
+            acc*=highest_mult;
         }else{
-            node_list.push_back(safe_mult);
+            torch_node_list_accessor[i]=safe_mult;
+            acc*=safe_mult;
         }
     }
-    torch::Tensor torch_node_list = torch::from_blob(node_list.data(),{nd});
-    torch_node_list = torch_node_list.index({torch::randperm(nd)});
+    torch_node_list = torch_node_list.index({torch::randperm(nd).toType(torch::kLong)});
     return torch_node_list;
 }
 
@@ -362,6 +365,7 @@ void apply_laplace_interpolation_v2(
         const std::string & device_gpu,
         torch::Tensor & nodes,
         torch::Tensor & laplace_indices,
+        torch::Tensor & node_list_cum,
         const bool & transpose,
         torch::Tensor & output
         ){
@@ -377,7 +381,7 @@ void apply_laplace_interpolation_v2(
     int min_size=boxes_count.min().item<int>();
     blkSize = optimal_blocksize(min_size);
     std::tie(blockSize,gridSize,memory,indicator,box_block) = skip_kernel_launch<scalar_t>(nd,blkSize,boxes_count,n_tree.box_indices_sorted);
-    memory = memory+nodes.size(0)*sizeof(scalar_t)+sizeof(int)+32*sizeof(scalar_t);
+    memory = memory+nodes.size(0)*sizeof(scalar_t)+(nd+2)*sizeof(int)+32*sizeof(scalar_t); //Seems the last write is where the trouble is...
     torch::Tensor boxes_count_cumulative = n_tree.unique_counts_cum;
     if (transpose){
 
@@ -392,7 +396,8 @@ void apply_laplace_interpolation_v2(
                 boxes_count_cumulative.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
                 centers.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                 edge.data_ptr<scalar_t>(),
-                idx_reordering.packed_accessor32<int,1,torch::RestrictPtrTraits>()
+                idx_reordering.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+                node_list_cum.packed_accessor32<int,1,torch::RestrictPtrTraits>()
         );
         cudaDeviceSynchronize();
 
@@ -408,7 +413,9 @@ void apply_laplace_interpolation_v2(
                 boxes_count_cumulative.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
                 centers.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
                 edge.data_ptr<scalar_t>(),
-                idx_reordering.packed_accessor32<int,1,torch::RestrictPtrTraits>()
+                idx_reordering.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+                node_list_cum.packed_accessor32<int,1,torch::RestrictPtrTraits>()
+
         );
         cudaDeviceSynchronize();
     }
@@ -468,7 +475,8 @@ void far_field_compute_v2(
                        scalar_t & ls,
                           torch::Tensor & chebnodes_1D,
                           torch::Tensor & laplace_combinations,
-                          torch::Tensor & cheb_data_X
+                          torch::Tensor & cheb_data_X,
+                          torch::Tensor & node_list_cum
 ){
     torch::Tensor low_rank_y;
     low_rank_y = torch::zeros({cheb_data_X.size(0)*x_box.centers.size(0),b.size(1)}).to(device_gpu);
@@ -477,6 +485,7 @@ void far_field_compute_v2(
                                             device_gpu,
                                             chebnodes_1D,
                                             laplace_combinations,
+                                                node_list_cum,
                                             true,
                                             low_rank_y); //no problems here!
 
@@ -498,6 +507,7 @@ void far_field_compute_v2(
                                             device_gpu,
                                             chebnodes_1D,
                                             laplace_combinations,
+                                                node_list_cum,
                                             false,
                                             output);
 };
@@ -533,14 +543,14 @@ std::tuple<torch::Tensor,torch::Tensor> parse_cheb_data_smolyak(
         const std::string & gpu_device,
         torch::Tensor & nodes_per_dim
 ){
-    torch::Tensor nodes_cum_prod = nodes_per_dim.cumprod(0);
-    int n = *nodes_per_dim.prod(0).data_ptr<int>();
+    torch::Tensor nodes_cum_prod = nodes_per_dim.cumprod(0).toType(torch::kInt32);
+    int n = nodes_per_dim.prod(0).toType(torch::kInt32).item<int>();
     torch::Tensor cheb_idx = torch::zeros({n,d}).toType(torch::kInt32).to(gpu_device);
     torch::Tensor cheb_data = torch::zeros({n,d}).toType(dtype<scalar_t>()).to(gpu_device);
     dim3 block,grid;
     int shared;
     std::tie(block,grid,shared) =  get_kernel_launch_params<scalar_t>(d,n);
-    get_cheb_idx_data<scalar_t,d><<<grid,block,shared>>>(
+    get_smolyak_indices<scalar_t,d><<<grid,block,shared>>>(
             cheb_nodes.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>(),
             cheb_data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
             cheb_idx.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
@@ -638,6 +648,7 @@ torch::Tensor far_field_run(
                             torch::Tensor & b,
                             torch::Tensor & chebnodes_1D,
                             torch::Tensor & laplace_combinations,
+                            torch::Tensor & node_list_cum,
                             scalar_t & ls,
                             const std::string & gpu_device
 ){
@@ -670,7 +681,8 @@ torch::Tensor far_field_run(
                 ls,
                 chebnodes_1D,
                 laplace_combinations,
-                cheb_data
+                cheb_data,
+                node_list_cum
         ); //far field compute
     }
     return near_field;
@@ -704,13 +716,34 @@ torch::Tensor FFM_XY(
         scalar_t & ls,
         int &laplace_n,
         float &min_points,
-        int & nr_of_interpolation_points
+        int & nr_of_interpolation_points,
+        bool smolyak
 ) {
     torch::Tensor output = torch::zeros({X_data.size(0),b.size(1)}).to(gpu_device); //initialize empty output
-    torch::Tensor edge,xmin,ymin,xmax,ymax,interactions,far_field,near_field,interactions_x,interactions_y,interactions_x_parsed,cheb_data_X,laplace_combinations; //these are needed to figure out which interactions are near/far field
+    torch::Tensor edge,
+    xmin,
+    ymin,
+    xmax,
+    ymax,
+    near_field,
+    cheb_data_X,
+    laplace_combinations,
+    node_list,
+    node_list_cum,
+    chebnodes_1D;//these are needed to figure out which interactions are near/far field; //these are needed to figure out which interactions are near/far field
     near_field = torch::zeros({1,2}).toType(torch::kInt32).to(gpu_device);
-    torch::Tensor chebnodes_1D = chebyshev_nodes_1D<scalar_t>(laplace_n).to(gpu_device); //get chebyshev nodes, laplace_nodes is fixed now, should probably be a variable
-    std::tie(laplace_combinations,cheb_data_X)=parse_cheb_data<scalar_t,nd>(chebnodes_1D,gpu_device,nr_of_interpolation_points);
+    if (smolyak){
+        node_list = get_node_list<nd>(nr_of_interpolation_points);
+        chebnodes_1D = concat_many_nodes<scalar_t>(node_list);
+        node_list = node_list.to(gpu_device);
+        chebnodes_1D = chebnodes_1D.to(gpu_device);
+        std::tie(laplace_combinations,cheb_data_X) = parse_cheb_data_smolyak<scalar_t,nd>(chebnodes_1D,gpu_device,node_list);
+        node_list_cum = node_list.cumsum(0).toType(torch::kInt32);
+    }else{
+        chebnodes_1D = chebyshev_nodes_1D<scalar_t>(laplace_n).to(gpu_device); //get chebyshev nodes, laplace_nodes is fixed now, should probably be a variable
+        std::tie(laplace_combinations,cheb_data_X)=parse_cheb_data<scalar_t,nd>(chebnodes_1D,gpu_device,nr_of_interpolation_points);
+    }
+
     std::tie(edge,xmin,ymin,xmax,ymax) = calculate_edge<scalar_t,nd>(X_data,Y_data,gpu_device); //actually calculate them
     n_tree_cuda<scalar_t,nd> ntree_X = n_tree_cuda<scalar_t,nd>(edge,X_data,xmin,xmax,gpu_device);
     n_tree_cuda<scalar_t,nd> ntree_Y = n_tree_cuda<scalar_t,nd>(edge,Y_data,ymin,ymax,gpu_device);
@@ -718,7 +751,17 @@ torch::Tensor FFM_XY(
     while (near_field.numel()>0 and ntree_X.avg_nr_points > min_points and ntree_Y.avg_nr_points > min_points){
         ntree_X.divide();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
         ntree_Y.divide();//divide ALL boxes recursively once
-        near_field = far_field_run<scalar_t,nd>(ntree_X,ntree_Y,near_field,cheb_data_X,output,b,chebnodes_1D,laplace_combinations,ls,gpu_device);
+        near_field = far_field_run<scalar_t,nd>(ntree_X,
+                ntree_Y,
+                near_field,
+                cheb_data_X,
+                output,
+                b,
+                chebnodes_1D,
+                laplace_combinations,
+                node_list_cum,
+                ls,
+                gpu_device);
 
         }
 
@@ -736,7 +779,8 @@ torch::Tensor FFM_X(
         scalar_t & ls,
         int &laplace_n,
         float &min_points,
-        int & nr_of_interpolation_points
+        int & nr_of_interpolation_points,
+        bool & smolyak
 ) {
 
     torch::Tensor output = torch::zeros({X_data.size(0),b.size(1)}).to(gpu_device); //initialize empty output
@@ -746,17 +790,41 @@ torch::Tensor FFM_X(
     xmax,
     near_field,
     cheb_data_X,
-    laplace_combinations;//these are needed to figure out which interactions are near/far field
+    laplace_combinations,
+    node_list,
+    chebnodes_1D,
+    node_list_cum;//these are needed to figure out which interactions are near/far field
     near_field = torch::zeros({1,2}).toType(torch::kInt32).to(gpu_device);
-    torch::Tensor chebnodes_1D = chebyshev_nodes_1D<scalar_t>(laplace_n).to(gpu_device); //get chebyshev nodes, laplace_nodes is fixed now, should probably be a variable
-    std::tie(laplace_combinations,cheb_data_X)=parse_cheb_data<scalar_t,nd>(chebnodes_1D,gpu_device,nr_of_interpolation_points);
+
+    if (smolyak){
+        node_list = get_node_list<nd>(nr_of_interpolation_points);
+        chebnodes_1D = concat_many_nodes<scalar_t>(node_list);
+        node_list = node_list.to(gpu_device);
+        chebnodes_1D = chebnodes_1D.to(gpu_device);
+        std::tie(laplace_combinations,cheb_data_X) = parse_cheb_data_smolyak<scalar_t,nd>(chebnodes_1D,gpu_device,node_list);
+        node_list_cum = node_list.cumsum(0).toType(torch::kInt32);
+    }else{
+        chebnodes_1D = chebyshev_nodes_1D<scalar_t>(laplace_n).to(gpu_device); //get chebyshev nodes, laplace_nodes is fixed now, should probably be a variable
+        std::tie(laplace_combinations,cheb_data_X)=parse_cheb_data<scalar_t,nd>(chebnodes_1D,gpu_device,nr_of_interpolation_points);
+    }
+
     std::tie(edge,xmin,xmax) = calculate_edge_X<scalar_t,nd>(X_data,gpu_device); //actually calculate them
     n_tree_cuda<scalar_t,nd> ntree_X = n_tree_cuda<scalar_t,nd>(edge,X_data,xmin,xmax,gpu_device);
 //    near_field_ref = torch::zeros({1,2}).toType(torch::kInt32).to(gpu_device);
 //    n_tree_cuda<scalar_t,nd> ntree_X_ref =  n_tree_cuda<scalar_t,nd>(edge,X_data,xmin,gpu_device);
     while (near_field.numel()>0 and ntree_X.avg_nr_points > min_points){
         ntree_X.divide();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
-        near_field = far_field_run<scalar_t,nd>(ntree_X,ntree_X,near_field,cheb_data_X,output,b,chebnodes_1D,laplace_combinations,ls,gpu_device);
+        near_field = far_field_run<scalar_t,nd>(ntree_X,
+                ntree_X,
+                near_field,
+                cheb_data_X,
+                output,
+                b,
+                chebnodes_1D,
+                laplace_combinations,
+                node_list_cum,
+                ls,
+                gpu_device);
         //std::cout<<output.slice(0,0,5)<<std::endl;
     }
     if (near_field.numel()>0){
@@ -787,6 +855,7 @@ struct FFM_object{
     int & laplace_n;
     int & nr_of_interpolation_points;
     float & min_points;
+    bool & smolyak;
 
     FFM_object( //constructor
             torch::Tensor & X_data,
@@ -795,8 +864,9 @@ struct FFM_object{
     const std::string & gpu_device,
     int & laplace_n,
     float & min_points,
-    int & nr_of_interpolation_points
-    ): X_data(X_data), Y_data(Y_data),ls(ls),gpu_device(gpu_device), laplace_n(laplace_n),min_points(min_points),nr_of_interpolation_points(nr_of_interpolation_points){
+    int & nr_of_interpolation_points,
+    bool & smolyak
+    ): X_data(X_data), Y_data(Y_data),ls(ls),gpu_device(gpu_device), laplace_n(laplace_n),min_points(min_points),nr_of_interpolation_points(nr_of_interpolation_points),smolyak(smolyak){
     };
     virtual torch::Tensor operator* (torch::Tensor & b){
         if (X_data.data_ptr()==Y_data.data_ptr()){
@@ -807,7 +877,8 @@ struct FFM_object{
                     ls,
                     laplace_n,
                     min_points,
-                    nr_of_interpolation_points
+                    nr_of_interpolation_points,
+                    smolyak
             );
         }else{
             return FFM_XY<scalar_t,nd>(
@@ -818,7 +889,8 @@ struct FFM_object{
                     ls,
                     laplace_n,
                     min_points,
-                    nr_of_interpolation_points
+                    nr_of_interpolation_points,
+                    smolyak
             );
         }
 
@@ -831,10 +903,12 @@ struct exact_MV : FFM_object<scalar_t,nd>{
                          torch::Tensor & Y_data,
                          scalar_t & ls,
                          const std::string & gpu_device,
-                         int &laplace_n,
-                         float &min_points,
-                         int & nr_of_interpolation_points)
-                         : FFM_object<scalar_t,nd>(X_data, Y_data, ls, gpu_device,laplace_n,min_points,nr_of_interpolation_points){};
+                        int & laplace_n,
+                        float & min_points,
+                         int & nr_of_interpolation_points,
+                         bool & smolyak
+                         )
+                         : FFM_object<scalar_t,nd>(X_data, Y_data, ls, gpu_device,laplace_n,min_points,nr_of_interpolation_points,smolyak){};
     torch::Tensor operator* (torch::Tensor & b) override{
         torch::Tensor output = torch::zeros({FFM_object<scalar_t,nd>::X_data.size(0), b.size(1)}).to(FFM_object<scalar_t,nd>::gpu_device);
         rbf_call<scalar_t,nd>(

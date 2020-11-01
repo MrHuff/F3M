@@ -86,7 +86,7 @@ torch::Tensor read_csv(const std::string filename,const int rows,const int cols)
 }
 
 template <int nd>
-void benchmark_1(int laplace_n,int n,float min_points, int threshold,float a,float b,float ls,int nr_of_interpolation_points,char* fname){
+void benchmark_1(int laplace_n,int n,float min_points, int threshold,float a,float b,float ls,int nr_of_interpolation_points,char* fname,bool smolyak){
     const std::string device_cuda = "cuda:0"; //officially retarded
     const std::string device_cpu = "cpu";
 //    torch::manual_seed(0);
@@ -95,12 +95,12 @@ void benchmark_1(int laplace_n,int n,float min_points, int threshold,float a,flo
     torch::Tensor X_train = torch::empty({n,nd}).uniform_(a, b).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
     torch::Tensor b_train = torch::randn({n,1}).to(device_cuda);
     torch::Tensor res,res_ref;
-    FFM_object<float,nd> ffm_obj = FFM_object<float,nd>(X_train, X_train, ls, device_cuda,laplace_n,min_points,nr_of_interpolation_points); //FMM object
+    FFM_object<float,nd> ffm_obj = FFM_object<float,nd>(X_train, X_train, ls, device_cuda,laplace_n,min_points,nr_of_interpolation_points,smolyak); //FMM object
 //    FFM_object<float> ffm_obj_grad = FFM_object<float>(X,X,ls,op_grad,lambda,device_cuda);
 //    exact_MV<float> ffm_obj_grad_exact = exact_MV<float>(X,X,ls,op_grad,lambda,device_cuda);
     std::cout<<"------------- "<<"Uniform distribution : "<< "a "<<a<<" b "<<b<<" laplace nodes: "<<laplace_n<<" n: "<<n<<" min_points: "<< min_points <<"nr_interpolation_points: "<<nr_of_interpolation_points <<" -------------"<<std::endl;
     torch::Tensor subsampled_X = X_train.slice(0,0,threshold);
-    exact_MV<float,nd> exact_ref = exact_MV<float,nd>(subsampled_X, X_train, ls, device_cuda,laplace_n,min_points,nr_of_interpolation_points); //Exact method reference
+    exact_MV<float,nd> exact_ref = exact_MV<float,nd>(subsampled_X, X_train, ls, device_cuda,laplace_n,min_points,nr_of_interpolation_points,smolyak); //Exact method reference
     auto start = std::chrono::high_resolution_clock::now();
     res_ref = exact_ref *b_train;
     auto end = std::chrono::high_resolution_clock::now();
@@ -119,7 +119,7 @@ void benchmark_1(int laplace_n,int n,float min_points, int threshold,float a,flo
 }
 
 template <int nd>
-void benchmark_2(int laplace_n,int n,float min_points, int threshold,float mean,float var,float ls,int nr_of_interpolation_points,char* fname){
+void benchmark_2(int laplace_n,int n,float min_points, int threshold,float mean,float var,float ls,int nr_of_interpolation_points,char* fname,bool smolyak){
     const std::string device_cuda = "cuda:0"; //officially retarded
     const std::string device_cpu = "cpu";
 //    torch::manual_seed(0);
@@ -129,12 +129,12 @@ void benchmark_2(int laplace_n,int n,float min_points, int threshold,float mean,
     torch::Tensor X_train = torch::empty({n,nd}).normal_(mean, var).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
     torch::Tensor b_train = torch::randn({n,1}).to(device_cuda);
     torch::Tensor res,res_ref;
-    FFM_object<float,nd> ffm_obj = FFM_object<float,nd>(X_train, X_train, ls, device_cuda,laplace_n,min_points,nr_of_interpolation_points); //FMM object
+    FFM_object<float,nd> ffm_obj = FFM_object<float,nd>(X_train, X_train, ls, device_cuda,laplace_n,min_points,nr_of_interpolation_points,smolyak); //FMM object
 //    FFM_object<float> ffm_obj_grad = FFM_object<float>(X,X,ls,op_grad,lambda,device_cuda);
 //    exact_MV<float> ffm_obj_grad_exact = exact_MV<float>(X,X,ls,op_grad,lambda,device_cuda);
     std::cout<<"------------- "<<"Normal distribution: "<< "mean "<<mean<<" variance "<<var<<" laplace nodes: "<<laplace_n<<" n: "<<n<<" min_points: "<< min_points <<"nr_interpolation_points: "<<nr_of_interpolation_points <<" -------------"<<std::endl;
     torch::Tensor subsampled_X = X_train.slice(0,0,threshold);
-    exact_MV<float,nd> exact_ref = exact_MV<float,nd>(subsampled_X, X_train, ls, device_cuda,laplace_n,min_points,nr_of_interpolation_points); //Exact method reference
+    exact_MV<float,nd> exact_ref = exact_MV<float,nd>(subsampled_X, X_train, ls, device_cuda,laplace_n,min_points,nr_of_interpolation_points,smolyak); //Exact method reference
     auto start = std::chrono::high_resolution_clock::now();
     res_ref = exact_ref *b_train;
     auto end = std::chrono::high_resolution_clock::now();

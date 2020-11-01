@@ -246,10 +246,11 @@ __device__ scalar_t calculate_laplace(
         scalar_t l_p[],
         scalar_t & x_ij,
         int & feature_num,
-        int & laplace_n
+        int & a,
+        int & b
         ){
     scalar_t res=1.0;
-    for (int i=0; i<laplace_n;i++){
+    for (int i=a; i<b;i++){
         if (i!=feature_num){ //Calculate the Laplace feature if i!=m...
             res = res * (x_ij-l_p[i])/(l_p[i]-l_p[feature_num]);
         }
@@ -263,9 +264,9 @@ __device__ scalar_t calculate_laplace_product( //Tends to become really inaccura
         scalar_t x_i[],
         int combs[],
         scalar_t b,
-        int laplace_n[]){
+        int node_cum_shared[]){
     for (int i=0; i<nd;i++){
-        b = b*calculate_laplace(l_p, x_i[i], combs[i],laplace_n[0]); //Interpolating b by constructing langrange interpolation at x's
+        b = b*calculate_laplace(l_p, x_i[i], combs[i],node_cum_shared[i],node_cum_shared[i+1]); //Interpolating b by constructing langrange interpolation at x's
     }
     return b;
 }
@@ -452,7 +453,8 @@ __global__ void laplace_shared(
         const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_boxes_count, //error is here! I think it does an access here when its not supposed to...
         const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers,
         const scalar_t * edge,
-        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> idx_reordering
+        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> idx_reordering,
+        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> node_list_cum
 ){
     int box_ind = indicator[blockIdx.x];
     int a,b,cheb_data_size,idx_reorder;
@@ -472,19 +474,26 @@ __global__ void laplace_shared(
     extern __shared__ int int_buffer[];
     extern __shared__ scalar_t buffer[];
     int *laplace_n = &int_buffer[0];
-    int *yj = &int_buffer[1];
-    scalar_t *l_p = &buffer[blockDim.x*nd+1];
+    int *node_cum_shared = &int_buffer[1];
+    int *yj = &int_buffer[2+nd];
+    scalar_t *l_p = &buffer[blockDim.x*nd+2+nd];
     int b_size = output.size(1);
     if (threadIdx.x==0){
         laplace_n[0] = lap_nodes.size(0);
+        node_cum_shared[0] = (int) 0;
     }
     __syncthreads();
+    if (threadIdx.x<nd){
+        node_cum_shared[threadIdx.x+1] = node_list_cum[threadIdx.x];
+    }
+    __syncthreads();
+
     if (threadIdx.x<laplace_n[0]){
         l_p[threadIdx.x] = lap_nodes[threadIdx.x];
     }
+    __syncthreads();
+    scalar_t *shared_sum = &buffer[blockDim.x*nd+2+nd+laplace_n[0]];
     scalar_t val=0;
-    scalar_t *shared_sum = &buffer[blockDim.x*nd+1+laplace_n[0]];
-
     for (int b_ind=0; b_ind<b_size; b_ind++) {
         if (i<b) {
             b_i = b_data[idx_reorder][b_ind];
@@ -500,7 +509,7 @@ __global__ void laplace_shared(
             for (int jrel = 0; (jrel < blockDim.x) && (jrel < cheb_data_size - jstart); jrel++, yjrel += nd) {
                 if (i < b) { // we compute x1i only if needed
                     //Do shuffle if possible...
-                    val = calculate_laplace_product<scalar_t,nd>(l_p, x_i, yjrel, b_i, laplace_n);
+                    val = calculate_laplace_product<scalar_t,nd>(l_p, x_i, yjrel, b_i, node_cum_shared);
                 }
                 __syncthreads();
                 val = blockReduceSum<scalar_t>(val, shared_sum); //Make sure entire block actually does reduction! Else funny business ensues
@@ -531,8 +540,9 @@ __global__ void laplace_shared_transpose(
         const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_boxes_count,
         const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers,
         const scalar_t * edge,
-        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> idx_reordering
-        ) {
+        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> idx_reordering,
+        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> node_list_cum
+) {
 
     int box_ind, a, b,cheb_data_size,idx_reorder,b_size;
     cheb_data_size = combinations.size(0);
@@ -552,16 +562,26 @@ __global__ void laplace_shared_transpose(
     extern __shared__ int int_buffer[];
     extern __shared__ scalar_t buffer[];
     int *laplace_n = &int_buffer[0];
-    int *yj = &int_buffer[1];
-    scalar_t *bj = &buffer[blockDim.x * nd+1];
-    scalar_t *l_p = &buffer[blockDim.x * (nd + 1)+1];
+    int *node_cum_shared = &int_buffer[1];
+    int *yj = &int_buffer[2+nd];
+    scalar_t *bj = &buffer[(blockDim.x+1) * nd+2];
+    scalar_t *l_p = &buffer[(blockDim.x+1) * nd+blockDim.x+2];
     if (threadIdx.x==0){
         laplace_n[0] = lap_nodes.size(0);
+        node_cum_shared[0] =(int) 0;
     }
     __syncthreads();
+
     if (threadIdx.x < laplace_n[0]) {
         l_p[threadIdx.x] = lap_nodes[threadIdx.x];
     }
+    __syncthreads();
+
+    if (threadIdx.x<nd){
+        node_cum_shared[threadIdx.x+1] = node_list_cum[threadIdx.x];
+    }
+    __syncthreads();
+
     b_size =  b_data.size(1);
     for (int b_ind = 0; b_ind <b_size; b_ind++) { //for all dims of b
         acc = 0.0;
@@ -575,7 +595,7 @@ __global__ void laplace_shared_transpose(
             if (i < b) { // we compute x1i only if needed
                 int *yjrel = yj; // Loop on the columns of the current block.
                 for (int jrel = 0; (jrel < blockDim.x) && (jrel < cheb_data_size - jstart); jrel++, yjrel += nd) {
-                    acc += calculate_laplace_product<scalar_t,nd>(l_p, x_i, yjrel, bj[jrel],laplace_n);
+                    acc += calculate_laplace_product<scalar_t,nd>(l_p, x_i, yjrel, bj[jrel],node_cum_shared);
                 }
             }
             __syncthreads();
