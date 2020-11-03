@@ -5,7 +5,6 @@
 * CMAKE
 * LibTorch, download @ pytorch.org. Make sure to get the (cxx11 ABI) version.
 * LibTorch needs cuBLAS and cuDNN. These can be downloaded and installed from Nvidia webpage
-* cub; clone this from https://github.com/NVIDIA/cub.git (although this will likely be removed)
 
 In cmake options, make sure to add -DCMAKE_PREFIX_PATH=/path_to_libtorch_download/libtorch-cxx11-abi-shared-with-deps-1.4.0/libtorch
 
@@ -13,6 +12,13 @@ There might be some modifications needed for each specific system. This is devel
 
 Compile by using:
 
-/usr/local/cuda-10.1/bin/nvcc  -DAT_PARALLEL_OPENMP=1 -isystem=/home/rhu/C_pp_libs/cub -isystem=/home/rhu/C_pp_libs/libtorch-cxx11-abi-shared-with-deps-1.5.0+cu101/libtorch/include -isystem=/home/rhu/C_pp_libs/libtorch-cxx11-abi-shared-with-deps-1.5.0+cu101/libtorch/include/torch/csrc/api/include  -g -Xcompiler=-fPIE   -Xptxas -O3 --use_fast_math -I/home/rhu/C_pp_libs/cub-1.8.0/cub -D_GLIBCXX_USE_CXX11_ABI=1 -std=c++14 -x cu -dc /home/rhu/Documents/phd_projects/cuda_n_body/main.cu -o CMakeFiles/cuda_n_body.dir/main.cu.o
+1. Making an application directory, its recommended to use /cmake-build-debug
+2. Build cmake: cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_PREFIX_PATH="/homes/rhu/C_pp_libs/libtorch" -G "CodeBlocks - Unix Makefiles" /homes/rhu/cuda_n_body
+3. Build the actual application: cmake --build /homes/rhu/cuda_n_body/cmake-build-debug --target cuda_n_body -- -j8
+
+Release mode:
+
+2. cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="/homes/rhu/C_pp_libs/libtorch" -G "CodeBlocks - Unix Makefiles" /homes/rhu/cuda_n_body
+3. cmake --build /homes/rhu/cuda_n_body/cmake-build-release --target cuda_n_body -- -j8
 
 replace the paths with your own system paths.

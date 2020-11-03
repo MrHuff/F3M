@@ -242,7 +242,7 @@ __global__ void rbf_1d_reduce_simple_torch(const torch::PackedTensorAccessor32<s
 };
 
 template <typename scalar_t>
-__device__ scalar_t calculate_laplace(
+__device__ scalar_t calculate_laplace( //Try using double precision!
         scalar_t l_p[],
         scalar_t & x_ij,
         int & feature_num,
@@ -252,7 +252,8 @@ __device__ scalar_t calculate_laplace(
     scalar_t res=1.0;
     for (int i=a; i<b;i++){
         if (i!=feature_num){ //Calculate the Laplace feature if i!=m...
-            res = res * (x_ij-l_p[i])/(l_p[i]-l_p[feature_num]);
+            res *= (x_ij-l_p[i])/(l_p[i]-l_p[feature_num]);
+//            res += log(x_ij-l_p[i])-log(l_p[i]-l_p[feature_num]);
         }
     }
     return res;
@@ -266,7 +267,7 @@ __device__ scalar_t calculate_laplace_product( //Tends to become really inaccura
         scalar_t b,
         int node_cum_shared[]){
     for (int i=0; i<nd;i++){
-        b = b*calculate_laplace(l_p, x_i[i], combs[i],node_cum_shared[i],node_cum_shared[i+1]); //Interpolating b by constructing langrange interpolation at x's
+        b *= calculate_laplace(l_p, x_i[i], combs[i],node_cum_shared[i],node_cum_shared[i+1]); //Interpolating b by constructing langrange interpolation at x's
     }
     return b;
 }
@@ -280,7 +281,6 @@ __device__ int calculate_box_ind(int &current_thread_idx,
             return x_box_idx[i];
         }
     }
-
 }
 
 template <typename scalar_t,int nd>

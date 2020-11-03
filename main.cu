@@ -58,12 +58,11 @@ int main(int argc, char const *argv[]){
     bool smolyak =  (bool) std::stoi(argv[10]);
     char * fname = const_cast<char *>(argv[11]);
 
-
     if (job==1){
-        benchmark_1<5>(l_n,n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,fname,smolyak); //Can't do a billion points for 3 dim...
+        benchmark_1<float,3>(l_n,n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,fname,smolyak); //Can't do a billion points for 3 dim...
     }
     if(job==2){
-        benchmark_2<5>(l_n,n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,fname,smolyak);
+        benchmark_2<float,3>(l_n,n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,fname,smolyak);
     }
 
     cudaProfilerStop();
