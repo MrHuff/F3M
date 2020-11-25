@@ -46,23 +46,24 @@ int main(int argc, char const *argv[]){
 //    auto warmup_duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(end_warmup_2-end_warmup_1);
 //    std::cout<<warmup_duration_1.count()<<std::endl;
 //    std::cout<<warmup_duration_2.count()<<std::endl;
-    int l_n = std::stoi(argv[1]);
-    int n = std::stoi(argv[2]);
-    float min_points = std::stof(argv[3]);
-    int threshold = std::stoi(argv[4]);
-    float a = std::stof(argv[5]);
-    float b = std::stof(argv[6]);
-    float ls = std::stof(argv[7]);
-    int nr_of_interpolation_nodes = std::stoi(argv[8]);
-    int job = std::stoi(argv[9]);
-    bool smolyak =  (bool) std::stoi(argv[10]);
-    char * fname = const_cast<char *>(argv[11]);
+    int n = std::stoi(argv[1]);
+    float min_points = std::stof(argv[2]);
+    int threshold = std::stoi(argv[3]);
+    float a = std::stof(argv[4]);
+    float b = std::stof(argv[5]);
+    float ls = std::stof(argv[6]);
+    int nr_of_interpolation_nodes = std::stoi(argv[7]);
+    int job = std::stoi(argv[8]);
+    char * fname = const_cast<char *>(argv[9]);
 
     if (job==1){
-        benchmark_1<float,3>(l_n,n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,fname,smolyak); //Can't do a billion points for 3 dim...
+        benchmark_1<float,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,fname); //Can't do a billion points for 3 dim...
+    }
+    if (job==3){
+        benchmark_1<float,6>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,fname); //Can't do a billion points for 3 dim...
     }
     if(job==2){
-        benchmark_2<float,3>(l_n,n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,fname,smolyak);
+        benchmark_2<float,6>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
     }
 
     cudaProfilerStop();
