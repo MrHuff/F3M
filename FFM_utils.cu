@@ -178,7 +178,9 @@ __global__ void boolean_separate_interactions(
         const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers_Y,
         const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> interactions,
         const scalar_t * edge,
-        torch::PackedTensorAccessor32<bool,1,torch::RestrictPtrTraits> is_far_field
+        torch::PackedTensorAccessor32<bool,1,torch::RestrictPtrTraits> is_far_field,
+        torch::PackedTensorAccessor32<scalar_t,1,torch::RestrictPtrTraits> impact_vec,
+        const scalar_t * ls
 
 ){
     int i = threadIdx.x+blockIdx.x*blockDim.x; // Thread nr
@@ -186,11 +188,20 @@ __global__ void boolean_separate_interactions(
     if (i>n-1){return;}
     int by = interactions[i][1];
     int bx = interactions[i][0];
-    scalar_t distance[nd];
+//    scalar_t distance[nd];
+    scalar_t cx[nd];
+    scalar_t cy[nd];
     for (int k=0;k<nd;k++){
-        distance[k]=centers_Y[by][k] - centers_X[bx][k];
+        cx[k] = centers_X[bx][k];
+        cy[k] = centers_Y[by][k];
+//        distance[k]=cy[k] - cx[k];
     }
-    if (get_2_norm<scalar_t,nd>(distance)>=(*edge*2+1e-6)){
+    impact_vec[i] = rbf_grad_dist_abs<scalar_t,nd>(cx,cy,ls);
+
+//    if (get_2_norm<scalar_t,nd>(distance)>=(*edge*2+1e-6)){
+//        is_far_field[i]=true;
+//    }
+    if(impact_vec[i]<=(scalar_t)0.7){
         is_far_field[i]=true;
     }
 }
