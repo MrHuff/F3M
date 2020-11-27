@@ -201,7 +201,7 @@ __global__ void boolean_separate_interactions(
 //    if (get_2_norm<scalar_t,nd>(distance)>=(*edge*2+1e-6)){
 //        is_far_field[i]=true;
 //    }
-    if(impact_vec[i]<=(scalar_t)0.7){
+    if(impact_vec[i]<=(scalar_t)0.7){ //Needs to be properly specified
         is_far_field[i]=true;
     }
 }

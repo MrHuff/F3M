@@ -137,7 +137,7 @@ struct n_tree_cuda{
         depth += 1;
         side = side_base.pow(depth);
         box_idxs = torch::arange(centers.size(0)).toType(torch::kInt32).contiguous().to(device);
-        unique_counts_cum = torch::zeros(centers.size(0)+1).toType(torch::kInt32).contiguous().to(device);
+        unique_counts_cum = torch::zeros(centers.size(0)+1).toType(torch::kInt32).contiguous().to(device);//matrix -> existing boxes * 2^dim bounded over nr or points... betting on boxing dissapears...
         unique_counts= torch::zeros(centers.size(0)).toType(torch::kInt32).contiguous().to(device);
         perm = torch::zeros(centers.size(0)).toType(torch::kInt32).contiguous().to(device);
         dim3 blockSize,gridSize;
@@ -347,12 +347,20 @@ torch::Tensor chebyshev_nodes_1D(const int & nodes){
 }
 
 template <typename scalar_t>
+torch::Tensor chebyshev_nodes_1D_second_kind(const int & nodes){
+    float PI = atan(1.)*4.;
+    torch::Tensor chebyshev_nodes = torch::arange(0, nodes).toType(dtype<scalar_t>());
+    chebyshev_nodes = torch::cos(chebyshev_nodes*PI/(nodes-1));
+    return chebyshev_nodes;
+}
+
+template <typename scalar_t>
 torch::Tensor get_w_j(torch::Tensor & nodes){
     int n=nodes.size(0);
     torch::Tensor output = torch::zeros({n}).toType(dtype<scalar_t>());
     auto node_accessor = nodes.accessor<scalar_t,1>();
     auto output_accessor = output.accessor<scalar_t,1>();
-    scalar_t tmp=1.0;
+    scalar_t tmp;
     for (int i=0; i<n;i++){
         tmp=1.0;
         for (int j=0; j<n;j++){
@@ -365,7 +373,23 @@ torch::Tensor get_w_j(torch::Tensor & nodes){
     return output;
 }
 
+template <typename scalar_t>
+torch::Tensor get_w_j_second_kind(int & nr_of_nodes){
+    torch::Tensor output = torch::zeros({nr_of_nodes}).toType(dtype<scalar_t>());
+    auto output_accessor = output.accessor<scalar_t,1>();
+    scalar_t base = -1.;
+    scalar_t delta;
+    for (int i=0;i<nr_of_nodes;i++){
+        if (i==0 or i==(nr_of_nodes-1)){
+            delta = 0.5;
+        }else{
+            delta = 1.0;
+        }
+        output_accessor[i] = pow(base,i)*delta;
+    }
 
+    return output;
+}
 
 template <typename scalar_t>
 std::tuple<torch::Tensor,torch::Tensor> concat_many_nodes(torch::Tensor & node_list){
@@ -374,7 +398,7 @@ std::tuple<torch::Tensor,torch::Tensor> concat_many_nodes(torch::Tensor & node_l
     torch::Tensor tmp_cheb,tmp_w_j;
     auto node_list_accessor = node_list.accessor<int,1>();
     for (int i=0;i<node_list.size(0);i++){
-        tmp_cheb = chebyshev_nodes_1D<scalar_t>(node_list_accessor[i]);
+        tmp_cheb = chebyshev_nodes_1D_second_kind<scalar_t>(node_list_accessor[i]);
         tmp_w_j = get_w_j<scalar_t>(tmp_cheb);
         list_of_cheb.push_back(tmp_cheb);
         list_of_w_j.push_back(tmp_w_j);
@@ -435,20 +459,20 @@ void apply_laplace_interpolation_v2(
     torch::Tensor boxes_count_cumulative = n_tree.unique_counts_cum;
     if (transpose){
 
-        laplace_shared<scalar_t,nd><<<gridSize,blockSize,memory>>>(
-                data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                b.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                nodes.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>(),
-                laplace_indices.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
-                output.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                box_block.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                boxes_count_cumulative.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                centers.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+        lagrange_shared<scalar_t, nd><<<gridSize, blockSize, memory>>>(
+                data.packed_accessor32<scalar_t, 2, torch::RestrictPtrTraits>(),
+                b.packed_accessor32<scalar_t, 2, torch::RestrictPtrTraits>(),
+                nodes.packed_accessor32<scalar_t, 1, torch::RestrictPtrTraits>(),
+                laplace_indices.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
+                output.packed_accessor32<scalar_t, 2, torch::RestrictPtrTraits>(),
+                indicator.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
+                box_block.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
+                boxes_count_cumulative.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
+                centers.packed_accessor32<scalar_t, 2, torch::RestrictPtrTraits>(),
                 edge.data_ptr<scalar_t>(),
-                idx_reordering.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                node_list_cum.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                cheb_w.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>()
+                idx_reordering.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
+                node_list_cum.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
+                cheb_w.packed_accessor32<scalar_t, 1, torch::RestrictPtrTraits>()
         );
         cudaDeviceSynchronize();
 
@@ -813,12 +837,8 @@ torch::Tensor FFM_XY(
     xmax,
     ymax,
     near_field;
-//    /these are needed to figure out which interactions are near/far field; //these are needed to figure out which interactions are near/far field
     near_field = torch::zeros({1,2}).toType(torch::kInt32).to(gpu_device);
-    ////
-//    std::tie(cheb_data_X,laplace_combinations,node_list_cum,chebnodes_1D,cheb_w) = smolyak_grid<scalar_t,nd>(nr_of_interpolation_points,gpu_device);
-    ////
-
+    ls = ls*ls;
     std::tie(edge,xmin,ymin,xmax,ymax) = calculate_edge<scalar_t,nd>(X_data,Y_data,gpu_device); //actually calculate them
 //    std::tie(edge,xmin,ymin,xmax,ymax) = calculate_edge_debug<scalar_t,nd>(X_data,Y_data,gpu_device); //actually calculate them
     n_tree_cuda<scalar_t,nd> ntree_X = n_tree_cuda<scalar_t,nd>(edge,X_data,xmin,xmax,gpu_device);
@@ -862,9 +882,7 @@ torch::Tensor FFM_X(
     xmax,
     near_field;//these are needed to figure out which interactions are near/far field
     near_field = torch::zeros({1,2}).toType(torch::kInt32).to(gpu_device);
- ////
-//    std::tie(cheb_data_X,laplace_combinations,node_list_cum,chebnodes_1D,cheb_w) = smolyak_grid<scalar_t,nd>(nr_of_interpolation_points,gpu_device);
-////
+    ls = ls*ls;
     std::tie(edge,xmin,xmax) = calculate_edge_X<scalar_t,nd>(X_data,gpu_device); //actually calculate them
 //    std::tie(edge,xmin,xmax) = calculate_edge_X_debug<scalar_t,nd>(X_data,gpu_device); //actually calculate them
     n_tree_cuda<scalar_t,nd> ntree_X = n_tree_cuda<scalar_t,nd>(edge,X_data,xmin,xmax,gpu_device);
