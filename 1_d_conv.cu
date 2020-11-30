@@ -475,6 +475,36 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor32<scalar_t
         __syncthreads();
     }
 }
+template <typename scalar_t,int nd>
+__device__ void lagrange_data_load(scalar_t w[],
+                                   scalar_t x_i[],
+                                   scalar_t l_x[],
+                                   int node_cum_shared[],
+                                   scalar_t l_p[],
+                                   bool pBoolean[],
+                                   scalar_t & factor,
+                                   int & idx_reorder,
+                                   int & box_ind,
+                                   const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers,
+                                   const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data
+){
+    for (int k = 0; k < nd; k++) {
+        x_i[k] = factor*(X_data[idx_reorder][k]-centers[box_ind][k]);
+        scalar_t tmp = 0.;
+        pBoolean[k]=false;
+        for (int l=node_cum_shared[k];l<node_cum_shared[k+1];l++){ //node_cum_index is wrong or l_p is loaded completely incorrectly!
+            if (x_i[k]==l_p[l]){
+                pBoolean[k]=true;
+                tmp=1.0;
+                break;
+            }else{
+                tmp += w[l]/(x_i[k]-l_p[l]);
+            }
+        }
+        l_x[k] = 1/tmp;
+    }
+
+}
 
 //Implement shuffle reduce.
 template <typename scalar_t,int nd>
@@ -535,20 +565,19 @@ __global__ void lagrange_shared(
     __syncthreads();
     if (i<b) {
         idx_reorder = idx_reordering[i];
-        for (int k = 0; k < nd; k++) {
-            x_i[k] = factor*(X_data[idx_reorder][k]-centers[box_ind][k]);
-            l_x[k] = (scalar_t) 1.;
-            pBoolean[k]=false;
-            for (int l=node_cum_shared[k];l<node_cum_shared[k+1];l++){ //node_cum_index is wrong or l_p is loaded completely incorrectly!
-                if (x_i[k]==l_p[l]){
-                    pBoolean[k]=true;
-                    l_x[k]=(scalar_t) 0.;
-                    break;
-                }else{
-                    l_x[k] *= x_i[k]-l_p[l];
-                }
-            }
-        }
+        lagrange_data_load<scalar_t,nd>(
+                w_shared,
+                x_i,
+                l_x,
+                node_cum_shared,
+                l_p,
+                pBoolean,
+                factor,
+                idx_reorder,
+                box_ind,
+                centers,
+                X_data
+                );
     }
     __syncthreads();
     for (int b_ind=0; b_ind<b_size; b_ind++) {
@@ -633,20 +662,19 @@ __global__ void laplace_shared_transpose(
     }
     if (i<b) {
         idx_reorder = idx_reordering[i];
-        for (int k = 0; k < nd; k++) {
-            x_i[k] = factor*(X_data[idx_reorder][k]-centers[box_ind][k]);
-            l_x[k] = (scalar_t) 1.;
-            pBoolean[k]=false;
-            for (int l=node_cum_shared[k];l<node_cum_shared[k+1];l++){ //node_cum_index is wrong or l_p is loaded completely incorrectly!
-                if (x_i[k]==l_p[l]){
-                    pBoolean[k]=true;
-                    l_x[k]=(scalar_t) 0.;
-                    break;
-                }else{
-                    l_x[k] *= x_i[k]-l_p[l];
-                }
-            }
-        }
+        lagrange_data_load<scalar_t,nd>(
+                w_shared,
+                x_i,
+                l_x,
+                node_cum_shared,
+                l_p,
+                pBoolean,
+                factor,
+                idx_reorder,
+                box_ind,
+                centers,
+                X_data
+        );
     }
     __syncthreads();
 
@@ -676,81 +704,6 @@ __global__ void laplace_shared_transpose(
     }
     __syncthreads();
 }
-
-//template <typename scalar_t,int nd>
-//__global__ void direct_sum_laplace(//needs rethinking
-//        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
-//        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> cheb_data,
-//        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data,
-//        torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output,
-//        scalar_t * ls,
-//        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_idx_reordering,
-//        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers_Y,
-//        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> indicator,
-//        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> box_block_indicator,
-//        const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> interactions_x_parsed,
-//        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> interactions_y
-//
-//){
-//    int i,box_ind,start,end,a,b,int_m,x_idx_reorder,b_size,interactions_a,interactions_b;
-//    box_ind = box_block_indicator[blockIdx.x];
-//    a = x_boxes_count[box_ind];
-//    b = x_boxes_count[box_ind+1];
-//    i = a + threadIdx.x+box_block_indicator[blockIdx.x]*blockDim.x; // Use within box, block index i.e. same size as indicator...
-//    scalar_t x_i[nd];
-//    scalar_t acc;
-//    extern __shared__ scalar_t buffer[];
-//    scalar_t *yj = &buffer[0];
-//    scalar_t *bj = &buffer[blockDim.x*nd];
-//    //Load these points only... the rest gets no points... threadIdx.x +a to b. ...
-//    b_size = b_data.size(1);
-//    if (i<b) {
-//        x_idx_reorder = x_idx_reordering[i];
-//        for (int k = 0; k < nd; k++) {
-//            x_i[k] = X_data[x_idx_reorder][k];
-//        }
-//    }
-////    box_ind = calculate_box_ind(i,x_boxes_count,x_box_idx);
-////    printf("thread %i: %i\n",i,box_ind);
-//    interactions_a = interactions_x_parsed[box_ind][0];
-//    interactions_b= interactions_x_parsed[box_ind][1];
-//    b_size = b_data.size(1);
-//    if (interactions_a>-1) {
-//        for (int b_ind = 0;b_ind <b_size ; b_ind++) { //for all dims of b A*b, b \in \mathbb{R}^{n\times d}, d>=1.
-//            acc = 0.0;
-//            for (int m = interactions_a; m < interactions_b; m++) {
-//                int_m = interactions_y[m];
-//                for (int jstart = 0, tile = 0; jstart < cheb_data_size; jstart += blockDim.x, tile++) {
-//                    int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
-//                    if (j < cheb_data_size) {
-//                        for (int k = 0; k < nd; k++) {
-//                            yj[nd * threadIdx.x+k] = cheb_data[j][k]+centers_Y[int_m][k];
-//                        }
-//                        bj[threadIdx.x] = b_data[j + int_m * cheb_data_size][b_ind];
-//                    }
-//                    __syncthreads(); //Need to be smart with this, don't slow down the others!
-//                    if (i_calc < cheb_data_size) { // we compute x1i only if needed
-//                        scalar_t *yjrel = yj; // Loop on the columns of the current block.
-//                        for (int p = 0; (p < blockDim.x) && (p < cheb_data_size - jstart); p++, yjrel += nd) {
-//                            acc += rbf<scalar_t,nd>(x_i, yjrel, ls)* bj[p]; //sums incorrectly cause pointer is fucked not sure if allocating properly
-//                        }
-//                    }
-//                    __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
-//                }
-//                __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
-//
-//            }
-//            if (i_calc < cheb_data_size) { // we compute x1i only if needed
-//                output[i][b_ind] += acc;
-//            }
-//            __syncthreads();
-//
-//        }
-////        __syncthreads();
-//    }
-//}
-
-//Both these needs updating, i.e. pass additional appendage vector and pass interaction vector.
 
 //[[0,1],[0,2],[0,3],[0,4],[0,5]...] ~ O(n_b^2x2)
 //Move to shared mem experiment!

@@ -399,7 +399,7 @@ std::tuple<torch::Tensor,torch::Tensor> concat_many_nodes(torch::Tensor & node_l
     auto node_list_accessor = node_list.accessor<int,1>();
     for (int i=0;i<node_list.size(0);i++){
         tmp_cheb = chebyshev_nodes_1D_second_kind<scalar_t>(node_list_accessor[i]);
-        tmp_w_j = get_w_j<scalar_t>(tmp_cheb);
+        tmp_w_j = get_w_j_second_kind<scalar_t>(node_list_accessor[i]);
         list_of_cheb.push_back(tmp_cheb);
         list_of_w_j.push_back(tmp_w_j);
     }
