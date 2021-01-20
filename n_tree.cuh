@@ -341,8 +341,8 @@ void near_field_compute_v2(
 template <typename scalar_t>
 torch::Tensor chebyshev_nodes_1D(const int & nodes){
     float PI = atan(1.)*4.;
-    torch::Tensor chebyshev_nodes = torch::arange(1, nodes+1).toType(dtype<scalar_t>());
-    chebyshev_nodes = torch::cos((chebyshev_nodes*2.-1.)*PI/(2*nodes));
+    torch::Tensor chebyshev_nodes = torch::arange(0, nodes).toType(dtype<scalar_t>());
+    chebyshev_nodes = torch::cos((chebyshev_nodes*2.+1.)*PI/(2*(nodes-1)+2));
     return chebyshev_nodes;
 }
 
@@ -374,6 +374,19 @@ torch::Tensor get_w_j(torch::Tensor & nodes){
 }
 
 template <typename scalar_t>
+torch::Tensor get_w_j_first_kind(int & nr_of_nodes){
+    torch::Tensor output = torch::zeros({nr_of_nodes}).toType(dtype<scalar_t>());
+    auto output_accessor = output.accessor<scalar_t,1>();
+    scalar_t base = -1.;
+    float PI = atan(1.)*4.;
+    for (int i=0;i<nr_of_nodes;i++){
+        output_accessor[i] = pow(base,i)*sin(((2.*(float)i+1.)*PI)/(2.*(float)(nr_of_nodes-1.0)+2.));
+    }
+
+    return output;
+}
+
+template <typename scalar_t>
 torch::Tensor get_w_j_second_kind(int & nr_of_nodes){
     torch::Tensor output = torch::zeros({nr_of_nodes}).toType(dtype<scalar_t>());
     auto output_accessor = output.accessor<scalar_t,1>();
@@ -398,8 +411,8 @@ std::tuple<torch::Tensor,torch::Tensor> concat_many_nodes(torch::Tensor & node_l
     torch::Tensor tmp_cheb,tmp_w_j;
     auto node_list_accessor = node_list.accessor<int,1>();
     for (int i=0;i<node_list.size(0);i++){
-        tmp_cheb = chebyshev_nodes_1D_second_kind<scalar_t>(node_list_accessor[i]);
-        tmp_w_j = get_w_j_second_kind<scalar_t>(node_list_accessor[i]);
+        tmp_cheb = chebyshev_nodes_1D<scalar_t>(node_list_accessor[i]);
+        tmp_w_j = get_w_j_first_kind<scalar_t>(node_list_accessor[i]);
         list_of_cheb.push_back(tmp_cheb);
         list_of_w_j.push_back(tmp_w_j);
     }
@@ -699,8 +712,8 @@ std::tuple<torch::Tensor,torch::Tensor> separate_interactions(
             d_ls
     );
     cudaDeviceSynchronize();
-    torch::Tensor far_impact = impact.index({far_field_mask});
-    scalar_t largest_effect = far_impact.max().item<scalar_t>();
+//    torch::Tensor far_impact = impact.index({far_field_mask});
+//    scalar_t largest_effect = far_impact.max().item<scalar_t>();
     return std::make_tuple(interactions.index({far_field_mask}),interactions.index({far_field_mask.logical_not()}));
 }
 template <typename scalar_t, int nd>

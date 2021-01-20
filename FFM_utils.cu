@@ -188,22 +188,22 @@ __global__ void boolean_separate_interactions(
     if (i>n-1){return;}
     int by = interactions[i][1];
     int bx = interactions[i][0];
-//    scalar_t distance[nd];
+    scalar_t distance[nd];
     scalar_t cx[nd];
     scalar_t cy[nd];
     for (int k=0;k<nd;k++){
         cx[k] = centers_X[bx][k];
         cy[k] = centers_Y[by][k];
-//        distance[k]=cy[k] - cx[k];
+        distance[k]=cy[k] - cx[k];
     }
-    impact_vec[i] = rbf_grad_dist_abs<scalar_t,nd>(cx,cy,ls);
+//    impact_vec[i] = rbf_grad_dist_abs<scalar_t,nd>(cx,cy,ls);
 
-//    if (get_2_norm<scalar_t,nd>(distance)>=(*edge*2+1e-6)){
-//        is_far_field[i]=true;
-//    }
-    if(impact_vec[i]<=(scalar_t)0.7){ //Needs to be properly specified
+    if (get_2_norm<scalar_t,nd>(distance)>=(*edge*2+1e-6)){
         is_far_field[i]=true;
     }
+//    if(impact_vec[i]<=(scalar_t)100.){ //Needs to be properly specified
+//        is_far_field[i]=true;
+//    }
 }
 
 template<typename scalar_t>

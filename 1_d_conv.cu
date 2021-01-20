@@ -11,45 +11,6 @@
 #define MAXTHREADSPERBLOCK 1024
 #define SHAREDMEMPERBLOCK 49152
 //template<typename T, int nd>
-//using rbf_pointer = T (*) (T[], T[],const T *);
-
-
-//template<typename scalar_t>
-//__inline__ __device__ scalar_t warpReduceSum(scalar_t val) {
-//#pragma unroll
-//    for (int offset = warpSize/2; offset > 0; offset /= 2)
-//        val += __shfl_down_sync(0xFFFFFFFF,val, offset);
-//    return val;
-//}
-//template<typename scalar_t>
-//__inline__ __device__ scalar_t blockReduceSum(scalar_t val,scalar_t shared[]) {
-//
-//    int lane = threadIdx.x % warpSize;
-//    int wid = threadIdx.x / warpSize;
-//
-//    val = warpReduceSum<scalar_t>(val);     // Each warp performs partial reduction
-//
-//    if (lane==0){
-//        shared[wid]=val;
-//    } // Write reduced value to shared memory
-//
-//    __syncthreads();              // Wait for all partial reductions
-//
-//    //read from shared memory only if that warp existed
-//    if (threadIdx.x < blockDim.x / warpSize){
-//        val = shared[lane];
-//    }else{
-//        val=0;
-//    }
-//    __syncthreads();              // Wait for all partial reductions
-//
-//    if (wid==0){
-//        val = warpReduceSum<scalar_t>(val);
-//    }  //Final reduce within first warp
-//
-//    return val;
-//}
-
 
 template<typename T>
 std::tuple<dim3,dim3,int> get_kernel_launch_params(int cols,int height){
@@ -321,16 +282,6 @@ __device__ int calculate_box_ind(int &current_thread_idx,
     }
 }
 
-template <typename scalar_t,int nd>
-__device__ void xy_l1_dist(
-        scalar_t * c_X,
-        const torch::PackedTensorAccessor32<scalar_t,1,torch::RestrictPtrTraits> c_Y,
-        scalar_t * dist){
-#pragma unroll
-    for (int k = 0; k < nd; k++) {
-        dist[k] = c_Y[k]-c_X[k];
-    }
-}
 
 template <typename scalar_t,int nd>
 __device__ scalar_t get_2_norm(scalar_t * dist){
@@ -341,22 +292,6 @@ __device__ scalar_t get_2_norm(scalar_t * dist){
     }
     return sqrt(acc);
 }
-
-template <typename scalar_t>
-__device__ bool far_field_bool(scalar_t & l2_dist,scalar_t * edge){
-    return l2_dist>=(*edge*2+1e-6);
-}
-
-template <typename scalar_t,int nd>
-__device__ bool far_field_comp(scalar_t * c_X,scalar_t * c_Y,scalar_t * edge){
-    scalar_t dist[nd];
-    xy_l1_dist<scalar_t>(c_X,c_Y,dist);
-    scalar_t l2 = get_2_norm(dist);
-    return far_field_bool(l2,edge);
-}
-
-
-
 
 
 template <typename scalar_t,int nd>
