@@ -48,7 +48,8 @@ def interpolation_scale_invariant(x,k):
     factor = 2./edge
     center =  np.min(x) + edge/2 +1e-6
     # ls = torch.median(torch.cdist(torch.from_numpy(x).float().unsqueeze(-1),torch.from_numpy(x).float().unsqueeze(-1)))
-    ls = torch.tensor(1e-6)#torch.median(torch.cdist(torch.from_numpy(x).float().unsqueeze(-1),torch.from_numpy(x).float().unsqueeze(-1))).sqrt()
+    # ls = torch.tensor(1e-6)#torch.median(torch.cdist(torch.from_numpy(x).float().unsqueeze(-1),torch.from_numpy(x).float().unsqueeze(-1))).sqrt()
+    ls = torch.tensor(1.0)
     print("ls ", ls)
     rbf.lengthscale=ls
     with torch.no_grad():
@@ -79,22 +80,67 @@ def interpolation_scale_invariant(x,k):
     print(res[:10])
     print(approx_res[:10])
     print('Relative error: ',((res-approx_res)/res).abs().mean())
-    print(kernel_approx[:10,:])
+    # print(kernel_approx[:10,:])
+    # with torch.no_grad():
+    #     print(rbf(torch.from_numpy(x).float(),torch.from_numpy(x).float()).evaluate()[:10,:])
+
+def get_edge_etc(x):
+    edge = (np.max(x) - np.min(x))
+    factor = 2./edge
+    center =  np.min(x) + edge/2 +1e-6
+    return edge,factor,center
+
+def get_interpolation_list(nodes,w,y,center_y,factor_y,b):
+    dat_y = factor_y*(y-center_y)
+    W,indicator = calc_W(dat_y,nodes,w)
+    interp_list = []
+    for i in range(k):
+        interp = calc_interpolation(dat_y,i,nodes,w,W,indicator) #weird scaling issue...
+        interp_list.append(interp[:,np.newaxis])
+    interp_list = np.concatenate(interp_list,axis=1)
+    summed = interp_list*b[:,np.newaxis]
+    return interp_list,summed
+
+def interpolation_xy(x,y,k): #Key is equivariance such that the same "edge" can be applied. after that it's only center distance.
+    edge_x,factor_x,center_x = get_edge_etc(x)
+    edge_y,factor_y,center_y = get_edge_etc(y)
+    ls = torch.tensor(1.0)
+    print("ls ", ls)
+    rbf.lengthscale=ls
     with torch.no_grad():
-        print(rbf(torch.from_numpy(x).float(),torch.from_numpy(x).float()).evaluate()[:10,:])
+        res = rbf(torch.from_numpy(x).float(),torch.from_numpy(y).float())@torch.from_numpy(b).float()
+    nodes=get_nodes(k)
+    w = get_w(k)
+    interp_list_y,summed_y = get_interpolation_list(nodes,w,y,center_y,factor_y,b)
+    interp_list_x,summed_x = get_interpolation_list(nodes,w,x,center_x,factor_x,b)
+    cheb_data  =(edge_x/2)*torch.from_numpy(nodes).float()+edge_x/2
+    with torch.no_grad():
+        y_cheb = cheb_data + center_y - center_x  #cheb_data....
+        mid_ker =  rbf(cheb_data,y_cheb).evaluate()
+        print('midker ',mid_ker)
+        mid_res =mid_ker@torch.from_numpy(summed_y.sum(axis=0)).float()
+        approx_res = torch.from_numpy(interp_list_x).float() @ mid_res  #incorrect, not symmetric!
+        # kernel_approx = torch.from_numpy(interp_list).float()@(mid_ker@ torch.from_numpy(interp_list).float().t())
+    print(res[:10])
+    print(approx_res[:10])
+    print('Relative error: ',((res-approx_res)/res).abs().mean())
+    # print(kernel_approx[:10,:])
+    # with torch.no_grad():
+    #     print(rbf(torch.from_numpy(x).float(),torch.from_numpy(x).float()).evaluate()[:10,:])
 
 if __name__ == '__main__':
     rbf = RBFKernel()
 
     n=100
-    k =4
+    k =15
     x = np.random.randn(n)
-    #
+    y = x+5.0
     b = np.random.randn(n)
-
-    interpolation_scale_invariant(x,k)
+    # interpolation_scale_invariant(x,k)
     # interpolation_scale_invariant(x*100,k)
 
+
+    interpolation_xy(x,y,k)
 
 
     # plt.plot(x,b,'*')

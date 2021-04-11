@@ -8,10 +8,10 @@ from matplotlib import cm
 
 if __name__ == '__main__':
     rbf = RBFKernel()
-    dist = 1
+    dist = 0
     n=100
     if dist==0:
-        d = torch.distributions.normal.Normal(0,1)
+        d = torch.distributions.normal.Normal(0,0.01)
     elif dist==1:
         d = torch.distributions.uniform.Uniform(0,1)
     x = d.sample((n,1))
