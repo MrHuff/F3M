@@ -680,6 +680,9 @@ std::tuple<torch::Tensor,torch::Tensor> parse_cheb_data(
 
 std::tuple<torch::Tensor,torch::Tensor> unbind_sort(torch::Tensor & interactions){
     interactions = interactions.index({torch::argsort(interactions.slice(1,0,1).squeeze()),torch::indexing::Slice()});
+    if (interactions.dim()<2){
+        interactions = interactions.unsqueeze(0);
+    }
     std::vector<torch::Tensor> tmp = interactions.unbind(1);
     return std::make_tuple(tmp[0],tmp[1]);
 }
@@ -895,7 +898,6 @@ torch::Tensor FFM_X(
     xmax,
     near_field;//these are needed to figure out which interactions are near/far field
     near_field = torch::zeros({1,2}).toType(torch::kInt32).to(gpu_device);
-    ls = ls*ls;
     std::tie(edge,xmin,xmax) = calculate_edge_X<scalar_t,nd>(X_data,gpu_device); //actually calculate them
 //    std::tie(edge,xmin,xmax) = calculate_edge_X_debug<scalar_t,nd>(X_data,gpu_device); //actually calculate them
     n_tree_cuda<scalar_t,nd> ntree_X = n_tree_cuda<scalar_t,nd>(edge,X_data,xmin,xmax,gpu_device);
@@ -904,17 +906,16 @@ torch::Tensor FFM_X(
     while (near_field.numel()>0 and ntree_X.avg_nr_points > min_points){
         ntree_X.divide();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
         near_field = far_field_run<scalar_t,nd>(
-                ntree_X,
-                ntree_X,
-                near_field,
-                output,
-                b,
-                ls,
-                nr_of_interpolation_points,
-                ntree_X.max_nr_of_points,
-                gpu_device
-                );
-        //std::cout<<output.slice(0,0,5)<<std::endl;
+                    ntree_X,
+                    ntree_X,
+                    near_field,
+                    output,
+                    b,
+                    ls,
+                    nr_of_interpolation_points,
+                    ntree_X.max_nr_of_points,
+                    gpu_device
+                    );
     }
     if (near_field.numel()>0){
         near_field_run<scalar_t,nd>(ntree_X,ntree_X,near_field,output,b,ls,gpu_device);
@@ -925,6 +926,7 @@ torch::Tensor FFM_X(
 //        std::cout<<output_copy.slice(0,0,10)<<std::endl;
 
     }
+//    std::cout<<output.slice(0,0,10);
 
 //    while (near_field_ref.numel()>0 and ntree_X_ref.avg_nr_points > min_points){
 //        ntree_X_ref.divide_old();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent

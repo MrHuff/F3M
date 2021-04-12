@@ -66,7 +66,7 @@ __device__ T rbf_simple(T x[],T y[]){
 
 template<typename T, int nd>
 __device__ inline static T square_dist(T x[],T y[]){
-    T dist=(T)0.0;
+    T dist=(T)0;
     for (int k=0;k<nd;k++){
         dist += square<T>(x[k]-y[k]);
     };
@@ -76,17 +76,17 @@ __device__ inline static T square_dist(T x[],T y[]){
 template<typename T, int nd>
 __device__ inline static T rbf(T x[],T y[],const T *ls){
     T dist=square_dist<T,nd>(x,y);
-    return expf(-dist/(2**ls));
+    return expf(-dist/(2* *ls));
 };
 template<typename T, int nd>
 __device__ inline static T rbf_grad_ls(T x[],T y[],const T *ls){
     T dist=square_dist<T,nd>(x,y);
-    return expf(-dist/(2**ls))*dist/square<T>(*ls);
+    return expf(-dist/(2* *ls))*dist/square<T>(*ls);
 };
 template<typename T, int nd>
 __device__ inline static T rbf_grad_dist_abs(T x[],T y[],const T *ls){
     T dist=square_dist<T,nd>(x,y);
-    return expf(-dist/(2**ls))*sqrt(dist)/(*ls);
+    return expf(-dist/(2* *ls))*sqrt(dist)/(*ls);
 };
 
 //template<typename T, int nd>
@@ -157,7 +157,7 @@ __global__ void rbf_1d_reduce_shared_torch(
     scalar_t *bj = &buffer[blockDim.x*nd];
     scalar_t acc;
     for (int b_ind=0; b_ind<output.size(1); b_ind++) {
-        acc=0.0;
+        acc=0;
         for (int jstart = 0, tile = 0; jstart < y_n; jstart += blockDim.x, tile++) {
             int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
             if (j < y_n) { // we load yj from device global memory only if j<ny
@@ -198,7 +198,7 @@ __global__ void rbf_1d_reduce_simple_torch(const torch::PackedTensorAccessor32<s
         x_i[k] = X_data[i][k];
     }
     for (int b_ind=0; b_ind < b_data.size(1); b_ind++){
-        acc=0.0;
+        acc=0;
         for (int p=0;p<y_n;p++){
             for (int k=0;k<nd;k++){
                 y_j[k] = Y_data[p][k];
@@ -219,7 +219,7 @@ __device__ scalar_t calculate_lagrange( //Try using double precision!
         int & a,
         int & b
         ){
-    scalar_t res=1.0;
+    scalar_t res=1;
     for (int i=a; i<b;i++){
         if (i!=feature_num){ //Calculate the Laplace feature if i!=m...
             res *= (x_ij-l_p[i])/(l_p[i]-l_p[feature_num]);
@@ -261,7 +261,7 @@ __device__ scalar_t calculate_barycentric_lagrange(//not sure this is such a gre
     for (int i = 0; i < nd; i++) {
         if (pBoolean[i]){
             if (x_i[i]!=l_p[combs[i]]){
-                b=(scalar_t) 0.0;
+                b=(scalar_t) 0;
                 break;
             }
         }else{
@@ -319,7 +319,7 @@ __global__ void skip_conv_1d(const torch::PackedTensorAccessor32<scalar_t,2,torc
     }
 //    printf("thread %i: %i\n",i,box_ind);
     for (int b_ind=0; b_ind < b_data.size(1); b_ind++) { //for all dims of b
-        acc=0.0;
+        acc=0;
         for (int j = interactions_x_parsed[box_ind][0]; j < interactions_x_parsed[box_ind][1]; j++) { // iterate through every existing ybox
             int_j = interactions_y[j];
             start = y_boxes_count[int_j]; // 0 to something
@@ -378,7 +378,7 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor32<scalar_t
     interactions_b= interactions_x_parsed[box_ind][1];
     if (interactions_a>-1) {
         for (int b_ind = 0; b_ind < b_size; b_ind++) { //for all dims of b
-            acc = 0.0;
+            acc = 0;
 
             for (int m = interactions_a; m < interactions_b; m++) {
                 //Pass near field interactions...
@@ -430,7 +430,7 @@ __device__ void lagrange_data_load(scalar_t w[],
         for (int l=node_cum_shared[k];l<node_cum_shared[k+1];l++){ //node_cum_index is wrong or l_p is loaded completely incorrectly!
             if (x_i[k]==l_p[l]){
                 pBoolean[k]=true;
-                tmp=1.0;
+                tmp=1;
                 break;
             }else{
                 tmp += w[l]/(x_i[k]-l_p[l]);
@@ -463,7 +463,7 @@ __global__ void lagrange_shared(
     box_ind = indicator[blockIdx.x];
     b_size = output.size(1);
     cheb_data_size = combinations.size(0);
-    scalar_t factor = 2./(*edge); //rescaling data to langrange node interval (-1,1)
+    scalar_t factor = 2/(*edge); //rescaling data to langrange node interval (-1,1)
     laplace_n = lap_nodes.size(0);
     a = x_boxes_count[box_ind];
     b = x_boxes_count[box_ind+1];
@@ -559,7 +559,7 @@ __global__ void laplace_shared_transpose(
 
     int laplace_n,i, box_ind, a, b,cheb_data_size,idx_reorder,b_size;
     cheb_data_size = combinations.size(0);
-    scalar_t factor = 2./(*edge);
+    scalar_t factor = 2/(*edge);
     box_ind = indicator[blockIdx.x];
     a = x_boxes_count[box_ind];
     b = x_boxes_count[box_ind + 1];
@@ -614,7 +614,7 @@ __global__ void laplace_shared_transpose(
     __syncthreads();
 
     for (int b_ind = 0; b_ind <b_size; b_ind++) { //for all dims of b
-        acc = 0.0;
+        acc = 0;
         for (int jstart = 0, tile = 0; jstart < cheb_data_size; jstart += blockDim.x, tile++) {
             int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
             if (j < cheb_data_size) { // we load yj from device global memory only if j<ny
@@ -689,7 +689,7 @@ __global__ void skip_conv_far_boxes_opt(//needs rethinking
     b_size = b_data.size(1);
     if (interactions_a>-1) {
         for (int b_ind = 0;b_ind <b_size ; b_ind++) { //for all dims of b A*b, b \in \mathbb{R}^{n\times d}, d>=1.
-            acc = 0.0;
+            acc = 0;
             for (int m = interactions_a; m < interactions_b; m++) {
                 int_m = interactions_y[m];
                 for (int jstart = 0, tile = 0; jstart < cheb_data_size; jstart += blockDim.x, tile++) {

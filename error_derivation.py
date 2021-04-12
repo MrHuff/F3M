@@ -101,10 +101,16 @@ def get_interpolation_list(nodes,w,y,center_y,factor_y,b):
     summed = interp_list*b[:,np.newaxis]
     return interp_list,summed
 
-def interpolation_xy(x,y,k): #Key is equivariance such that the same "edge" can be applied. after that it's only center distance.
+def interpolation_xy(x,y,k,ls): #Key is equivariance such that the same "edge" can be applied. after that it's only center distance.
     edge_x,factor_x,center_x = get_edge_etc(x)
     edge_y,factor_y,center_y = get_edge_etc(y)
-    ls = torch.tensor(1.0)
+    ls = torch.tensor(ls)
+    ls_sqrt = ls.sqrt()
+    var_x = torch.var(x/ls_sqrt)
+    var_y = torch.var(y/ls_sqrt)
+    print('effective var x',var_x)
+    print('effective var y',var_y)
+
     print("ls ", ls)
     rbf.lengthscale=ls
     with torch.no_grad():
@@ -131,16 +137,24 @@ def interpolation_xy(x,y,k): #Key is equivariance such that the same "edge" can 
 if __name__ == '__main__':
     rbf = RBFKernel()
 
-    n=100
-    k =15
+    n=1000
+    k =4
     x = np.random.randn(n)
-    y = x+5.0
+    y = x
     b = np.random.randn(n)
+
+    #Interpolation does not work relatively well when we are very far away, i.e. the exponent is very small -> close to 0 results.
+
+
     # interpolation_scale_invariant(x,k)
     # interpolation_scale_invariant(x*100,k)
 
+    #low (effective) variance diagonal entries can be interpolated for faster speed. (only for X times X)
+    #Failure mode is when b has a lot of weight specifically where things are in the "far field".
 
-    interpolation_xy(x,y,k)
+    interpolation_xy(x,y,k,ls=2.)
+
+
 
 
     # plt.plot(x,b,'*')

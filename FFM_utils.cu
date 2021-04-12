@@ -144,7 +144,7 @@ __global__ void get_smolyak_indices(
     for (int j=0;j<nd;j++){
         if (j==0){
             tmp = i % cum_prod[j];
-            idx = (int) floor((float)tmp/1.0);
+            idx = (int) floor((float)tmp/1);
         }
         else{
             tmp = i % cum_prod[j];
