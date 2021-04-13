@@ -816,6 +816,46 @@ torch::Tensor far_field_run(
 }
 
 template <typename scalar_t, int nd>
+void far_field_smooth_interpolation(
+        n_tree_cuda<scalar_t,nd> & ntree_X,
+        torch::Tensor & far_field,
+        torch::Tensor & output,
+        torch::Tensor & b,
+        scalar_t & ls,
+        int & nr_of_interpolation_points,
+        int & max_points_box,
+        const std::string & gpu_device
+){
+    torch::Tensor interactions,interactions_x,interactions_y,interactions_x_parsed,cheb_data_X,
+            laplace_combinations,
+            chebnodes_1D,
+            node_list_cum,
+            cheb_w;
+
+    std::tie(cheb_data_X,laplace_combinations,node_list_cum,chebnodes_1D,cheb_w) = smolyak_grid<scalar_t,nd>(nr_of_interpolation_points,gpu_device);
+    if (far_field.numel()>0) {
+        torch::Tensor cheb_data = cheb_data_X*ntree_X.edge/2.+ntree_X.edge/2.; //scaling lagrange nodes to edge scale
+        std::tie(interactions_x,interactions_y) = unbind_sort(far_field);
+        interactions_x_parsed = process_interactions<nd>(interactions_x,ntree_X.centers.size(0),gpu_device);
+        far_field_compute_v2<scalar_t,nd>( //Very many far field interactions quite fast...
+                interactions_x_parsed,
+                interactions_y,
+                ntree_X,
+                ntree_X,
+                output,
+                b,
+                gpu_device,
+                ls,
+                chebnodes_1D,
+                laplace_combinations,
+                cheb_data,
+                node_list_cum,
+                cheb_w
+        ); //far field compute
+    }
+}
+
+template <typename scalar_t, int nd>
 void near_field_run(
         n_tree_cuda<scalar_t,nd> & ntree_X,
         n_tree_cuda<scalar_t,nd> & ntree_Y,
@@ -826,11 +866,10 @@ void near_field_run(
         const std::string & gpu_device
 ){
     torch::Tensor interactions_x,interactions_y,interactions_x_parsed;
-//    std::cout<<near_field.size(0)<<std::endl;
-//    near_field = filter_out_interactions(near_field,ntree_X,ntree_Y); //Just adding this blows things upp..
+//    float work_rate = (float)near_field.size(0)/((float)ntree_X.unique_counts.size(0)*ntree_X.unique_counts.size(0));
+//    std::cout<<work_rate<<std::endl;
     std::tie(interactions_x,interactions_y) = unbind_sort(near_field);
     interactions_x_parsed = process_interactions<nd>(interactions_x,ntree_X.centers.size(0),gpu_device);
-//    std::cout<<interactions_x_parsed<<std::endl;
     near_field_compute_v2<scalar_t,nd>(interactions_x_parsed,interactions_y,ntree_X, ntree_Y, output, b, gpu_device,ls); //Make sure this thing works first!
 }
 
@@ -882,6 +921,35 @@ torch::Tensor FFM_XY(
 }
 
 template <typename scalar_t, int nd>
+torch::Tensor get_low_variance_pairs(
+        n_tree_cuda<scalar_t,nd> & ntree_X,
+        torch::Tensor & big_enough
+){
+    torch::Tensor box_mean_vector = torch::zeros({big_enough.size(0),nd}).toType(dtype<scalar_t>()).to(big_enough.device());
+    torch::Tensor variance = torch::zeros_like(box_mean_vector);
+    torch::Tensor & x_dat = ntree_X.data;
+    torch::Tensor & box_ind = ntree_X.sorted_index;
+    dim3 blockSize,gridSize;
+    int mem;
+    std::tie(blockSize,gridSize,mem)=get_kernel_launch_params<scalar_t>(nd,big_enough.size(0));
+    box_mean<scalar_t, nd><<<gridSize, blockSize, mem>>>(
+            x_dat.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+            box_ind.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+            big_enough.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+            box_mean_vector.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>()
+            );
+    box_variance<scalar_t, nd><<<gridSize, blockSize, mem>>>(
+            x_dat.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+            box_ind.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+            big_enough.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+            box_mean_vector.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+            variance.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>()
+    );
+    return variance;
+
+}
+
+template <typename scalar_t, int nd>
 torch::Tensor FFM_X(
         torch::Tensor &X_data,
         torch::Tensor &b,
@@ -917,6 +985,36 @@ torch::Tensor FFM_X(
                     gpu_device
                     );
     }
+
+    /* variance hack part
+     * first extract pairs
+     * get all boxes with n > 10*lagrange polynomials
+     * interpolate if effective variance if <0.1
+     */
+//    std::vector<torch::Tensor> vec_near_field = near_field.unbind(1);
+//    torch::Tensor boolean_tensor = vec_near_field[0]!=vec_near_field[1];
+//    torch::Tensor non_pair = near_field.index(boolean_tensor); // get non  pair interactions
+////    torch::Tensor put_back = near_field.index(torch::logical_not(boolean_tensor));
+//    torch::Tensor bool_big_enough = ntree_X.unique_counts>=2*nr_of_interpolation_points;
+//    torch::Tensor big_enough_boxes  = ntree_X.box_indices_sorted.index(bool_big_enough);
+//    torch::Tensor append_back_1 = ntree_X.box_indices_sorted.index(torch::logical_not(bool_big_enough)).unsqueeze(-1).repeat({1,2});
+//    torch::Tensor x_var = get_low_variance_pairs<scalar_t,nd>(ntree_X,big_enough_boxes);
+//    torch::Tensor bool_effective_variance = x_var.sum(1)/ls<0.1;
+//    torch::Tensor append_back_2 = big_enough_boxes.index(torch::logical_not(bool_effective_variance)).unsqueeze(-1).repeat({1,2});
+//    torch::Tensor smooth_field =big_enough_boxes.index(bool_effective_variance).unsqueeze(-1).repeat({1,2});
+//    near_field = torch::cat({non_pair,append_back_1,append_back_2},0);
+
+    far_field_smooth_interpolation<scalar_t,nd>(
+            ntree_X,
+            smooth_field,
+            output,
+            b,
+            ls,
+            nr_of_interpolation_points,
+            ntree_X.max_nr_of_points,
+            gpu_device
+    );
+
     if (near_field.numel()>0){
         near_field_run<scalar_t,nd>(ntree_X,ntree_X,near_field,output,b,ls,gpu_device);
 //        torch::Tensor output_copy = torch::clone(output);

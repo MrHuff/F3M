@@ -11,10 +11,11 @@ if __name__ == '__main__':
     dist = 0
     n=100
     if dist==0:
-        d = torch.distributions.normal.Normal(0,1.0)
+        d = torch.distributions.normal.Normal(0,0.2)
     elif dist==1:
         d = torch.distributions.uniform.Uniform(0,1)
     x = d.sample((n,1))
+    y = x+5.0
     # x,_ = x.sort(0)
     x_plot,y_plot = np.meshgrid(x.numpy(),x.numpy())
     # m=np.median((x_plot-y_plot)**2)
@@ -22,7 +23,7 @@ if __name__ == '__main__':
     print(m)
     rbf._set_lengthscale(torch.tensor(m).sqrt())
     with torch.no_grad():
-        k_xy = rbf(x,x).evaluate().numpy()
+        k_xy = rbf(x,y).evaluate().numpy()
     fig = plt.figure()
     ax = fig.gca(projection='3d')
     surf = ax.plot_surface(X=x_plot,Y=y_plot,Z=k_xy,cmap=cm.coolwarm,

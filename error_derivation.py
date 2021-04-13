@@ -139,7 +139,7 @@ if __name__ == '__main__':
 
     n=1000
     k =4
-    x = np.random.randn(n)
+    x = np.random.randn(n) *0.3
     y = x
     b = np.random.randn(n)
 
@@ -152,7 +152,7 @@ if __name__ == '__main__':
     #low (effective) variance diagonal entries can be interpolated for faster speed. (only for X times X)
     #Failure mode is when b has a lot of weight specifically where things are in the "far field".
 
-    interpolation_xy(x,y,k,ls=2.)
+    interpolation_xy(x,y,k,ls=1.0)
 
 
 

@@ -303,3 +303,101 @@ __global__ void get_keep_mask(
     if (tid>interactions.size(0)-1){return;}
     output[tid] = keep_x_box[interactions[tid][0]]*keep_y_box[interactions[tid][1]];
 }
+
+
+template<typename scalar_t,int cols>
+__global__ void box_mean(
+        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
+        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> points_box_ind,
+        torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> big_enough_boxes,
+        torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output
+)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    unsigned int y_n = X_data.size(0);
+    unsigned int x_n = big_enough_boxes.size(0);
+    scalar_t x_i[cols];
+    extern __shared__ int points_to_box_ind[];
+    int box_ind;
+    if (i<x_n) {
+        box_ind = big_enough_boxes[i];
+        for (int c=0;c<cols;c++){
+            x_i[c]=0.0;
+        }
+    }
+    for (int jstart = 0, tile = 0; jstart < y_n; jstart += blockDim.x, tile++) {
+        int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
+        if (j < y_n) { // we load yj from device global memory only if j<ny
+            points_to_box_ind[threadIdx.x] = points_box_ind[j];
+        }
+        __syncthreads();
+        if (i < x_n) { // we compute x1i only if needed
+            int *yjrel = points_to_box_ind; // Loop on the columns of the current block.
+            for (int jrel = 0; (jrel < blockDim.x) && (jrel < y_n - jstart); jrel++, yjrel += 1) {
+                if (box_ind==yjrel[0]){
+                    for (int d = 0;d<cols;d++){
+                        x_i[d]+=X_data[yjrel[0]][d];
+                    }
+                }
+            }
+        }
+        __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
+    };
+    if (i < x_n) {
+        for (int d = 0;d<cols;d++) {
+            output[i][d] = x_i[d]/float(y_n);
+        }
+    }
+    __syncthreads();
+}
+
+template<typename scalar_t,int cols>
+__global__ void box_variance(
+        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
+        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> points_box_ind,
+        torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> big_enough_boxes,
+        torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> mean,
+        torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output
+)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    unsigned int y_n = X_data.size(0);
+    unsigned int x_n = big_enough_boxes.size(0);
+    scalar_t x_i[cols];
+    scalar_t mu[cols];
+    extern __shared__ int points_to_box_ind[];
+    int box_ind;
+    if (i<x_n) {
+        box_ind = big_enough_boxes[i];
+        for (int c=0;c<cols;c++){
+            x_i[c]=0.0;
+            mu[c] = mean[i][c];
+        }
+    }
+    for (int jstart = 0, tile = 0; jstart < y_n; jstart += blockDim.x, tile++) {
+        int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
+        if (j < y_n) { // we load yj from device global memory only if j<ny
+            points_to_box_ind[threadIdx.x] = points_box_ind[j];
+        }
+        __syncthreads();
+        if (i < x_n) { // we compute x1i only if needed
+            int *yjrel = points_to_box_ind; // Loop on the columns of the current block.
+            for (int jrel = 0; (jrel < blockDim.x) && (jrel < y_n - jstart); jrel++, yjrel += 1) {
+                if (box_ind==yjrel[0]){
+                    for (int d = 0;d<cols;d++){
+                        x_i[d]+=(X_data[yjrel[0]][d]-mu[d])*(X_data[yjrel[0]][d]-mu[d]);
+                    }
+                }
+            }
+        }
+        __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
+    };
+    if (i < x_n) {
+        for (int d = 0;d<cols;d++) {
+            output[i][d] = x_i[d]/float(y_n);
+        }
+    }
+    __syncthreads();
+}
+
+
