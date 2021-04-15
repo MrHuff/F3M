@@ -84,7 +84,11 @@ torch::Tensor read_csv(const std::string filename,const int rows,const int cols)
 }
 
 template <typename scalar_t, int nd>
-void benchmark_1(int n,float min_points, int threshold,float a,float b,float ls,int nr_of_interpolation_points,char* fname){
+void benchmark_1(int n,float min_points, int threshold,float a,float b,float ls,int nr_of_interpolation_points,
+        bool var_comp,
+        scalar_t var_eff,
+        char* fname
+        ){
     const std::string device_cuda = "cuda:0"; //officially retarded
     const std::string device_cpu = "cpu";
     scalar_t ls_in = (scalar_t) ls;
@@ -96,12 +100,14 @@ void benchmark_1(int n,float min_points, int threshold,float a,float b,float ls,
     torch::Tensor b_train = torch::randn({n,1}).toType(dtype<scalar_t>()).to(device_cuda);
 //    torch::Tensor b_train = torch::ones({n,1}).toType(dtype<scalar_t>()).to(device_cuda);
     torch::Tensor res,res_ref;
-    FFM_object<scalar_t,nd> ffm_obj = FFM_object<scalar_t,nd>(X_train, X_train, ls_in, device_cuda,min_points,nr_of_interpolation_points); //FMM object
+    FFM_object<scalar_t,nd> ffm_obj = FFM_object<scalar_t,nd>(X_train, X_train, ls_in, device_cuda,min_points,nr_of_interpolation_points,
+            var_comp,var_eff); //FMM object
 //    FFM_object<float> ffm_obj_grad = FFM_object<float>(X,X,ls,op_grad,lambda,device_cuda);
 //    exact_MV<float> ffm_obj_grad_exact = exact_MV<float>(X,X,ls,op_grad,lambda,device_cuda);
     std::cout<<"------------- "<<"Uniform distribution : "<< "a "<<a<<" b "<<b<<" n: "<<n<<" min_points: "<< min_points <<" nr_interpolation_points: "<<nr_of_interpolation_points <<" -------------"<<std::endl;
     torch::Tensor subsampled_X = X_train.slice(0,0,threshold);
-    exact_MV<scalar_t,nd> exact_ref = exact_MV<scalar_t,nd>(subsampled_X, X_train, ls_in, device_cuda,min_points,nr_of_interpolation_points); //Exact method reference
+    exact_MV<scalar_t,nd> exact_ref = exact_MV<scalar_t,nd>(subsampled_X, X_train, ls_in, device_cuda,min_points,nr_of_interpolation_points,
+            var_comp,var_eff); //Exact method reference
 
     auto start = std::chrono::high_resolution_clock::now();
     res_ref = exact_ref *b_train;
@@ -123,7 +129,10 @@ void benchmark_1(int n,float min_points, int threshold,float a,float b,float ls,
 }
 
 template <typename scalar_t,int nd>
-void benchmark_2(int n,float min_points, int threshold,float mean,float var,float ls,int nr_of_interpolation_points,char* fname){
+void benchmark_2(int n,float min_points, int threshold,float mean,float var,float ls,int nr_of_interpolation_points,
+                 bool var_comp,
+                 scalar_t var_eff,
+                 char* fname){
     const std::string device_cuda = "cuda:0"; //officially retarded
     const std::string device_cpu = "cpu";
     scalar_t ls_in = (scalar_t) ls;
@@ -135,12 +144,14 @@ void benchmark_2(int n,float min_points, int threshold,float mean,float var,floa
     torch::Tensor X_train = torch::empty({n,nd}).normal_(mean, var).toType(dtype<scalar_t>()).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
     torch::Tensor b_train = torch::randn({n,1}).toType(dtype<scalar_t>()).to(device_cuda);
     torch::Tensor res,res_ref;
-    FFM_object<scalar_t,nd> ffm_obj = FFM_object<scalar_t,nd>(X_train, X_train, ls_in, device_cuda,min_points,nr_of_interpolation_points); //FMM object
+    FFM_object<scalar_t,nd> ffm_obj = FFM_object<scalar_t,nd>(X_train, X_train, ls_in, device_cuda,min_points,nr_of_interpolation_points,
+                                                              var_comp,var_eff); //FMM object
 //    FFM_object<float> ffm_obj_grad = FFM_object<float>(X,X,ls,op_grad,lambda,device_cuda);
 //    exact_MV<float> ffm_obj_grad_exact = exact_MV<float>(X,X,ls,op_grad,lambda,device_cuda);
-    std::cout<<"------------- "<<"Normal distribution: "<< "mean "<<mean<<" variance "<<var<<" n: "<<n<<" min_points: "<< min_points <<" nr_interpolation_points: "<<nr_of_interpolation_points <<" -------------"<<std::endl;
+    std::cout<<"------------- "<<"Normal distribution: "<< "mean "<<mean<<" box_variance "<<var<<" n: "<<n<<" min_points: "<< min_points <<" nr_interpolation_points: "<<nr_of_interpolation_points <<" -------------"<<std::endl;
     torch::Tensor subsampled_X = X_train.slice(0,0,threshold);
-    exact_MV<scalar_t,nd> exact_ref = exact_MV<scalar_t,nd>(subsampled_X, X_train, ls_in, device_cuda,min_points,nr_of_interpolation_points); //Exact method reference
+    exact_MV<scalar_t,nd> exact_ref = exact_MV<scalar_t,nd>(subsampled_X, X_train, ls_in, device_cuda,min_points,nr_of_interpolation_points,
+            var_comp,var_eff); //Exact method reference
     auto start = std::chrono::high_resolution_clock::now();
     res_ref = exact_ref *b_train;
     auto end = std::chrono::high_resolution_clock::now();

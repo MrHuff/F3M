@@ -53,17 +53,16 @@ int main(int argc, char const *argv[]){
     float b = std::stof(argv[5]);
     float ls = std::stof(argv[6]);
     int nr_of_interpolation_nodes = std::stoi(argv[7]);
-    int job = std::stoi(argv[8]);
-    char * fname = const_cast<char *>(argv[9]);
+    bool var_comp = (bool) std::stoi(argv[8]);
+    float eff_var =  std::stof(argv[9]);
+    int job = std::stoi(argv[10]);
+    char * fname = const_cast<char *>(argv[11]);
 
     if (job==1){
-        benchmark_1<float,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,fname); //Can't do a billion points for 3 dim...
-    }
-    if (job==3){
-        benchmark_1<float,10>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,fname); //Can't do a billion points for 3 dim...
+        benchmark_1<float,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,fname); //Can't do a billion points for 3 dim...
     }
     if(job==2){
-        benchmark_2<float,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
+        benchmark_2<float,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
     }
 
     cudaProfilerStop();
