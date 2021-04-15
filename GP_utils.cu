@@ -3,7 +3,7 @@
 //
 
 #pragma once
-#include "n_tree.cuh"
+#include "n_tree.cu"
 
 template<typename scalar_t, int nd>
 std::tuple<torch::Tensor,torch::Tensor> CG(FFM_object<scalar_t,nd> & MV, torch::Tensor &b, float & tol, int & max_its, bool tridiag){

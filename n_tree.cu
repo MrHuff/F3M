@@ -4,13 +4,13 @@
 
 #pragma once
 #include "1_d_conv.cu"
-#include "utils.h"
 #include <cmath>
 #include <vector>
-#include "algorithm"
 #include "FFM_utils.cu"
 #include <iostream>
-#include <npp.h>
+#include <torch/extension.h>
+#include <pybind11/operators.h>
+
 //template<typename T>
 
 void print_tensor(torch::Tensor & tensor){
@@ -871,16 +871,16 @@ torch::Tensor far_field_run_XX(
     if (var_compression){
         std::vector<torch::Tensor> vec_near_field = near_field.unbind(1);
         torch::Tensor boolean_tensor = vec_near_field[0]!=vec_near_field[1];
-        torch::Tensor non_pair = near_field.index(boolean_tensor); // get non  pair interactions
-        torch::Tensor pair = vec_near_field[0].index(torch::logical_not(boolean_tensor) ); // get non  pair interactions
-        torch::Tensor bool_big_enough = ntree_X.unique_counts_og.index(pair.toType(torch::kLong))>=10*nr_of_interpolation_points;
-        torch::Tensor big_enough_boxes  = pair.index(bool_big_enough);
+        torch::Tensor non_pair = near_field.index({boolean_tensor}); // get non  pair interactions
+        torch::Tensor pair = vec_near_field[0].index({torch::logical_not(boolean_tensor)} ); // get non  pair interactions
+        torch::Tensor bool_big_enough = ntree_X.unique_counts_og.index({pair.toType(torch::kLong)})>=10*nr_of_interpolation_points;
+        torch::Tensor big_enough_boxes  = pair.index({bool_big_enough});
         if (big_enough_boxes.numel()>0){
-            torch::Tensor append_back_1 = pair.index(torch::logical_not(bool_big_enough)).unsqueeze(-1).repeat({1,2});
+            torch::Tensor append_back_1 = pair.index({torch::logical_not(bool_big_enough)}).unsqueeze(-1).repeat({1,2});
             torch::Tensor x_var = get_low_variance_pairs<scalar_t,nd>(ntree_X,big_enough_boxes);
             torch::Tensor bool_effective_variance = (x_var.sum(1)/ls)<=eff_var_limit;
-            torch::Tensor append_back_2 = big_enough_boxes.index(torch::logical_not(bool_effective_variance)).unsqueeze(-1).repeat({1,2});
-            torch::Tensor smooth_field =big_enough_boxes.index(bool_effective_variance).unsqueeze(-1).repeat({1,2});
+            torch::Tensor append_back_2 = big_enough_boxes.index({torch::logical_not(bool_effective_variance)}).unsqueeze(-1).repeat({1,2});
+            torch::Tensor smooth_field =big_enough_boxes.index({bool_effective_variance}).unsqueeze(-1).repeat({1,2});
             near_field = torch::cat({non_pair,append_back_1,append_back_2},0);
             far_field = torch::cat({far_field,smooth_field});
         };
@@ -949,7 +949,6 @@ torch::Tensor FFM_XY(
     ymax,
     near_field;
     near_field = torch::zeros({1,2}).toType(torch::kInt32).to(gpu_device);
-    ls = ls*ls;
     std::tie(edge,xmin,ymin,xmax,ymax) = calculate_edge<scalar_t,nd>(X_data,Y_data,gpu_device); //actually calculate them
 //    std::tie(edge,xmin,ymin,xmax,ymax) = calculate_edge_debug<scalar_t,nd>(X_data,Y_data,gpu_device); //actually calculate them
     n_tree_cuda<scalar_t,nd> ntree_X = n_tree_cuda<scalar_t,nd>(edge,X_data,xmin,xmax,gpu_device);
@@ -1174,3 +1173,13 @@ struct exact_MV : FFM_object<scalar_t,nd>{
 };
 
 
+PYBIND11_MODULE(example, m) {
+    py::class_<FFM_object<float,3>>(m, "FFM_3D_FLOAT_CLASS").def(py::init<torch::Tensor &,torch::Tensor & ,
+                    float & ,
+    const std::string & ,
+    float & ,
+    int & ,
+    bool & ,
+    float  & ,
+    bool & >()).def("__mul__",&FFM_object<float,3>::operator*,py::is_operator());
+}
