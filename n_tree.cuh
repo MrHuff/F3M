@@ -1018,6 +1018,65 @@ torch::Tensor FFM_X(
     }
     return output;
 }
+
+template <typename scalar_t, int nd>
+torch::Tensor SUPERSMOOTH_FFM_X(
+        torch::Tensor &X_data,
+        torch::Tensor &b,
+        const std::string & gpu_device,
+        scalar_t & ls,
+        float &min_points,
+        int & nr_of_interpolation_points,
+        scalar_t  & eff_var_limit
+) {
+
+    torch::Tensor output = torch::zeros({X_data.size(0),b.size(1)}).toType(dtype<scalar_t>()).to(gpu_device); //initialize empty output
+    torch::Tensor edge,
+            xmin,
+            xmax,
+            interactions,
+    interactions_x,interactions_y,interactions_x_parsed,cheb_data_X,
+            laplace_combinations,
+            chebnodes_1D,
+            node_list_cum,
+            cheb_w;
+            ;//these are needed to figure out which interactions are near/far field
+    interactions = torch::zeros({1,2}).toType(torch::kInt32).to(gpu_device);
+    std::tie(edge,xmin,xmax) = calculate_edge_X<scalar_t,nd>(X_data,gpu_device); //actually calculate them
+    n_tree_cuda<scalar_t,nd> ntree_X = n_tree_cuda<scalar_t,nd>(edge,X_data,xmin,xmax,gpu_device);
+    float cur_var = 1e6;
+
+    while (cur_var>eff_var_limit){
+        ntree_X.divide();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
+        interactions = get_new_interactions(interactions,ntree_X.dim_fac,gpu_device); //Doesn't work for new setup since the division is changed...
+        interactions = filter_out_interactions(interactions,ntree_X,ntree_X);
+        torch::Tensor x_var = get_low_variance_pairs<scalar_t,nd>(ntree_X,ntree_X.box_indices_sorted);
+        cur_var  = x_var.sum(1).max().item<float>();
+    };
+
+    std::tie(cheb_data_X,laplace_combinations,node_list_cum,chebnodes_1D,cheb_w) = smolyak_grid<scalar_t,nd>(nr_of_interpolation_points,gpu_device);
+    torch::Tensor cheb_data = cheb_data_X*ntree_X.edge/2.+ntree_X.edge/2.; //scaling lagrange nodes to edge scale
+    std::tie(interactions_x,interactions_y) = unbind_sort(interactions);
+    interactions_x_parsed = process_interactions<nd>(interactions_x,ntree_X.centers.size(0),gpu_device);
+    far_field_compute_v2<scalar_t,nd>( //Very many far field interactions quite fast...
+            interactions_x_parsed,
+            interactions_y,
+            ntree_X,
+            ntree_X,
+            output,
+            b,
+            gpu_device,
+            ls,
+            chebnodes_1D,
+            laplace_combinations,
+            cheb_data,
+            node_list_cum,
+            cheb_w
+    ); //far field comput
+
+    return output;
+}
+
 template <typename scalar_t, int nd>
 struct FFM_object{
     torch::Tensor & X_data;
@@ -1028,6 +1087,7 @@ struct FFM_object{
     float & min_points;
     bool &var_compression;
     scalar_t  & eff_var_limit;
+    bool & smooth_flag;
 
     FFM_object( //constructor
             torch::Tensor & X_data,
@@ -1037,22 +1097,38 @@ struct FFM_object{
     float & min_points,
     int & nr_of_interpolation_points,
     bool & var_comp,
-    scalar_t  & eff_var
+    scalar_t  & eff_var,
+    bool & smooth_flag
     ): X_data(X_data), Y_data(Y_data),ls(ls),gpu_device(gpu_device),min_points(min_points),nr_of_interpolation_points(nr_of_interpolation_points),
-    var_compression(var_comp),eff_var_limit(eff_var){
+    var_compression(var_comp),eff_var_limit(eff_var),smooth_flag(smooth_flag){
     };
     virtual torch::Tensor operator* (torch::Tensor & b){
         if (X_data.data_ptr()==Y_data.data_ptr()){
-            return FFM_X<scalar_t,nd>(
-                    X_data,
-                    b,
-                    gpu_device,
-                    ls,
-                    min_points,
-                    nr_of_interpolation_points,
-                    var_compression,
-                    eff_var_limit
-            );
+
+            if (smooth_flag){
+                return SUPERSMOOTH_FFM_X<scalar_t,nd>(
+                        X_data,
+                        b,
+                        gpu_device,
+                        ls,
+                        min_points,
+                        nr_of_interpolation_points,
+                        eff_var_limit
+                );
+            }else{
+                return FFM_X<scalar_t,nd>(
+                        X_data,
+                        b,
+                        gpu_device,
+                        ls,
+                        min_points,
+                        nr_of_interpolation_points,
+                        var_compression,
+                        eff_var_limit
+                );
+            }
+
+
         }else{
             return FFM_XY<scalar_t,nd>(
                     X_data,
@@ -1078,9 +1154,11 @@ struct exact_MV : FFM_object<scalar_t,nd>{
                         float & min_points,
                          int & nr_of_interpolation_points,
                          bool &var_compression,
-                        scalar_t  & eff_var_limit
-                         )
-                         : FFM_object<scalar_t,nd>(X_data, Y_data, ls, gpu_device,min_points,nr_of_interpolation_points,var_compression,eff_var_limit){};
+                        scalar_t  & eff_var_limit,
+                        bool & smooth_flag
+
+                    )
+                         : FFM_object<scalar_t,nd>(X_data, Y_data, ls, gpu_device,min_points,nr_of_interpolation_points,var_compression,eff_var_limit,smooth_flag){};
     torch::Tensor operator* (torch::Tensor & b) override{
         torch::Tensor output = torch::zeros({FFM_object<scalar_t,nd>::X_data.size(0), b.size(1)}).toType(dtype<scalar_t>()).to(FFM_object<scalar_t,nd>::gpu_device);
         rbf_call<scalar_t,nd>(
