@@ -10,3 +10,10 @@ RemoteSystemsTempFile
 *.project
 CMakeFiles
 CMakeCache.txt
+build
+*ninja
+*egg*
+*.o
+*.ninja_deps
+*.so
+build/temp.linux-x86_64-3.7

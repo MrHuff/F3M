@@ -1,13 +1,13 @@
 cmake_minimum_required(VERSION 3.14)
 set(CMAKE_VERBOSE_MAKEFILE ON)
 set(CMAKE_CUDA_COMPILER "/usr/local/cuda-10.2/bin/nvcc")
-SET(PYTHON_LIBRARY "/usr/lib/x86_64-linux-gnu/libpython3.7m.so")
 set(CMAKE_CUDA_STANDARD 14)
 project(cuda_n_body CUDA)
 enable_language(C)
 enable_language(CXX)
 find_package(Torch REQUIRED)
-find_package(PythonLibs REQUIRED)
+find_package(PythonLibs 3.7 REQUIRED)
+find_package(Python 3.7 REQUIRED)
 
 add_executable(cuda_n_body main.cu)
 set_target_properties(
