@@ -1046,7 +1046,7 @@ torch::Tensor SUPERSMOOTH_FFM_X(
         interactions = get_new_interactions(interactions,ntree_X.dim_fac,gpu_device); //Doesn't work for new setup since the division is changed...
         interactions = filter_out_interactions(interactions,ntree_X,ntree_X);
         torch::Tensor x_var = get_low_variance_pairs<scalar_t,nd>(ntree_X,ntree_X.box_indices_sorted);
-        cur_var  = x_var.sum(1).max().item<float>();
+        cur_var  = x_var.sum(1).max().item<float>()/ls;
     };
 
     std::tie(cheb_data_X,laplace_combinations,node_list_cum,chebnodes_1D,cheb_w) = smolyak_grid<scalar_t,nd>(nr_of_interpolation_points,gpu_device);
