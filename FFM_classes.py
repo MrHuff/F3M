@@ -2,7 +2,8 @@ import torch
 from torch.utils.cpp_extension import load
 load_obj = load(name='ffm_3d_float', sources=['pybinder_setup.cu'])
 
-
+def calc_rel_error(true_res,approx_res):
+    return torch.mean(torch.abs((true_res.squeeze()-approx_res.squeeze())/true_res.squeeze()))
 class FFM:
     def __init__(self,
                  X,
@@ -131,15 +132,15 @@ class benchmark_matmul():
             except AssertionError:
                 print('hey check the shapes of your tensor X and b they dont match up!')
         if self.d==1:
-            return load_obj.FFM.rbf_float_1(self.X,Y,b,self.ls,True)
+            return load_obj.rbf_float_1(self.X,Y,b,self.ls,True)
         if self.d==2:
-            return load_obj.FFM.rbf_float_1(self.X,Y,b,self.ls,True)
+            return load_obj.rbf_float_2(self.X,Y,b,self.ls,True)
         if self.d==3:
-            return load_obj.FFM.rbf_float_1(self.X,Y,b,self.ls,True)
+            return load_obj.rbf_float_3(self.X,Y,b,self.ls,True)
         if self.d==4:
-            return load_obj.FFM.rbf_float_1(self.X,Y,b,self.ls,True)
+            return load_obj.rbf_float_4(self.X,Y,b,self.ls,True)
         if self.d==5:
-            return load_obj.FFM.rbf_float_1(self.X,Y,b,self.ls,True)
+            return load_obj.rbf_float_5(self.X,Y,b,self.ls,True)
 
 
 
