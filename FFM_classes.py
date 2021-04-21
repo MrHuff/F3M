@@ -59,6 +59,16 @@ class FFM:
                 return load_obj.FFM_XY_FLOAT_4(self.X,self.Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation)
             if self.d==5:
                 return load_obj.FFM_XY_FLOAT_5(self.X,self.Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation)
+            if self.d==6:
+                return load_obj.FFM_XY_FLOAT_6(self.X,self.Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation)
+            if self.d==7:
+                return load_obj.FFM_XY_FLOAT_7(self.X,self.Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation)
+            if self.d==8:
+                return load_obj.FFM_XY_FLOAT_8(self.X,self.Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation)
+            if self.d==9:
+                return load_obj.FFM_XY_FLOAT_9(self.X,self.Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation)
+            if self.d==10:
+                return load_obj.FFM_XY_FLOAT_10(self.X,self.Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation)
         else:
             try:
                 assert self.X.shape[0]==b.shape[0]
@@ -76,6 +86,16 @@ class FFM:
                     return load_obj.FFM_X_FLOAT_4(self.X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit)
                 if self.d==5:
                     return load_obj.FFM_X_FLOAT_5(self.X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit)
+                if self.d==6:
+                    return load_obj.FFM_X_FLOAT_6(self.X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit)
+                if self.d==7:
+                    return load_obj.FFM_X_FLOAT_7(self.X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit)
+                if self.d==8:
+                    return load_obj.FFM_X_FLOAT_8(self.X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit)
+                if self.d==9:
+                    return load_obj.FFM_X_FLOAT_9(self.X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit)
+                if self.d==10:
+                    return load_obj.FFM_X_FLOAT_10(self.X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit)
             else:
                 if self.d==1:
                     return load_obj.SUPERSMOOTH_FFM_X_FLOAT_1(self.X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
@@ -87,6 +107,16 @@ class FFM:
                     return load_obj.SUPERSMOOTH_FFM_X_FLOAT_4(self.X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
                 if self.d==5:
                     return load_obj.SUPERSMOOTH_FFM_X_FLOAT_5(self.X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
+                if self.d==6:
+                    return load_obj.SUPERSMOOTH_FFM_X_FLOAT_6(self.X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
+                if self.d==7:
+                    return load_obj.SUPERSMOOTH_FFM_X_FLOAT_7(self.X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
+                if self.d==8:
+                    return load_obj.SUPERSMOOTH_FFM_X_FLOAT_8(self.X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
+                if self.d==9:
+                    return load_obj.SUPERSMOOTH_FFM_X_FLOAT_9(self.X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
+                if self.d==10:
+                    return load_obj.SUPERSMOOTH_FFM_X_FLOAT_10(self.X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
 
 class benchmark_matmul():
     def __init__(self,
@@ -141,6 +171,16 @@ class benchmark_matmul():
             return load_obj.rbf_float_4(self.X,Y,b,self.ls,True)
         if self.d==5:
             return load_obj.rbf_float_5(self.X,Y,b,self.ls,True)
+        if self.d==6:
+            return load_obj.rbf_float_6(self.X,Y,b,self.ls,True)
+        if self.d==7:
+            return load_obj.rbf_float_7(self.X,Y,b,self.ls,True)
+        if self.d==8:
+            return load_obj.rbf_float_8(self.X,Y,b,self.ls,True)
+        if self.d==9:
+            return load_obj.rbf_float_9(self.X,Y,b,self.ls,True)
+        if self.d==10:
+            return load_obj.rbf_float_10(self.X,Y,b,self.ls,True)
 
 
 

@@ -6,15 +6,16 @@ import time
 if __name__ == '__main__':
     n=1000000
     device = "cuda:0"
-    X = torch.randn(n,3).float().to(device)
-    min_points = float(2500)
+    dim=1
+    X = torch.rand(n,dim).float().to(device)
+    min_points = float(1000)
     ref_points = 5000
     x_ref = X[0:ref_points,:]
-    Y = torch.rand(n,3).float().to(device)
+    Y = torch.rand(n,dim).float().to(device)
     b = torch.randn(n,1).float().to(device)
-    ls = float(10.0)
-    nr_of_interpolation = int(64)
-    eff_var_limit=float(0.2)
+    ls = float(1.0)
+    nr_of_interpolation = int(4)
+    eff_var_limit=float(0.1)
 
 
     keops_benchmark_0 = benchmark_matmul(x_ref,X,ls=ls,device=device)
