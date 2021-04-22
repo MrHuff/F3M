@@ -2,8 +2,7 @@ import torch
 from torch.utils.cpp_extension import load
 load_obj = load(name='ffm_3d_float', sources=['pybinder_setup.cu'])
 
-def calc_rel_error(true_res,approx_res):
-    return torch.mean(torch.abs((true_res.squeeze()-approx_res.squeeze())/true_res.squeeze()))
+
 class FFM:
     def __init__(self,
                  X,
@@ -181,6 +180,23 @@ class benchmark_matmul():
             return load_obj.rbf_float_9(self.X,Y,b,self.ls,True)
         if self.d==10:
             return load_obj.rbf_float_10(self.X,Y,b,self.ls,True)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
