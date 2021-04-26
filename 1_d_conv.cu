@@ -1048,29 +1048,27 @@ __global__ void box_variance(
     scalar_t x_i_square[cols];
     int box_ind;
     int start,end;
-    if (i<x_n) {
-        box_ind = big_enough_boxes[i];
-        for (int c=0;c<cols;c++){
-            x_i[c]=0.0;
-            x_i_square[c]=0.0;
-        }
+    if (i>x_n-1) {
+        return;
     }
-    if (i < x_n) { // we compute x1i only if needed'
-        start = x_box_cum[box_ind];
-        end = x_box_cum[box_ind+1];
-        scalar_t acc = end-start;
-        for (int j = start; j<end;j++) {
-            for (int d = 0;d<cols;d++) {
-                x_i[d]+=X_data[x_dat_reordering[j]][d];
-                x_i_square[d]+=square(X_data[x_dat_reordering[j]][d]);
-            }
-        }
-        __syncthreads();
+
+    box_ind = big_enough_boxes[i];
+    for (int c=0;c<cols;c++){
+        x_i[c]=0.0;
+        x_i_square[c]=0.0;
+    }
+    start = x_box_cum[box_ind];
+    end = x_box_cum[box_ind+1];
+    scalar_t acc = end-start;
+    for (int j = start; j<end;j++) {
         for (int d = 0;d<cols;d++) {
-            output_1[i][d] = x_i_square[d]/acc-square(x_i[d]/acc);
+            x_i[d]+=X_data[x_dat_reordering[j]][d];
+            x_i_square[d]+=square(X_data[x_dat_reordering[j]][d]);
         }
     }
-    __syncthreads();
+    for (int d = 0;d<cols;d++) {
+        output_1[i][d] = x_i_square[d]/acc-square(x_i[d]/acc);
+    }
 }
 
 

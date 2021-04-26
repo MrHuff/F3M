@@ -1,6 +1,7 @@
-
+__pycache__
 cmake-build-debug 
 cmake-build-release
+cmake-build-remote
 *.idea*
 *.csv
 *.nvprof
@@ -16,4 +17,5 @@ build
 *.o
 *.ninja_deps
 *.so
+*.pkl
 build/temp.linux-x86_64-3.7

@@ -3,6 +3,8 @@ import pandas as pd
 import time
 import numpy as np
 import os
+from tqdm import tqdm
+
 
 def get_data_sampled(N, d, dist_1, dist_1_a, dist_1_b):
     if dist_1 is None:
@@ -21,8 +23,8 @@ def run_and_record_simulated(args_in):
     device = "cuda:0"
     save_path = args_in['save_path']
     job_index = args_in['job_index']
-    N = args_in['N']
-    d = args_in['d']
+    N = int(args_in['N'])
+    d = int(args_in['d'])
     ls = float(args_in['ls'])
     dist_1 =  args_in['dist_1']
     dist_1_a = args_in['dist_1_a']
@@ -69,7 +71,7 @@ def run_and_record_simulated(args_in):
 
     true = benchmark@b
     rows = []
-    for i in range(n_loops):
+    for i in tqdm(range(n_loops)):
         start = time.time()
         res = FFM_obj @ b
         end = time.time()
