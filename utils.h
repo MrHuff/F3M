@@ -148,7 +148,13 @@ void benchmark_2(int n,float min_points, int threshold,float mean,float var,floa
     torch::Tensor b_train = torch::randn({n,1}).toType(dtype<scalar_t>()).to(device_cuda);
     torch::Tensor res,res_ref;
     FFM_object<scalar_t,nd> ffm_obj = FFM_object<scalar_t,nd>(X_train, X_train, ls_in, device_cuda,min_points,nr_of_interpolation_points,
-                                                              var_comp,var_eff,smooth_flag); //FMM object
+                                                                      var_comp,var_eff,smooth_flag); //FMM object
+    auto start_2 = std::chrono::high_resolution_clock::now();
+    res = ffm_obj * b_train; //Fast math creates problems... fast math does a lot!!!
+    auto end_2 = std::chrono::high_resolution_clock::now();
+    auto duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(end_2-start_2);
+    std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
+
 //    FFM_object<float> ffm_obj_grad = FFM_object<float>(X,X,ls,op_grad,lambda,device_cuda);
 //    exact_MV<float> ffm_obj_grad_exact = exact_MV<float>(X,X,ls,op_grad,lambda,device_cuda);
     std::cout<<"------------- "<<"Normal distribution: "<< "mean "<<mean<<" box_variance "<<var<<" n: "<<n<<" min_points: "<< min_points <<" nr_interpolation_points: "<<nr_of_interpolation_points <<" -------------"<<std::endl;
@@ -160,15 +166,13 @@ void benchmark_2(int n,float min_points, int threshold,float mean,float var,floa
     auto end = std::chrono::high_resolution_clock::now();
     auto duration_1 = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
     std::cout<<"Full matmul time (ms): "<<duration_1.count()<<std::endl;
-    res = ffm_obj * b_train; //Fast math creates problems... fast math does a lot!!!
-    auto end_2 = std::chrono::high_resolution_clock::now();
-    auto duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(end_2-end);
+
+
     torch::Tensor res_compare = res.slice(0,0,threshold);
     torch::Tensor rel_error  = ((res_ref-res_compare)/res_ref).abs_().mean();
     auto rel_error_float = rel_error.item<scalar_t>();
     std::cout<<res_ref.slice(0,0,10)<<std::endl;
     std::cout<<res.slice(0,0,10)<<std::endl;
-    std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
     std::cout<<"Relative error: "<<rel_error_float<<std::endl;
     writeOnfile_exp_2(fname,mean,var,n,nd,min_points,nr_of_interpolation_points,duration_2.count(),rel_error_float);
 

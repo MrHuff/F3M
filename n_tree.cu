@@ -17,7 +17,7 @@ at::ScalarType dtype() { return at::typeMetaToScalarType(caffe2::TypeMeta::Make<
 
 
 template<typename scalar_t, int nd>
-std::tuple<torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor> calculate_edge(const torch::Tensor &X,const torch::Tensor &Y,const std::string & gpu_device){
+std::tuple<torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor> calculate_edge_old(const torch::Tensor &X,const torch::Tensor &Y,const std::string & gpu_device){
     torch::Tensor Xmin = torch::ones(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device)*NPP_MAXABS_32F;
     torch::Tensor Xmax = -torch::ones(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device)*NPP_MAXABS_32F;
     torch::Tensor Ymin = torch::ones(X.size(1)).toType(dtype<scalar_t>()).to(gpu_device)*NPP_MAXABS_32F;
@@ -25,14 +25,14 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor
     dim3 blockSize,gridSize;
     blockSize.x = 1024;
     gridSize.x = 20;
-    reduceMaxMinOptimizedWarpMatrix<scalar_t,nd><<<gridSize,blockSize,64>>>(X.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                        Xmax.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>(),
-                                                                        Xmin.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>()
+    reduceMaxMinOptimizedWarpMatrix<scalar_t,nd><<<gridSize,blockSize,64>>>(X.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                        Xmax.packed_accessor64<scalar_t,1,torch::RestrictPtrTraits>(),
+                                                                        Xmin.packed_accessor64<scalar_t,1,torch::RestrictPtrTraits>()
     );
     cudaDeviceSynchronize();
-    reduceMaxMinOptimizedWarpMatrix<scalar_t,nd><<<gridSize,blockSize,64>>>(Y.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                        Ymax.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>(),
-                                                                        Ymin.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>()
+    reduceMaxMinOptimizedWarpMatrix<scalar_t,nd><<<gridSize,blockSize,64>>>(Y.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                        Ymax.packed_accessor64<scalar_t,1,torch::RestrictPtrTraits>(),
+                                                                        Ymin.packed_accessor64<scalar_t,1,torch::RestrictPtrTraits>()
     );
     cudaDeviceSynchronize();
     torch::Tensor edge = torch::cat({Xmax - Xmin, Ymax - Ymin}).max();
@@ -40,7 +40,7 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor
 };
 
 template<typename scalar_t, int nd>
-std::tuple<torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor> calculate_edge_debug(const torch::Tensor &X,const torch::Tensor &Y,const std::string & gpu_device){
+std::tuple<torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor> calculate_edge(const torch::Tensor &X,const torch::Tensor &Y,const std::string & gpu_device){
     torch::Tensor Xmin,Ymin,Xmax,Ymax,tmp;
     std::tie(Xmin,tmp) = X.min(0);
     std::tie(Xmax,tmp) = X.max(0);
@@ -51,15 +51,15 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor
 };
 
 template<typename scalar_t, int nd>
-std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> calculate_edge_X(const torch::Tensor &X,const std::string & gpu_device){
+std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> calculate_edge_X_old(const torch::Tensor &X,const std::string & gpu_device){
     torch::Tensor Xmin = torch::ones(nd).toType(dtype<scalar_t>()).to(gpu_device)*NPP_MAXABS_32F;
     torch::Tensor Xmax = -torch::ones(nd).toType(dtype<scalar_t>()).to(gpu_device)*NPP_MAXABS_32F;
     dim3 blockSize,gridSize;
     blockSize.x = 1024;
     gridSize.x = 10;
-    reduceMaxMinOptimizedWarpMatrix<scalar_t,nd><<<gridSize,blockSize,64>>>(X.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                                    Xmax.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>(),
-                                                                                            Xmin.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>()
+    reduceMaxMinOptimizedWarpMatrix<scalar_t,nd><<<gridSize,blockSize,64>>>(X.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                                    Xmax.packed_accessor64<scalar_t,1,torch::RestrictPtrTraits>(),
+                                                                                            Xmin.packed_accessor64<scalar_t,1,torch::RestrictPtrTraits>()
                             );
     cudaDeviceSynchronize();
     torch::Tensor edge = (Xmax - Xmin).max();
@@ -67,7 +67,7 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> calculate_edge_X(const tor
 };
 
 template<typename scalar_t, int nd>
-std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> calculate_edge_X_debug(const torch::Tensor &X,const std::string & gpu_device){
+std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> calculate_edge_X(const torch::Tensor &X, const std::string & gpu_device){
     torch::Tensor Xmin,Xmax,tmp;
     std::tie(Xmin,tmp) = X.min(0);
     std::tie(Xmax,tmp) = X.max(0);
@@ -106,18 +106,18 @@ struct n_tree_cuda{
         edge = e;
         edge_og = e;
         dim_fac = pow(2,dim);
-        sorted_index  = torch::zeros({data.size(0)}).toType(torch::kInt32).contiguous().to(device);
+        sorted_index  = torch::zeros({data.size(0)}).toType(torch::kInt32).to(device);
         avg_nr_points =  (float)d.size(0);
         multiply_gpu_base = torch::pow(2, torch::arange(dim - 1, -1, -1).toType(torch::kInt32)).to(device);
         multiply_gpu = multiply_gpu_base;
         coord_tensor = torch::zeros({dim_fac,dim}).toType(torch::kInt32).to(device);
-        get_centers<dim><<<8,192>>>(coord_tensor.packed_accessor32<int,2,torch::RestrictPtrTraits>());
+        get_centers<dim><<<8,192>>>(coord_tensor.packed_accessor64<int,2,torch::RestrictPtrTraits>());
         cudaDeviceSynchronize();
         centers = xmin + 0.5 * edge;
         centers = centers.unsqueeze(0);
         depth = 0;
         side_base = torch::tensor(2.0).toType(dtype<scalar_t>()).to(device);
-        box_idxs = torch::arange(centers.size(0)).toType(torch::kInt32).contiguous().to(device);
+        box_idxs = torch::arange(centers.size(0)).toType(torch::kInt32).to(device);
 
     }
     void natural_center_divide(){
@@ -132,45 +132,45 @@ struct n_tree_cuda{
         edge = edge*0.5;
         depth += 1;
         side = side_base.pow(depth);
-        box_idxs = torch::arange(centers.size(0)).toType(torch::kInt32).contiguous().to(device);
-        unique_counts_cum = torch::zeros(centers.size(0)+1).toType(torch::kInt32).contiguous().to(device);//matrix -> existing boxes * 2^dim bounded over nr or points... betting on boxing dissapears...
-        unique_counts= torch::zeros(centers.size(0)).toType(torch::kInt32).contiguous().to(device);
-        perm = torch::zeros(centers.size(0)).toType(torch::kInt32).contiguous().to(device);
+        box_idxs = torch::arange(centers.size(0)).toType(torch::kInt32).to(device);
+        unique_counts_cum = torch::zeros(centers.size(0)+1).toType(torch::kInt32).to(device);//matrix -> existing boxes * 2^dim bounded over nr or points... betting on boxing dissapears...
+        unique_counts= torch::zeros(centers.size(0)).toType(torch::kInt32).to(device);
+        perm = torch::zeros(centers.size(0)).toType(torch::kInt32).to(device);
         dim3 blockSize,gridSize;
         int memory;
         std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(dim, centers.size(0));
         center_perm<scalar_t,dim><<<gridSize,blockSize>>>(
-                        centers.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                        xmin.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>(),
-                        multiply_gpu.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+                        centers.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                        xmin.packed_accessor64<scalar_t,1,torch::RestrictPtrTraits>(),
+                        multiply_gpu.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
                         side.data_ptr<scalar_t>(),
                         edge_og.data_ptr<scalar_t>(),
-                        perm.packed_accessor32<int,1,torch::RestrictPtrTraits>()
+                        perm.packed_accessor64<int,1,torch::RestrictPtrTraits>()
                                 ); //Apply same hack but to centers to get perm
 
         cudaDeviceSynchronize();
         std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(dim, data.size(0));
         box_division_cum<scalar_t,dim><<<gridSize,blockSize>>>(
-                data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                xmin.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>(),
-                multiply_gpu.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+                data.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                xmin.packed_accessor64<scalar_t,1,torch::RestrictPtrTraits>(),
+                multiply_gpu.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
                 side.data_ptr<scalar_t>(),
                 edge_og.data_ptr<scalar_t>(),
-                unique_counts_cum.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                perm.packed_accessor32<int,1,torch::RestrictPtrTraits>()
+                unique_counts_cum.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                perm.packed_accessor64<int,1,torch::RestrictPtrTraits>()
         );
         cudaDeviceSynchronize();
         unique_counts_cum = unique_counts_cum.cumsum(0).toType(torch::kInt32);
         box_division_assign<scalar_t,dim><<<gridSize,blockSize>>>(
-                data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                xmin.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>(),
-                multiply_gpu.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
+                data.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                xmin.packed_accessor64<scalar_t,1,torch::RestrictPtrTraits>(),
+                multiply_gpu.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
                 side.data_ptr<scalar_t>(),
                 edge_og.data_ptr<scalar_t>(),
-                unique_counts_cum.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                perm.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                unique_counts.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                sorted_index.packed_accessor32<int,1,torch::RestrictPtrTraits>()
+                unique_counts_cum.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                perm.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                unique_counts.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                sorted_index.packed_accessor64<int,1,torch::RestrictPtrTraits>()
 
         );
         cudaDeviceSynchronize();
@@ -210,17 +210,17 @@ torch::Tensor rbf_call(
     std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(nd, cuda_X_job.size(0));
 
     if(shared){
-        rbf_1d_reduce_shared_torch<scalar_t,nd><<<gridSize,blockSize,memory>>>(cuda_X_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                            cuda_Y_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                            cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                            output_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+        rbf_1d_reduce_shared_torch<scalar_t,nd><<<gridSize,blockSize,memory>>>(cuda_X_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                            cuda_Y_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                            cuda_b_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                            output_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
                                                                             d_ls
                                                                             );
     }else{
-        rbf_1d_reduce_simple_torch<scalar_t,nd><<<gridSize,blockSize,memory>>>(cuda_X_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                            cuda_Y_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                            cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                            output_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+        rbf_1d_reduce_simple_torch<scalar_t,nd><<<gridSize,blockSize,memory>>>(cuda_X_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                            cuda_Y_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                            cuda_b_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                            output_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
                                                                             d_ls
                                                                             );
     }
@@ -269,35 +269,35 @@ void call_skip_conv(
         int min_size=x_boxes_count.min().item<int>();
         blkSize = optimal_blocksize(min_size);
         std::tie(blockSize, gridSize, memory, block_box_indicator, box_block_indicator) = skip_kernel_launch<scalar_t>(nd, blkSize, x_boxes_count, x_box_idx);
-        skip_conv_1d_shared<scalar_t,nd><<<gridSize,blockSize,memory>>>(cuda_X_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                        cuda_Y_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                        cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                        output_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+        skip_conv_1d_shared<scalar_t,nd><<<gridSize,blockSize,memory>>>(cuda_X_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                        cuda_Y_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                        cuda_b_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                        output_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
                                                                         d_ls,
-                                                                        x_boxes_count_cumulative.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                                                                        y_boxes_count_cumulative.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                                                                        block_box_indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                                                                        box_block_indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                                                                        x_idx_reordering.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                                                                        y_idx_reordering.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                                                                        interactions_x_parsed.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
-                                                                        interactions_y.packed_accessor32<int,1,torch::RestrictPtrTraits>()
+                                                                        x_boxes_count_cumulative.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                                                                        y_boxes_count_cumulative.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                                                                        block_box_indicator.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                                                                        box_block_indicator.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                                                                        x_idx_reordering.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                                                                        y_idx_reordering.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                                                                        interactions_x_parsed.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
+                                                                        interactions_y.packed_accessor64<int,1,torch::RestrictPtrTraits>()
                                                                      );
 
     }else{
         std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(nd, cuda_X_job.size(0));
         torch::Tensor x_boxes_count_cumulative_alt = x_boxes_count.cumsum(0).toType(torch::kInt32).to(device_gpu);
         torch::Tensor y_boxes_count_cumulative_alt = y_boxes_count.cumsum(0).toType(torch::kInt32).to(device_gpu);
-        skip_conv_1d<scalar_t,nd><<<gridSize,blockSize,memory>>>(cuda_X_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                              cuda_Y_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                              cuda_b_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                              output_job.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+        skip_conv_1d<scalar_t,nd><<<gridSize,blockSize,memory>>>(cuda_X_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                              cuda_Y_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                              cuda_b_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                              output_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
                                                               d_ls,
-                                                                 x_boxes_count_cumulative_alt.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                                                                 y_boxes_count_cumulative_alt.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                                                              x_box_idx.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                                                              interactions_x_parsed.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
-                                                              interactions_y.packed_accessor32<int,1,torch::RestrictPtrTraits>()
+                                                                 x_boxes_count_cumulative_alt.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                                                                 y_boxes_count_cumulative_alt.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                                                              x_box_idx.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                                                              interactions_x_parsed.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
+                                                              interactions_y.packed_accessor64<int,1,torch::RestrictPtrTraits>()
                                                                       );
     } //fix types...
     cudaDeviceSynchronize();
@@ -470,37 +470,37 @@ void apply_laplace_interpolation_v2(
     if (transpose){
 
         lagrange_shared<scalar_t, nd><<<gridSize, blockSize, memory>>>(
-                data.packed_accessor32<scalar_t, 2, torch::RestrictPtrTraits>(),
-                b.packed_accessor32<scalar_t, 2, torch::RestrictPtrTraits>(),
-                nodes.packed_accessor32<scalar_t, 1, torch::RestrictPtrTraits>(),
-                laplace_indices.packed_accessor32<int, 2, torch::RestrictPtrTraits>(),
-                output.packed_accessor32<scalar_t, 2, torch::RestrictPtrTraits>(),
-                indicator.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
-                box_block.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
-                boxes_count_cumulative.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
-                centers.packed_accessor32<scalar_t, 2, torch::RestrictPtrTraits>(),
+                data.packed_accessor64<scalar_t, 2, torch::RestrictPtrTraits>(),
+                b.packed_accessor64<scalar_t, 2, torch::RestrictPtrTraits>(),
+                nodes.packed_accessor64<scalar_t, 1, torch::RestrictPtrTraits>(),
+                laplace_indices.packed_accessor64<int, 2, torch::RestrictPtrTraits>(),
+                output.packed_accessor64<scalar_t, 2, torch::RestrictPtrTraits>(),
+                indicator.packed_accessor64<int, 1, torch::RestrictPtrTraits>(),
+                box_block.packed_accessor64<int, 1, torch::RestrictPtrTraits>(),
+                boxes_count_cumulative.packed_accessor64<int, 1, torch::RestrictPtrTraits>(),
+                centers.packed_accessor64<scalar_t, 2, torch::RestrictPtrTraits>(),
                 edge.data_ptr<scalar_t>(),
-                idx_reordering.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
-                node_list_cum.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
-                cheb_w.packed_accessor32<scalar_t, 1, torch::RestrictPtrTraits>()
+                idx_reordering.packed_accessor64<int, 1, torch::RestrictPtrTraits>(),
+                node_list_cum.packed_accessor64<int, 1, torch::RestrictPtrTraits>(),
+                cheb_w.packed_accessor64<scalar_t, 1, torch::RestrictPtrTraits>()
         );
         cudaDeviceSynchronize();
 
     }else{
         laplace_shared_transpose<scalar_t,nd><<<gridSize,blockSize,memory>>>(
-                data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                b.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                nodes.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>(),
-                laplace_indices.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
-                output.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-                indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                box_block.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                boxes_count_cumulative.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                centers.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+                data.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                b.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                nodes.packed_accessor64<scalar_t,1,torch::RestrictPtrTraits>(),
+                laplace_indices.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
+                output.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                indicator.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                box_block.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                boxes_count_cumulative.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                centers.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
                 edge.data_ptr<scalar_t>(),
-                idx_reordering.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                node_list_cum.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-                cheb_w.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>()
+                idx_reordering.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                node_list_cum.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                cheb_w.packed_accessor64<scalar_t,1,torch::RestrictPtrTraits>()
         );
         cudaDeviceSynchronize();
     }
@@ -532,16 +532,16 @@ torch::Tensor setup_skip_conv(torch::Tensor &cheb_data,
     std::tie(blockSize,gridSize,memory,indicator,box_block) = skip_kernel_launch<scalar_t>(nd,blkSize,boxes_count,unique_sorted_boxes_idx);
     output = torch::zeros_like(b_data);
     skip_conv_far_boxes_opt<scalar_t,nd><<<gridSize,blockSize,memory>>>(
-            cheb_data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-            b_data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-            output.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
+            cheb_data.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+            b_data.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+            output.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
             d_ls,
-            centers_X.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-            centers_Y.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-            indicator.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-            box_block.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-            interactions_x_parsed.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
-            interactions_y.packed_accessor32<int,1,torch::RestrictPtrTraits>()
+            centers_X.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+            centers_Y.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+            indicator.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+            box_block.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+            interactions_x_parsed.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
+            interactions_y.packed_accessor64<int,1,torch::RestrictPtrTraits>()
     );
     cudaDeviceSynchronize();
     return output;
@@ -615,8 +615,8 @@ torch::Tensor process_interactions(torch::Tensor & interactions,int x_boxes,cons
     int memory;
     std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<int>(nd, count_cumsum.size(0));
     parse_x_boxes<<<gridSize,blockSize>>>(
-            count_cumsum.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
-            results.packed_accessor32<int,2,torch::RestrictPtrTraits>()
+            count_cumsum.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
+            results.packed_accessor64<int,2,torch::RestrictPtrTraits>()
             );
     cudaDeviceSynchronize();
     return results;
@@ -638,11 +638,11 @@ std::tuple<torch::Tensor,torch::Tensor> parse_cheb_data_smolyak(
     int shared;
     std::tie(block,grid,shared) =  get_kernel_launch_params<scalar_t>(d,n);
     get_smolyak_indices<scalar_t,d><<<grid,block,shared>>>(
-            cheb_nodes.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>(),
-            cheb_data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-            cheb_idx.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
-            nodes_per_dim.packed_accessor32<int,1,torch::RestrictPtrTraits>(),
-            nodes_cum_prod.packed_accessor32<int,1,torch::RestrictPtrTraits>()
+            cheb_nodes.packed_accessor64<scalar_t,1,torch::RestrictPtrTraits>(),
+            cheb_data.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+            cheb_idx.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
+            nodes_per_dim.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+            nodes_cum_prod.packed_accessor64<int,1,torch::RestrictPtrTraits>()
     );
     cudaDeviceSynchronize();
     return std::make_tuple(cheb_idx,cheb_data);
@@ -665,10 +665,10 @@ std::tuple<torch::Tensor,torch::Tensor> parse_cheb_data(
     int shared;
     std::tie(block,grid,shared) =  get_kernel_launch_params<scalar_t>(d,n);
     get_cheb_idx_data<scalar_t,d><<<grid,block,shared>>>(
-            cheb_nodes.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>(),
-            cheb_data.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-            cheb_idx.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
-            sampled_indices.packed_accessor32<int,1,torch::RestrictPtrTraits>()
+            cheb_nodes.packed_accessor64<scalar_t,1,torch::RestrictPtrTraits>(),
+            cheb_data.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+            cheb_idx.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
+            sampled_indices.packed_accessor64<int,1,torch::RestrictPtrTraits>()
             );
     cudaDeviceSynchronize();
     return std::make_tuple(cheb_idx,cheb_data);
@@ -703,12 +703,12 @@ std::tuple<torch::Tensor,torch::Tensor> separate_interactions(
     torch::Tensor far_field_mask = torch::zeros({n}).toType(torch::kBool).to(gpu_device);
     torch::Tensor impact = torch::zeros({n}).toType(dtype<scalar_t>()).to(gpu_device);
     boolean_separate_interactions<scalar_t,nd><<<gridSize,blockSize>>>(
-            centers_X.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-            centers_Y.packed_accessor32<scalar_t,2,torch::RestrictPtrTraits>(),
-            interactions.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
+            centers_X.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+            centers_Y.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+            interactions.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
             edge.data_ptr<scalar_t>(),
-            far_field_mask.packed_accessor32<bool,1,torch::RestrictPtrTraits>(),
-            impact.packed_accessor32<scalar_t,1,torch::RestrictPtrTraits>(),
+            far_field_mask.packed_accessor64<bool,1,torch::RestrictPtrTraits>(),
+            impact.packed_accessor64<scalar_t,1,torch::RestrictPtrTraits>(),
             d_ls
     );
     cudaDeviceSynchronize();
@@ -727,10 +727,10 @@ torch::Tensor filter_out_interactions(torch::Tensor & interactions,
     torch::Tensor &x_keep = ntree_X.non_empty_mask;
     torch::Tensor &y_keep = ntree_Y.non_empty_mask;
     get_keep_mask<<<gridSize,blockSize>>>(
-            interactions.packed_accessor32<int,2,torch::RestrictPtrTraits>(),
-            x_keep.packed_accessor32<bool,1,torch::RestrictPtrTraits>(),
-            y_keep.packed_accessor32<bool,1,torch::RestrictPtrTraits>(),
-            mask.packed_accessor32<bool,1,torch::RestrictPtrTraits>()
+            interactions.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
+            x_keep.packed_accessor64<bool,1,torch::RestrictPtrTraits>(),
+            y_keep.packed_accessor64<bool,1,torch::RestrictPtrTraits>(),
+            mask.packed_accessor64<bool,1,torch::RestrictPtrTraits>()
             );
     return interactions.index({mask});
 
@@ -824,11 +824,11 @@ torch::Tensor get_low_variance_pairs(
     int mem;
     std::tie(blockSize,gridSize,mem)=get_kernel_launch_params<scalar_t>(nd,big_enough.size(0));
     box_variance<scalar_t, nd><<<gridSize, blockSize, mem>>>(
-            x_dat.packed_accessor32<scalar_t, 2, torch::RestrictPtrTraits>(),
-            box_ind.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
-            x_box_cum.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
-            big_enough.packed_accessor32<int, 1, torch::RestrictPtrTraits>(),
-            box_variance_1.packed_accessor32<scalar_t, 2, torch::RestrictPtrTraits>()
+            x_dat.packed_accessor64<scalar_t, 2, torch::RestrictPtrTraits>(),
+            box_ind.packed_accessor64<int, 1, torch::RestrictPtrTraits>(),
+            x_box_cum.packed_accessor64<int, 1, torch::RestrictPtrTraits>(),
+            big_enough.packed_accessor64<int, 1, torch::RestrictPtrTraits>(),
+            box_variance_1.packed_accessor64<scalar_t, 2, torch::RestrictPtrTraits>()
     );
     cudaDeviceSynchronize();
     return box_variance_1;
@@ -984,7 +984,8 @@ torch::Tensor FFM_X(
         scalar_t  & eff_var_limit
 ) {
 
-    torch::Tensor output = torch::zeros({X_data.size(0),b.size(1)}).toType(dtype<scalar_t>()).to(gpu_device); //initialize empty output
+    torch::Tensor output = torch::zeros_like(b).toType(dtype<scalar_t>()).to(gpu_device); //initialize empty output
+//    torch::Tensor output = torch::empty({b.size(0),b.size(1)}).zero_().toType(dtype<scalar_t>()).to(gpu_device); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
     torch::Tensor edge,
     xmin,
     xmax,
@@ -1024,8 +1025,8 @@ torch::Tensor SUPERSMOOTH_FFM_X(
         int & nr_of_interpolation_points,
         scalar_t  & eff_var_limit
 ) {
-
-    torch::Tensor output = torch::zeros({X_data.size(0),b.size(1)}).toType(dtype<scalar_t>()).to(gpu_device); //initialize empty output
+//    torch::Tensor output = torch::empty({b.size(0),b.size(1)}).zero_().toType(dtype<scalar_t>()).to(gpu_device); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
+    torch::Tensor output = torch::zeros_like(b).toType(dtype<scalar_t>()).to(gpu_device); //initialize empty output
     torch::Tensor edge,
             xmin,
             xmax,
@@ -1037,7 +1038,7 @@ torch::Tensor SUPERSMOOTH_FFM_X(
             cheb_w;
             ;//these are needed to figure out which interactions are near/far field
     interactions = torch::zeros({1,2}).toType(torch::kInt32).to(gpu_device);
-    std::tie(edge,xmin,xmax) = calculate_edge_X<scalar_t,nd>(X_data,gpu_device); //actually calculate them
+    std::tie(edge,xmin,xmax) = calculate_edge_X<scalar_t, nd>(X_data, gpu_device); //actually calculate them
     n_tree_cuda<scalar_t,nd> ntree_X = n_tree_cuda<scalar_t,nd>(edge,X_data,xmin,xmax,gpu_device);
     float cur_var = 1e6;
 

@@ -97,7 +97,7 @@ __device__ inline static T rbf_grad_dist_abs(T x[],T y[],const T *ls){
 //
 
 template <typename scalar_t,int nd>
-__device__ inline static void torch_load_y(int index, scalar_t *shared_mem, torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> y){
+__device__ inline static void torch_load_y(int index, scalar_t *shared_mem, torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> y){
 #pragma unroll
     for (int k = 0; k < nd; k++) {
         //assert(&((*px)[i * FIRST + k]) != nullptr);
@@ -111,12 +111,12 @@ __device__ inline static void torch_load_b(
         int col_index,
         int index,
         scalar_t *shared_mem,
-        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b){
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> b){
     shared_mem[threadIdx.x] = b[index][col_index];
 }
 template <typename scalar_t,int nd>
 __device__ inline static void torch_load_y_v2(int reorder_index, scalar_t *shared_mem,
-        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> y
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> y
         ){
 #pragma unroll
     for (int k = 0; k < nd; k++) {
@@ -131,7 +131,7 @@ __device__ inline static void torch_load_b_v2(
         int col_index,
         int reorder_index,
         scalar_t *shared_mem,
-        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b){
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> b){
     shared_mem[threadIdx.x] = b[reorder_index][col_index];
 }
 
@@ -139,10 +139,10 @@ __device__ inline static void torch_load_b_v2(
 //Consider caching the kernel value if b is in Nxd.
 template <typename scalar_t,int nd>
 __global__ void rbf_1d_reduce_shared_torch(
-                                const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
-                               const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> Y_data,
-                               const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data, //also put b's in shared mem for maximum perform.
-                               torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output,
+                                const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
+                               const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> Y_data,
+                               const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> b_data, //also put b's in shared mem for maximum perform.
+                               torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> output,
                                 scalar_t * ls){
     int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
     unsigned int x_n = X_data.size(0);
@@ -182,10 +182,10 @@ __global__ void rbf_1d_reduce_shared_torch(
 }
 
 template <typename scalar_t,int nd>
-__global__ void rbf_1d_reduce_simple_torch(const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
-                                      const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> Y_data,
-                                      const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data, //also put b's in shared mem for maximum perform.
-                                      torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output,
+__global__ void rbf_1d_reduce_simple_torch(const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
+                                      const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> Y_data,
+                                      const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> b_data, //also put b's in shared mem for maximum perform.
+                                      torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> output,
                                       scalar_t * ls){
 
     int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
@@ -273,8 +273,8 @@ __device__ scalar_t calculate_barycentric_lagrange(//not sure this is such a gre
 }
 
 __device__ int calculate_box_ind(int &current_thread_idx,
-        torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> counts,
-        torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_box_idx){
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> counts,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> x_box_idx){
     int nr_of_counts = counts.size(0); //remember 0 included!
     for (int i=0;i<nr_of_counts-1;i++){
         if ( current_thread_idx>=counts[i] && current_thread_idx<counts[i+1]){
@@ -296,16 +296,16 @@ __device__ scalar_t get_2_norm(scalar_t * dist){
 
 
 template <typename scalar_t,int nd>
-__global__ void skip_conv_1d(const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
-                             const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> Y_data,
-                             const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data,
-                             torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output,
+__global__ void skip_conv_1d(const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
+                             const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> Y_data,
+                             const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> b_data,
+                             torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> output,
                              scalar_t * ls,
-                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_boxes_count,
-                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> y_boxes_count,
-                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_box_idx,
-                             const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> interactions_x_parsed,
-                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> interactions_y
+                             const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> x_boxes_count,
+                             const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> y_boxes_count,
+                             const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> x_box_idx,
+                             const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions_x_parsed,
+                             const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> interactions_y
 ){
     int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
     unsigned int x_n = X_data.size(0);
@@ -341,19 +341,19 @@ __global__ void skip_conv_1d(const torch::PackedTensorAccessor32<scalar_t,2,torc
 //Refactor, this is calculated last with all near_fields available. Use same logic...
 
 template <typename scalar_t,int nd>
-__global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
-                             const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> Y_data,
-                             const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data,
-                             torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output,
+__global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
+                             const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> Y_data,
+                             const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> b_data,
+                             torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> output,
                              scalar_t * ls,
-                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_boxes_count,
-                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> y_boxes_count,
-                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> block_box_indicator,
-                             const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> box_block_indicator,
-                            const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_idx_reordering,
-                            const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> y_idx_reordering,
-                            const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> interactions_x_parsed,
-                            const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> interactions_y
+                             const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> x_boxes_count,
+                             const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> y_boxes_count,
+                             const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> block_box_indicator,
+                             const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> box_block_indicator,
+                            const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> x_idx_reordering,
+                            const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> y_idx_reordering,
+                            const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions_x_parsed,
+                            const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> interactions_y
 
 ){
     int i,box_ind,start,end,a,b,int_m,x_idx_reorder,b_size,interactions_a,interactions_b;
@@ -421,8 +421,8 @@ __device__ void lagrange_data_load(scalar_t w[],
                                    scalar_t & factor,
                                    int & idx_reorder,
                                    int & box_ind,
-                                   const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers,
-                                   const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data
+                                   const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> centers,
+                                   const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data
 ){
     for (int k = 0; k < nd; k++) {
         x_i[k] = factor*(X_data[idx_reorder][k]-centers[box_ind][k]);
@@ -445,19 +445,19 @@ __device__ void lagrange_data_load(scalar_t w[],
 //Implement shuffle reduce.
 template <typename scalar_t,int nd>
 __global__ void lagrange_shared(
-        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
-        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data, //also put b's in shared mem for maximum perform.
-        const torch::PackedTensorAccessor32<scalar_t,1,torch::RestrictPtrTraits> lap_nodes,
-        const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> combinations,
-        torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output,
-        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> indicator,
-        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> box_block_indicator,
-        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_boxes_count, //error is here! I think it does an access here when its not supposed to...
-        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers,
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> b_data, //also put b's in shared mem for maximum perform.
+        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> lap_nodes,
+        const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> combinations,
+        torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> output,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> indicator,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> box_block_indicator,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> x_boxes_count, //error is here! I think it does an access here when its not supposed to...
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> centers,
         const scalar_t * edge,
-        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> idx_reordering,
-        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> node_list_cum,
-        const torch::PackedTensorAccessor32<scalar_t,1,torch::RestrictPtrTraits> W
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> idx_reordering,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> node_list_cum,
+        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> W
 
 ){
     int i,a,b,cheb_data_size,idx_reorder,laplace_n,b_size,box_ind;
@@ -543,19 +543,19 @@ __global__ void lagrange_shared(
 
 template <typename scalar_t,int nd>
 __global__ void laplace_shared_transpose(
-        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
-        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data, //also put b's in shared mem for maximum perform.
-        const torch::PackedTensorAccessor32<scalar_t,1,torch::RestrictPtrTraits> lap_nodes,
-        const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> combinations,
-        torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output,
-        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> indicator,
-        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> box_block_indicator,
-        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_boxes_count,
-        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers,
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> b_data, //also put b's in shared mem for maximum perform.
+        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> lap_nodes,
+        const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> combinations,
+        torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> output,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> indicator,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> box_block_indicator,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> x_boxes_count,
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> centers,
         const scalar_t * edge,
-        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> idx_reordering,
-        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> node_list_cum,
-        const torch::PackedTensorAccessor32<scalar_t,1,torch::RestrictPtrTraits> W
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> idx_reordering,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> node_list_cum,
+        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> W
 ) {
 
     int laplace_n,i, box_ind, a, b,cheb_data_size,idx_reorder,b_size;
@@ -646,16 +646,16 @@ __global__ void laplace_shared_transpose(
 //Thrust
 template <typename scalar_t,int nd>
 __global__ void skip_conv_far_boxes_opt(//needs rethinking
-                                    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> cheb_data,
-                                    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> b_data,
-                                    torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output,
+                                    const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> cheb_data,
+                                    const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> b_data,
+                                    torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> output,
                                     scalar_t * ls,
-                                    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers_X,
-                                    const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers_Y,
-                                    const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> indicator,
-                                    const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> box_block_indicator,
-                                    const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> interactions_x_parsed,
-                                    const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> interactions_y
+                                    const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> centers_X,
+                                    const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> centers_Y,
+                                    const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> indicator,
+                                    const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> box_block_indicator,
+                                    const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions_x_parsed,
+                                    const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> interactions_y
 
 ){
     int box_ind,a,cheb_data_size,int_m,interactions_a,interactions_b,b_size;
@@ -736,13 +736,13 @@ __global__ void skip_conv_far_boxes_opt(//needs rethinking
 
 template <typename scalar_t, int nd>
 __global__ void box_division_cum(
-        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
-        const torch::PackedTensorAccessor32<scalar_t,1,torch::RestrictPtrTraits> alpha,
-        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> multiply,
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
+        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> alpha,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> multiply,
         const scalar_t * int_mult,
         const scalar_t * edge,
-        torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> global_vector_counter_cum,
-        torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> perm
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> global_vector_counter_cum,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> perm
 ){
     int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
     if (i>X_data.size(0)-1){return;}
@@ -755,12 +755,12 @@ __global__ void box_division_cum(
 }
 
 template <typename scalar_t, int nd>
-__global__ void center_perm(const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers_natural,
-                            const torch::PackedTensorAccessor32<scalar_t,1,torch::RestrictPtrTraits> alpha,
-                            const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> multiply,
+__global__ void center_perm(const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> centers_natural,
+                            const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> alpha,
+                            const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> multiply,
                             const scalar_t * int_mult,
                             const scalar_t * edge,
-                            torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> perm){
+                            torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> perm){
     int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
     if (i>centers_natural.size(0)-1){return;}
     int idx=0;
@@ -774,15 +774,15 @@ __global__ void center_perm(const torch::PackedTensorAccessor32<scalar_t,2,torch
 
 template <typename scalar_t, int nd>
 __global__ void box_division_assign(
-        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
-        const torch::PackedTensorAccessor32<scalar_t,1,torch::RestrictPtrTraits> alpha,
-        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> multiply,
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
+        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> alpha,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> multiply,
         const scalar_t * int_mult,
         const scalar_t * edge,
-        torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> global_vector_counter_cum,
-        torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> perm,
-        torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> global_unique,
-        torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> sorted_index
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> global_vector_counter_cum,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> perm,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> global_unique,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> sorted_index
 ){
 
     int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
@@ -804,8 +804,8 @@ __global__ void box_division_assign(
 // new global vector counter... + cumsum[box_indx] + value of col.
 
 __global__ void parse_x_boxes(
-        const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> box_cumsum,
-        torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> results
+        const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> box_cumsum,
+        torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> results
 ){
     int tid  = threadIdx.x + blockDim.x*blockIdx.x;
     int n = box_cumsum.size(0);
@@ -824,10 +824,10 @@ __global__ void parse_x_boxes(
 
 template <typename scalar_t, int nd>
 __global__ void get_cheb_idx_data(
-        const torch::PackedTensorAccessor32<scalar_t,1,torch::RestrictPtrTraits> cheb_nodes,
-        torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> cheb_data,
-        torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> cheb_idx,
-        torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> indices
+        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> cheb_nodes,
+        torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> cheb_data,
+        torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> cheb_idx,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> indices
 ){
     int n = cheb_data.size(0);
     int i = threadIdx.x+blockIdx.x*blockDim.x; // Thread nr
@@ -851,11 +851,11 @@ __global__ void get_cheb_idx_data(
 
 template <typename scalar_t, int nd>
 __global__ void get_smolyak_indices(
-        const torch::PackedTensorAccessor32<scalar_t,1,torch::RestrictPtrTraits> cheb_nodes,
-        torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> cheb_data,
-        torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> cheb_idx,
-        torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> size_per_dim,
-        torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> cum_prod
+        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> cheb_nodes,
+        torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> cheb_data,
+        torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> cheb_idx,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> size_per_dim,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> cum_prod
 ){
     int n = cheb_data.size(0);
     int i = threadIdx.x+blockIdx.x*blockDim.x; // Thread nr
@@ -887,7 +887,7 @@ __global__ void get_smolyak_indices(
 
 template <int nd>
 __global__ void get_centers(
-        torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> centers
+        torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> centers
 ){
     int n = centers.size(0);
     int i = threadIdx.x+blockIdx.x*blockDim.x; // Thread nr
@@ -902,12 +902,12 @@ __global__ void get_centers(
 
 template <typename scalar_t, int nd>
 __global__ void boolean_separate_interactions(
-        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers_X,
-        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> centers_Y,
-        const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> interactions,
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> centers_X,
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> centers_Y,
+        const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions,
         const scalar_t * edge,
-        torch::PackedTensorAccessor32<bool,1,torch::RestrictPtrTraits> is_far_field,
-        torch::PackedTensorAccessor32<scalar_t,1,torch::RestrictPtrTraits> impact_vec,
+        torch::PackedTensorAccessor64<bool,1,torch::RestrictPtrTraits> is_far_field,
+        torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> impact_vec,
         const scalar_t * ls
 
 ){
@@ -973,9 +973,9 @@ __device__ __forceinline__ float atomicMaxFloat (float * addr, float value) {
 
 template<typename scalar_t,int cols>
 __global__ void reduceMaxMinOptimizedWarpMatrix(
-        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> input,
-        torch::PackedTensorAccessor32<scalar_t,1,torch::RestrictPtrTraits> maxOut,
-        torch::PackedTensorAccessor32<scalar_t,1,torch::RestrictPtrTraits> minOut
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> input,
+        torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> maxOut,
+        torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> minOut
 )
 {
     __shared__ scalar_t sharedMax;
@@ -1022,10 +1022,10 @@ __global__ void reduceMaxMinOptimizedWarpMatrix(
 }
 
 __global__ void get_keep_mask(
-        const torch::PackedTensorAccessor32<int,2,torch::RestrictPtrTraits> interactions,
-        torch::PackedTensorAccessor32<bool,1,torch::RestrictPtrTraits> keep_x_box,
-        torch::PackedTensorAccessor32<bool,1,torch::RestrictPtrTraits> keep_y_box,
-        torch::PackedTensorAccessor32<bool,1,torch::RestrictPtrTraits> output
+        const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions,
+        torch::PackedTensorAccessor64<bool,1,torch::RestrictPtrTraits> keep_x_box,
+        torch::PackedTensorAccessor64<bool,1,torch::RestrictPtrTraits> keep_y_box,
+        torch::PackedTensorAccessor64<bool,1,torch::RestrictPtrTraits> output
 ){
     int tid = threadIdx.x+blockDim.x*blockIdx.x;
     if (tid>interactions.size(0)-1){return;}
@@ -1035,11 +1035,11 @@ __global__ void get_keep_mask(
 
 template<typename scalar_t,int cols>
 __global__ void box_variance(
-        const torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> X_data,
-        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_dat_reordering,
-        const torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> x_box_cum,
-        torch::PackedTensorAccessor32<int,1,torch::RestrictPtrTraits> big_enough_boxes,
-        torch::PackedTensorAccessor32<scalar_t,2,torch::RestrictPtrTraits> output_1
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> x_dat_reordering,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> x_box_cum,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> big_enough_boxes,
+        torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> output_1
 )
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
@@ -1047,7 +1047,8 @@ __global__ void box_variance(
     scalar_t x_i[cols];
     scalar_t x_i_square[cols];
     int box_ind;
-    int start,end;
+    int limit=10000;
+    int start,end,end_num;
     if (i>x_n-1) {
         return;
     }
@@ -1060,14 +1061,20 @@ __global__ void box_variance(
     start = x_box_cum[box_ind];
     end = x_box_cum[box_ind+1];
     scalar_t acc = end-start;
-    for (int j = start; j<end;j++) {
+    if (acc<limit){
+        end_num=end;
+    }else{
+        end_num = start+limit;
+        acc = (scalar_t)limit;
+    }
+    for (int j = start; j<end_num;j++) {
         for (int d = 0;d<cols;d++) {
             x_i[d]+=X_data[x_dat_reordering[j]][d];
             x_i_square[d]+=square(X_data[x_dat_reordering[j]][d]);
         }
     }
     for (int d = 0;d<cols;d++) {
-        output_1[i][d] = x_i_square[d]/acc-square(x_i[d]/acc);
+        output_1[i][d] = (x_i_square[d]/acc-square(x_i[d]/acc))*acc/(acc-1);
     }
 }
 
