@@ -36,48 +36,50 @@ def run_and_record_simulated(args_in):
     var_limit = float(args_in['var_limit'])
     ref_points = args_in['ref_points']
     n_loops = args_in['n_loops']
-    seed= args_in['seed']
     dist_2  = args_in['dist_2']
     dist_2_a = args_in['dist_2_a']
     dist_2_b = args_in['dist_2_b']
-    torch.manual_seed(seed)
-    X = get_data_sampled(N=N,d=d,dist_1=dist_1,dist_1_a=dist_1_a,dist_1_b=dist_1_b)
-    X = X.float().to(device)
-    x_ref = X[0:ref_points,:]
-    Y = get_data_sampled(N=N, d=d, dist_1=dist_2, dist_1_a=dist_2_a, dist_1_b=dist_2_b)
-    b = torch.randn(N,1)
-    b = b.float().to(device)
-
-    if Y is not None:
-        Y = Y.float().to(device)
-        smooth=False
-        var_limit=None
-        args_in['smooth'] = False
-        args_in['var_limit']=None
-        benchmark = benchmark_matmul(x_ref,Y,ls=ls,device=device)
-        FFM_obj = FFM(X=X, Y=Y, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
-                       eff_var_limit=var_limit, device=device)
-    else:
-        dist_2=None
-        dist_2_a=None
-        dist_2_b=None
-        args_in['dist_2'] = None
-        args_in['dist_2_a'] = None
-        if smooth:
-            var_comp=False
-        benchmark = benchmark_matmul(x_ref,X,ls=ls,device=device)
-        FFM_obj = FFM(X=X, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
-                      eff_var_limit=var_limit, var_compression=var_comp, smooth_interpolation=smooth, device=device)
-
-    true = benchmark@b
     rows = []
+
     for i in tqdm(range(n_loops)):
+
+        torch.manual_seed(i)
+        X = get_data_sampled(N=N,d=d,dist_1=dist_1,dist_1_a=dist_1_a,dist_1_b=dist_1_b)
+        X = X.float().to(device)
+        x_ref = X[0:ref_points,:]
+        Y = get_data_sampled(N=N, d=d, dist_1=dist_2, dist_1_a=dist_2_a, dist_1_b=dist_2_b)
+        b = torch.randn(N,1)
+        b = b.float().to(device)
+
+        if Y is not None:
+            Y = Y.float().to(device)
+            smooth=False
+            var_limit=None
+            args_in['smooth'] = False
+            args_in['var_limit']=None
+            benchmark = benchmark_matmul(x_ref,Y,ls=ls,device=device)
+            FFM_obj = FFM(X=X, Y=Y, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
+                           eff_var_limit=var_limit, device=device)
+        else:
+            dist_2=None
+            dist_2_a=None
+            dist_2_b=None
+            args_in['dist_2'] = None
+            args_in['dist_2_a'] = None
+            if smooth:
+                var_comp=False
+            benchmark = benchmark_matmul(x_ref,X,ls=ls,device=device)
+            FFM_obj = FFM(X=X, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
+                          eff_var_limit=var_limit, var_compression=var_comp, smooth_interpolation=smooth, device=device)
+
+        true = benchmark@b
         start = time.time()
         res = FFM_obj @ b
         end = time.time()
         rel_err = calc_rel_error(true_res=true, approx_res=res[:ref_points])
         time_seconds = end-start
         rows.append([time_seconds,rel_err.item()])
+
     res_arr = np.array(rows)
     means = res_arr.mean(0)
     std = res_arr.std(0)

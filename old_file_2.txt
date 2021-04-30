@@ -690,6 +690,8 @@ std::tuple<torch::Tensor,torch::Tensor> separate_interactions(
         torch::Tensor & interactions,
         torch::Tensor & centers_X,
         torch::Tensor & centers_Y,
+        torch::Tensor & effective_var_dist_X,
+        torch::Tensor & effective_var_dist_Y,
         torch::Tensor & edge,
         const std::string & gpu_device
 ){
@@ -698,12 +700,23 @@ std::tuple<torch::Tensor,torch::Tensor> separate_interactions(
     n = interactions.size(0);
     std::tie(blockSize,gridSize,mem)=get_kernel_launch_params<scalar_t>(nd,n);
     torch::Tensor far_field_mask = torch::zeros({n}).toType(torch::kBool).to(gpu_device);
-    boolean_separate_interactions<scalar_t,nd><<<gridSize,blockSize>>>(
+    bool cov_mode = effective_var_dist_X.data_ptr()==effective_var_dist_Y.data_ptr();
+//    boolean_separate_interactions<scalar_t,nd><<<gridSize,blockSize>>>(
+//            centers_X.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+//            centers_Y.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+//            interactions.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
+//            edge.data_ptr<scalar_t>(),
+//            far_field_mask.packed_accessor64<bool,1,torch::RestrictPtrTraits>()
+//    );
+    boolean_separate_interactions_new<scalar_t,nd><<<gridSize,blockSize>>>(
             centers_X.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
             centers_Y.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+            effective_var_dist_X.packed_accessor64<scalar_t,1,torch::RestrictPtrTraits>(),
+            effective_var_dist_Y.packed_accessor64<scalar_t,1,torch::RestrictPtrTraits>(),
             interactions.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
             edge.data_ptr<scalar_t>(),
-            far_field_mask.packed_accessor64<bool,1,torch::RestrictPtrTraits>()
+            far_field_mask.packed_accessor64<bool,1,torch::RestrictPtrTraits>(),
+            cov_mode
     );
 
     cudaDeviceSynchronize();
@@ -786,17 +799,31 @@ torch::Tensor far_field_run(
             laplace_combinations,
             chebnodes_1D,
             node_list_cum,
-            cheb_w
+            cheb_w,
+            x_var_all,
+            max_x_var_all_effective_edge,
+            y_var_all,
+            max_y_var_all_effective_edge,
+            tmp
             ;
 
     std::tie(cheb_data_X,laplace_combinations,node_list_cum,chebnodes_1D,cheb_w) = smolyak_grid<scalar_t,nd>(nr_of_interpolation_points,gpu_device);
     interactions = get_new_interactions(near_field,ntree_X.dim_fac,gpu_device); //Doesn't work for new setup since the division is changed...
     interactions = filter_out_interactions(interactions,ntree_X,ntree_Y);
+    x_var_all = get_low_variance_pairs<scalar_t,nd>(ntree_X,ntree_X.box_indices_sorted);
+    y_var_all = get_low_variance_pairs<scalar_t,nd>(ntree_Y,ntree_Y.box_indices_sorted);
+    std::tie(max_x_var_all_effective_edge,tmp) = x_var_all.max(1);
+    std::tie(max_y_var_all_effective_edge,tmp) = y_var_all.max(1);
+    max_x_var_all_effective_edge = (1-max_x_var_all_effective_edge/ntree_X.box_max_var)*ntree_X.edge/ls;
+    max_y_var_all_effective_edge = (1-max_y_var_all_effective_edge/ntree_X.box_max_var)*ntree_X.edge/ls;
+
     std::tie(far_field,near_field) =
             separate_interactions<scalar_t,nd>(
                     interactions,
                     ntree_X.centers,
                     ntree_Y.centers,
+                    max_x_var_all_effective_edge,
+                    max_y_var_all_effective_edge,
                     ntree_X.edge,
                     gpu_device);
     if (far_field.numel()>0) {
@@ -841,19 +868,27 @@ torch::Tensor far_field_run_XX(
             chebnodes_1D,
             node_list_cum,
             cheb_w,
-            x_var,
+            tmp,
             max_var,
-            tmp
+            x_var_all,
+            max_x_var_all_effective_edge,
+            x_var,
+            all_box_big_enough
             ;
 
     std::tie(cheb_data_X,laplace_combinations,node_list_cum,chebnodes_1D,cheb_w) = smolyak_grid<scalar_t,nd>(nr_of_interpolation_points,gpu_device);
     interactions = get_new_interactions(near_field,ntree_X.dim_fac,gpu_device); //Doesn't work for new setup since the division is changed...
     interactions = filter_out_interactions(interactions,ntree_X,ntree_X);
+    x_var_all = get_low_variance_pairs<scalar_t,nd>(ntree_X,ntree_X.box_indices_sorted);
+    std::tie(x_var_all,tmp) = x_var_all.max(1);
+    max_x_var_all_effective_edge = (1-torch::sqrt(x_var_all/ntree_X.box_max_var))*ntree_X.edge/ls*0.5;
     std::tie(far_field,near_field) =
             separate_interactions<scalar_t,nd>(
                     interactions,
                     ntree_X.centers,
                     ntree_X.centers,
+                    max_x_var_all_effective_edge,
+                    max_x_var_all_effective_edge,
                     ntree_X.edge,
                     gpu_device);
     if (var_compression){

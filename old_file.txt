@@ -927,6 +927,45 @@ __global__ void boolean_separate_interactions(
     }
 }
 
+template <typename scalar_t, int nd>
+__global__ void boolean_separate_interactions_new(
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> centers_X,
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> centers_Y,
+        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> effective_var_dist_X,
+        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> effective_var_dist_Y,
+        const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions,
+        const scalar_t * edge,
+        torch::PackedTensorAccessor64<bool,1,torch::RestrictPtrTraits> is_far_field,
+        bool cov_mode
+){
+    int i = threadIdx.x+blockIdx.x*blockDim.x; // Thread nr
+    int n = interactions.size(0);
+    if (i>n-1){return;}
+    int bx = interactions[i][0];
+    int by = interactions[i][1];
+    scalar_t distance[nd];
+    scalar_t cx[nd];
+    scalar_t cy[nd];
+    for (int k=0;k<nd;k++){
+        cx[k] = centers_X[bx][k];
+        cy[k] = centers_Y[by][k];
+        distance[k]=cy[k] - cx[k];
+    }
+
+    if (get_2_norm<scalar_t,nd>(distance)>=(*edge*2)){
+        is_far_field[i]=true;
+    }
+//    if (effective_var_dist_X[bx]+effective_var_dist_Y[by]>3){
+//        if ((bx==by) && cov_mode){
+//            is_far_field[i]=false;
+//        }else{
+//            is_far_field[i]=true;
+//        }
+//    }
+
+
+
+}
 
 template<typename scalar_t>
 __inline__ __device__ scalar_t warpReduceMax(scalar_t val)
@@ -1073,6 +1112,8 @@ __global__ void box_variance(
         }
     }
 }
+
+
 
 
 
