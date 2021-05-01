@@ -927,6 +927,108 @@ __global__ void boolean_separate_interactions(
     }
 }
 
+template <typename scalar_t, int nd>
+__global__ void boolean_separate_interactions_small(
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> centers_X,
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> centers_Y,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> unique_og_X,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> unique_og_Y,
+        const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions,
+        const scalar_t * edge,
+        torch::PackedTensorAccessor64<bool,1,torch::RestrictPtrTraits> is_far_field,
+        torch::PackedTensorAccessor64<bool,1,torch::RestrictPtrTraits> is_small_field,
+        const int * nr_interpolation_points,
+        const float * min_points_box
+){
+    int i = threadIdx.x+blockIdx.x*blockDim.x; // Thread nr
+    int n = interactions.size(0);
+    if (i>n-1){return;}
+    int bx = interactions[i][0];
+    int by = interactions[i][1];
+    int interaction_size;
+    scalar_t distance[nd];
+    scalar_t cx[nd];
+    scalar_t cy[nd];
+    for (int k=0;k<nd;k++){
+        cx[k] = centers_X[bx][k];
+        cy[k] = centers_Y[by][k];
+        distance[k]=cy[k] - cx[k];
+        interaction_size = unique_og_X[bx]+unique_og_Y[by];
+    }
+
+    if (get_2_norm<scalar_t,nd>(distance)>=(*edge*2)){
+        if (interaction_size<(2* *nr_interpolation_points)){
+            is_small_field[i]=true;
+        }else{
+            is_far_field[i]=true;
+        }
+    }else{
+        if ((float)interaction_size<(2* *min_points_box)){
+            is_small_field[i]=true;
+        }
+
+    }
+}
+
+template <typename scalar_t, int nd>
+__global__ void boolean_separate_interactions_small_var_comp(
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> centers_X,
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> centers_Y,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> unique_og_X,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> unique_og_Y,
+        const torch::PackedTensorAccessor64<float,1,torch::RestrictPtrTraits> eff_var_X,
+        const torch::PackedTensorAccessor64<float,1,torch::RestrictPtrTraits> eff_var_Y,
+        const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions,
+        const scalar_t * edge,
+        torch::PackedTensorAccessor64<bool,1,torch::RestrictPtrTraits> is_far_field,
+        torch::PackedTensorAccessor64<bool,1,torch::RestrictPtrTraits> is_small_field,
+        const int * nr_interpolation_points,
+        const float * min_points_box,
+        const scalar_t * eff_var_limit
+){
+    int i = threadIdx.x+blockIdx.x*blockDim.x; // Thread nr
+    int n = interactions.size(0);
+    if (i>n-1){return;}
+    int bx = interactions[i][0];
+    int by = interactions[i][1];
+    int interaction_size;
+    scalar_t tot_var;
+    scalar_t distance[nd];
+    scalar_t cx[nd];
+    scalar_t cy[nd];
+    for (int k=0;k<nd;k++){
+        cx[k] = centers_X[bx][k];
+        cy[k] = centers_Y[by][k];
+        distance[k]=cy[k] - cx[k];
+        interaction_size = unique_og_X[bx]+unique_og_Y[by];
+        tot_var = eff_var_X[bx] + eff_var_Y[by];
+    }
+
+    if (tot_var<= *eff_var_limit){
+        if (interaction_size<(2* *nr_interpolation_points)){
+            is_small_field[i]=true;
+        }else{
+            is_far_field[i]=true;
+        }
+    }else{
+        if (get_2_norm<scalar_t,nd>(distance)>=(*edge*2)){
+            if (interaction_size<(2* *nr_interpolation_points)){
+                is_small_field[i]=true;
+            }else{
+                is_far_field[i]=true;
+            }
+        }else{
+            if ((float)interaction_size<(2* *min_points_box)){
+                is_small_field[i]=true;
+            }
+        }
+    }
+
+
+
+}
+
+
 
 template<typename scalar_t>
 __inline__ __device__ scalar_t warpReduceMax(scalar_t val)

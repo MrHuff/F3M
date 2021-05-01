@@ -1,4 +1,3 @@
-from matplotlib import pyplot as plt
 import numpy as np
 from math import pi
 from gpytorch.kernels import RBFKernel,Kernel
@@ -126,20 +125,20 @@ def interpolation_xy(x,y,k,ls): #Key is equivariance such that the same "edge" c
         print('midker ',mid_ker)
         mid_res =mid_ker@torch.from_numpy(summed_y.sum(axis=0)).float()
         approx_res = torch.from_numpy(interp_list_x).float() @ mid_res  #incorrect, not symmetric!
-        # kernel_approx = torch.from_numpy(interp_list).float()@(mid_ker@ torch.from_numpy(interp_list).float().t())
+        kernel_approx = torch.from_numpy(interp_list_x).float()@(mid_ker@ torch.from_numpy(interp_list_y).float().t())
     print(res[:10])
     print(approx_res[:10])
     print('Relative error: ',((res-approx_res)/res).abs().mean())
-    # print(kernel_approx[:10,:])
-    # with torch.no_grad():
-    #     print(rbf(torch.from_numpy(x).float(),torch.from_numpy(x).float()).evaluate()[:10,:])
+    print(kernel_approx[:10,:])
+    with torch.no_grad():
+        print(rbf(torch.from_numpy(x).float(),torch.from_numpy(x).float()).evaluate()[:10,:])
 
 if __name__ == '__main__':
     rbf = RBFKernel()
 
     n=1000
-    k =4
-    x = np.random.randn(n) *0.3
+    k =1000
+    x = np.random.randn(n)*1000000
     y = x
     b = np.random.randn(n)
 
