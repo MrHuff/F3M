@@ -94,6 +94,8 @@ struct n_tree_cuda{
     box_indices_sorted,
     box_indices_sorted_og,
     centers,
+    centers_new,
+    empty_box_indices,
     non_empty_mask,
     box_idxs,
     unique_counts_cum,
@@ -183,11 +185,14 @@ struct n_tree_cuda{
         box_indices_sorted = box_idxs.index({non_empty_mask});
         unique_counts_og = unique_counts;
         unique_counts = unique_counts.index({non_empty_mask});
+        centers_new = centers.index({non_empty_mask});
+        empty_box_indices = box_idxs.index({torch::logical_not(non_empty_mask)});
         avg_nr_points = unique_counts.toType(torch::kFloat32).max().item<float>();
         auto median_nr_of_points = unique_counts.toType(torch::kFloat32).median().item<float>();
         std::cout<<avg_nr_points<<std::endl;
         std::cout<<median_nr_of_points<<std::endl;
-//        std::cout<<unique_counts<<std::endl;
+        std::cout<< "boxes removed " <<unique_counts.size(0)<<std::endl;
+        std::cout<<"boxes og "<<unique_counts_og.size(0)<<std::endl;
         multiply_gpu = multiply_gpu*multiply_gpu_base;
 
     };
@@ -691,11 +696,11 @@ std::tuple<torch::Tensor,torch::Tensor> parse_cheb_data(
 }
 
 std::tuple<torch::Tensor,torch::Tensor> unbind_sort(torch::Tensor & interactions){
-    interactions = interactions.index({torch::argsort(interactions.slice(1,0,1).squeeze()),torch::indexing::Slice()});
+//    interactions = interactions.index({torch::argsort(interactions.slice(1,0,1).squeeze()),torch::indexing::Slice()});
     if (interactions.dim()<2){
         interactions = interactions.unsqueeze(0);
     }
-    std::vector<torch::Tensor> tmp = interactions.unbind(1);
+    std::vector<torch::Tensor>  tmp = interactions.unbind(1);
     return std::make_tuple(tmp[0],tmp[1]);
 }
 
@@ -749,16 +754,21 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> separate_interactions(
     torch::Tensor &unique_X_og  = ntree_X.unique_counts_og;
     torch::Tensor &unique_Y_og  = ntree_Y.unique_counts_og;
     torch::Tensor & edge  = ntree_X.edge;
-    
+
     if(var_comp){
-        torch::Tensor x_var,y_var,max_var_x,max_var_y,tmp;
+        torch::Tensor x_var,max_var_x,max_var_y,tmp;
         auto *d_eff_var_limit = allocate_scalar_to_cuda<scalar_t>(eff_var_limit);
         x_var = get_low_variance_pairs<scalar_t,nd>(ntree_X,ntree_X.box_indices_sorted_og);
         std::tie(max_var_x,tmp) = x_var.max(1);
         max_var_x = max_var_x/ls;
-        y_var = get_low_variance_pairs<scalar_t,nd>(ntree_Y,ntree_Y.box_indices_sorted_og);
-        std::tie(max_var_y,tmp) = y_var.max(1);
-        max_var_y = max_var_y/ls;
+        if (ntree_X.data.data_ptr()!=ntree_Y.data.data_ptr()){
+            torch::Tensor y_var = get_low_variance_pairs<scalar_t,nd>(ntree_Y,ntree_Y.box_indices_sorted_og);
+            std::tie(max_var_y,tmp) = y_var.max(1);
+            max_var_y = max_var_y/ls;
+        }else{
+            max_var_y = max_var_x;
+        }
+
         boolean_separate_interactions_small_var_comp<scalar_t,nd><<<gridSize,blockSize>>>(
                 centers_X.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
                 centers_Y.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
@@ -813,7 +823,19 @@ torch::Tensor filter_out_interactions(torch::Tensor & interactions,
             y_keep.packed_accessor64<bool,1,torch::RestrictPtrTraits>(),
             mask.packed_accessor64<bool,1,torch::RestrictPtrTraits>()
             );
-    return interactions.index({mask});
+    interactions = interactions.index({mask});
+    interactions = interactions.index({torch::argsort(interactions.slice(1,0,1).squeeze()),torch::indexing::Slice()});
+
+//    torch::Tensor interactions_copy = interactions;
+    std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<int>(nd, interactions.size(0));
+    torch::Tensor &removed_idx_X = ntree_X.empty_box_indices;
+    torch::Tensor &removed_idx_Y = ntree_Y.empty_box_indices;
+    transpose_to_existing_only<<<gridSize,blockSize>>>(
+            interactions.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
+            removed_idx_X.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+            removed_idx_Y.packed_accessor64<int,1,torch::RestrictPtrTraits>()
+    );
+    return interactions;
 
 }
 
@@ -942,7 +964,9 @@ torch::Tensor far_field_run_XX(
 
     std::tie(cheb_data_X,laplace_combinations,node_list_cum,chebnodes_1D,cheb_w) = smolyak_grid<scalar_t,nd>(nr_of_interpolation_points,gpu_device);
     interactions = get_new_interactions(near_field,ntree_X.dim_fac,gpu_device); //Doesn't work for new setup since the division is changed...
+    std::cout<<"pre filter interactions size "<<interactions.size(0)<<std::endl;
     interactions = filter_out_interactions(interactions,ntree_X,ntree_X);
+    std::cout<<"post filter interactions size "<<interactions.size(0)<<std::endl;
     std::tie(far_field,small_field,near_field) =
             separate_interactions<scalar_t,nd>(
                     interactions,
@@ -955,30 +979,15 @@ torch::Tensor far_field_run_XX(
                     var_compression,
                     eff_var_limit
             );
+    std::cout<<"far_field size "<<far_field.size(0)<<std::endl;
+    std::cout<<"small_field "<<small_field.size(0)<<std::endl;
+    std::cout<< "near field size: " <<near_field.size(0)<<std::endl;
     if (small_field.numel()>0) {
         near_field_run<scalar_t, nd>(ntree_X, ntree_X, small_field, output, b, ls, gpu_device);
     }
-
-//    if (var_compression){
-//        std::vector<torch::Tensor> vec_near_field = near_field.unbind(1);
-//        torch::Tensor boolean_tensor = vec_near_field[0]!=vec_near_field[1];
-//        torch::Tensor non_pair = near_field.index({boolean_tensor}); // get non  pair interactions
-//        torch::Tensor pair = vec_near_field[0].index({torch::logical_not(boolean_tensor)} ); // get non  pair interactions
-//        torch::Tensor bool_big_enough = ntree_X.unique_counts_og.index({pair.toType(torch::kLong)})>nr_of_interpolation_points;
-//        torch::Tensor big_enough_boxes  = pair.index({bool_big_enough});
-//        if (big_enough_boxes.numel()>0){
-//            torch::Tensor append_back_1 = pair.index({torch::logical_not(bool_big_enough)}).unsqueeze(-1).repeat({1,2});
-//            x_var = get_low_variance_pairs<scalar_t,nd>(ntree_X,big_enough_boxes);
-//            std::tie(max_var,tmp) = x_var.max(1);
-//            torch::Tensor bool_effective_variance = (max_var/ls)<=eff_var_limit;
-//            torch::Tensor append_back_2 = big_enough_boxes.index({torch::logical_not(bool_effective_variance)}).unsqueeze(-1).repeat({1,2});
-//            torch::Tensor smooth_field =big_enough_boxes.index({bool_effective_variance}).unsqueeze(-1).repeat({1,2});
-//            near_field = torch::cat({non_pair,append_back_1,append_back_2},0);
-//            far_field = torch::cat({far_field,smooth_field});
-//        };
-//    }
     if (far_field.numel()>0) {
         torch::Tensor cheb_data = cheb_data_X*ntree_X.edge/2.+ntree_X.edge/2.; //scaling lagrange nodes to edge scale
+        std::cout<<"low_rank_y "<<cheb_data_X.size(0)*ntree_X.centers.size(0)<<std::endl;
         if(far_field.size(0)>1e8){
             std::vector<torch::Tensor> chunked = torch::chunk(far_field,4,0);
             for (torch::Tensor & el:chunked){

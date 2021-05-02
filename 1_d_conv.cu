@@ -966,7 +966,6 @@ __global__ void boolean_separate_interactions_small(
         if ((float)interaction_size<(2* *min_points_box)){
             is_small_field[i]=true;
         }
-
     }
 }
 
@@ -1127,7 +1126,36 @@ __global__ void get_keep_mask(
     if (tid>interactions.size(0)-1){return;}
     output[tid] = keep_x_box[interactions[tid][0]]*keep_y_box[interactions[tid][1]];
 }
-
+__global__ void transpose_to_existing_only(
+        torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> removed_indices_x,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> removed_indices_y
+){
+    int tid = threadIdx.x+blockDim.x*blockIdx.x;
+    if (tid>interactions.size(0)-1){return;}
+    unsigned int nx = removed_indices_x.size(0);
+    unsigned int ny =  removed_indices_y.size(0);
+    int acc_x=0;
+    int acc_y=0;
+    int interaction_x = interactions[tid][0];
+    int interaction_y = interactions[tid][1];
+    for (int i=0;i<nx;i++){
+        if(interaction_x<removed_indices_x[i]){
+            interactions[tid][0] = interaction_x-acc_x;
+            break;
+        }else{
+            acc_x+=1;
+        }
+    }
+    for (int j=0;j<ny;j++){
+        if(interaction_y<removed_indices_y[j]){
+            interactions[tid][1] = interaction_y-acc_y;
+            break;
+        }else{
+            acc_y+=1;
+        }
+    }
+}
 
 template<typename scalar_t,int cols>
 __global__ void box_variance(
