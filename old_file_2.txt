@@ -1044,7 +1044,7 @@ torch::Tensor FFM_X(
     n_tree_cuda<scalar_t,nd> ntree_X = n_tree_cuda<scalar_t,nd>(edge,X_data,xmin,xmax,gpu_device);
     while (near_field.numel()>0 and ntree_X.avg_nr_points > min_points){
         ntree_X.divide();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
-        near_field = far_field_run_XX<scalar_t,nd>(
+        near_field = far_field_run<scalar_t,nd>(
                     ntree_X,
                     near_field,
                     output,
