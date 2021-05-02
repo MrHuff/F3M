@@ -1157,6 +1157,7 @@ __global__ void transpose_to_existing_only(
     }
 }
 
+
 template<typename scalar_t,int cols>
 __global__ void box_variance(
         const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,

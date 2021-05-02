@@ -93,14 +93,18 @@ struct n_tree_cuda{
     multiply_gpu,
     box_indices_sorted,
     box_indices_sorted_og,
+    box_indices_sorted_reindexed,
     centers,
     centers_new,
     empty_box_indices,
     non_empty_mask,
     box_idxs,
     unique_counts_cum,
+    unique_counts_cum_reindexed,
     coord_tensor,
-    perm;
+    perm,
+    tmp_1,
+    tmp_2;
     std::string device;
     int dim_fac,depth;
     float avg_nr_points;
@@ -194,6 +198,8 @@ struct n_tree_cuda{
         std::cout<< "boxes removed " <<unique_counts.size(0)<<std::endl;
         std::cout<<"boxes og "<<unique_counts_og.size(0)<<std::endl;
         multiply_gpu = multiply_gpu*multiply_gpu_base;
+        box_indices_sorted_reindexed = torch::arange(centers_new.size(0)).toType(torch::kInt32).to(device);;
+        std::tie(unique_counts_cum_reindexed,tmp_1,tmp_2) = torch::unique_consecutive(unique_counts_cum);
 
     };
 
@@ -403,6 +409,26 @@ torch::Tensor get_w_j_first_kind(int & nr_of_nodes){
     return output;
 }
 
+template <typename scalar_t,int nd>
+torch::Tensor far_field_readapt_indices(torch::Tensor & far_field,
+        n_tree_cuda<scalar_t,nd>& ntree_X,
+        n_tree_cuda<scalar_t,nd>& ntree_Y
+
+){
+    dim3 blockSize,gridSize;
+    int memory;
+    std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<int>(2, far_field.size(0));
+    torch::Tensor &removed_idx_X = ntree_X.empty_box_indices;
+    torch::Tensor &removed_idx_Y = ntree_Y.empty_box_indices;
+    transpose_to_existing_only<<<gridSize,blockSize>>>(
+            far_field.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
+            removed_idx_X.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+            removed_idx_Y.packed_accessor64<int,1,torch::RestrictPtrTraits>()
+    );
+    return far_field;
+
+}
+
 template <typename scalar_t>
 torch::Tensor get_w_j_second_kind(int & nr_of_nodes){
     torch::Tensor output = torch::zeros({nr_of_nodes}).toType(dtype<scalar_t>());
@@ -476,7 +502,7 @@ void apply_laplace_interpolation_v2(
     torch::Tensor & boxes_count = n_tree.unique_counts;
     torch::Tensor & idx_reordering = n_tree.sorted_index;
     torch::Tensor & data = n_tree.data;
-    torch::Tensor & centers = n_tree.centers;
+    torch::Tensor & centers = n_tree.centers_new;
     torch::Tensor & edge = n_tree.edge;
 
     dim3 blockSize,gridSize;
@@ -484,9 +510,9 @@ void apply_laplace_interpolation_v2(
     torch::Tensor indicator,box_block;
     int min_size=boxes_count.min().item<int>();
     blkSize = optimal_blocksize(min_size);
-    std::tie(blockSize,gridSize,memory,indicator,box_block) = skip_kernel_launch<scalar_t>(nd,blkSize,boxes_count,n_tree.box_indices_sorted);
+    std::tie(blockSize,gridSize,memory,indicator,box_block) = skip_kernel_launch<scalar_t>(nd,blkSize,boxes_count,n_tree.box_indices_sorted_reindexed);
     memory = memory+2*nodes.size(0)*sizeof(scalar_t)+(nd+1)*sizeof(int); //Seems the last write is where the trouble is...
-    torch::Tensor boxes_count_cumulative = n_tree.unique_counts_cum;
+    torch::Tensor boxes_count_cumulative = n_tree.unique_counts_cum_reindexed;
     if (transpose){
 
         lagrange_shared<scalar_t, nd><<<gridSize, blockSize, memory>>>(
@@ -584,7 +610,7 @@ void far_field_compute_v2(
                        torch::Tensor & cheb_w
 ){
     torch::Tensor low_rank_y;
-    low_rank_y = torch::zeros({cheb_data_X.size(0)*x_box.centers.size(0),b.size(1)}).toType(dtype<scalar_t>()).to(device_gpu);
+    low_rank_y = torch::zeros({cheb_data_X.size(0)*x_box.centers_new.size(0),b.size(1)}).toType(dtype<scalar_t>()).to(device_gpu);
     apply_laplace_interpolation_v2<scalar_t,nd>(y_box,
                                             b,
                                             device_gpu,
@@ -595,19 +621,17 @@ void far_field_compute_v2(
                                             true,
                                             low_rank_y); //no problems here!
 
-    //Consider limiting number of boxes!!!
     low_rank_y = setup_skip_conv<scalar_t,nd>( //error happens here
             cheb_data_X,
             low_rank_y,
-            x_box.centers,
-            y_box.centers,
-            x_box.box_indices_sorted,
+            x_box.centers_new,
+            y_box.centers_new,
+            x_box.box_indices_sorted_reindexed,
             ls,
             device_gpu,
             interactions_x_parsed,
             interactions_y
-            );
-    //std::cout<<low_rank_y.slice(0,0,5)<<std::endl;
+    );
     apply_laplace_interpolation_v2<scalar_t,nd>(x_box,
                                             low_rank_y,
                                             device_gpu,
@@ -696,7 +720,6 @@ std::tuple<torch::Tensor,torch::Tensor> parse_cheb_data(
 }
 
 std::tuple<torch::Tensor,torch::Tensor> unbind_sort(torch::Tensor & interactions){
-//    interactions = interactions.index({torch::argsort(interactions.slice(1,0,1).squeeze()),torch::indexing::Slice()});
     if (interactions.dim()<2){
         interactions = interactions.unsqueeze(0);
     }
@@ -754,7 +777,6 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> separate_interactions(
     torch::Tensor &unique_X_og  = ntree_X.unique_counts_og;
     torch::Tensor &unique_Y_og  = ntree_Y.unique_counts_og;
     torch::Tensor & edge  = ntree_X.edge;
-
     if(var_comp){
         torch::Tensor x_var,max_var_x,max_var_y,tmp;
         auto *d_eff_var_limit = allocate_scalar_to_cuda<scalar_t>(eff_var_limit);
@@ -826,15 +848,6 @@ torch::Tensor filter_out_interactions(torch::Tensor & interactions,
     interactions = interactions.index({mask});
     interactions = interactions.index({torch::argsort(interactions.slice(1,0,1).squeeze()),torch::indexing::Slice()});
 
-//    torch::Tensor interactions_copy = interactions;
-    std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<int>(nd, interactions.size(0));
-    torch::Tensor &removed_idx_X = ntree_X.empty_box_indices;
-    torch::Tensor &removed_idx_Y = ntree_Y.empty_box_indices;
-    transpose_to_existing_only<<<gridSize,blockSize>>>(
-            interactions.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
-            removed_idx_X.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
-            removed_idx_Y.packed_accessor64<int,1,torch::RestrictPtrTraits>()
-    );
     return interactions;
 
 }
@@ -931,8 +944,6 @@ void near_field_run(
         const std::string & gpu_device
 ){
     torch::Tensor interactions_x,interactions_y,interactions_x_parsed;
-//    float work_rate = (float)near_field.size(0)/((float)ntree_X.unique_counts.size(0)*ntree_X.unique_counts.size(0));
-//    std::cout<<work_rate<<std::endl;
     std::tie(interactions_x,interactions_y) = unbind_sort(near_field);
     interactions_x_parsed = process_interactions<nd>(interactions_x,ntree_X.centers.size(0),gpu_device);
     near_field_compute_v2<scalar_t,nd>(interactions_x_parsed,interactions_y,ntree_X, ntree_Y, output, b, gpu_device,ls); //Make sure this thing works first!
@@ -987,12 +998,13 @@ torch::Tensor far_field_run_XX(
     }
     if (far_field.numel()>0) {
         torch::Tensor cheb_data = cheb_data_X*ntree_X.edge/2.+ntree_X.edge/2.; //scaling lagrange nodes to edge scale
-        std::cout<<"low_rank_y "<<cheb_data_X.size(0)*ntree_X.centers.size(0)<<std::endl;
+        std::cout<<"low_rank_y "<<cheb_data_X.size(0)*ntree_X.centers_new.size(0)<<std::endl;
+        far_field = far_field_readapt_indices<scalar_t,nd>(far_field,ntree_X,ntree_X);
         if(far_field.size(0)>1e8){
             std::vector<torch::Tensor> chunked = torch::chunk(far_field,4,0);
             for (torch::Tensor & el:chunked){
                 std::tie(interactions_x,interactions_y) = unbind_sort(el);
-                interactions_x_parsed = process_interactions<nd>(interactions_x,ntree_X.centers.size(0),gpu_device);
+                interactions_x_parsed = process_interactions<nd>(interactions_x,ntree_X.centers_new.size(0),gpu_device);
                 far_field_compute_v2<scalar_t,nd>( //Very many far field interactions quite fast...
                         interactions_x_parsed,
                         interactions_y,
@@ -1011,7 +1023,7 @@ torch::Tensor far_field_run_XX(
             }
         }else{
             std::tie(interactions_x,interactions_y) = unbind_sort(far_field);
-            interactions_x_parsed = process_interactions<nd>(interactions_x,ntree_X.centers.size(0),gpu_device);
+            interactions_x_parsed = process_interactions<nd>(interactions_x,ntree_X.centers_new.size(0),gpu_device);
             far_field_compute_v2<scalar_t,nd>( //Very many far field interactions quite fast...
                     interactions_x_parsed,
                     interactions_y,
@@ -1031,11 +1043,6 @@ torch::Tensor far_field_run_XX(
     }
     return near_field;
 }
-
-
-
-
-
 
 template <typename scalar_t, int nd>
 torch::Tensor FFM_XY(
@@ -1177,10 +1184,10 @@ torch::Tensor SUPERSMOOTH_FFM_X(
     torch::Tensor cheb_data = cheb_data_X*ntree_X.edge/2.+ntree_X.edge/2.; //scaling lagrange nodes to edge scale
 
     if (cur_boxes*cur_boxes>1e9){
-        std::vector<torch::Tensor> chunked_bits = torch::chunk(ntree_X.box_indices_sorted,4,0);
+        std::vector<torch::Tensor> chunked_bits = torch::chunk(ntree_X.box_indices_sorted_reindexed,4,0);
         for (torch::Tensor &el:chunked_bits) {
             interactions_x = el.repeat_interleave(cur_boxes);
-            interactions_y = ntree_X.box_indices_sorted.repeat(cur_boxes);
+            interactions_y = ntree_X.box_indices_sorted_reindexed.repeat(cur_boxes);
             interactions_x_parsed = process_interactions<nd>(interactions_x, ntree_X.centers.size(0), gpu_device);
             far_field_compute_v2<scalar_t, nd>( //Very many far field interactions quite fast...
                     interactions_x_parsed,
@@ -1199,9 +1206,9 @@ torch::Tensor SUPERSMOOTH_FFM_X(
             ); //far field comput
         }
     }else{
-        interactions_x = ntree_X.box_indices_sorted.repeat_interleave(cur_boxes);
-        interactions_y = ntree_X.box_indices_sorted.repeat(cur_boxes);
-        interactions_x_parsed = process_interactions<nd>(interactions_x,ntree_X.centers.size(0),gpu_device);
+        interactions_x = ntree_X.box_indices_sorted_reindexed.repeat_interleave(cur_boxes);
+        interactions_y = ntree_X.box_indices_sorted_reindexed.repeat(cur_boxes);
+        interactions_x_parsed = process_interactions<nd>(interactions_x,ntree_X.centers_new.size(0),gpu_device);
         far_field_compute_v2<scalar_t,nd>( //Very many far field interactions quite fast...
                 interactions_x_parsed,
                 interactions_y,
