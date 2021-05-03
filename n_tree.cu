@@ -154,6 +154,7 @@ struct n_tree_cuda{
         multiply_gpu = multiply_gpu*multiply_gpu_base;
         box_indices_sorted_reindexed = torch::arange(centers.size(0)).toType(torch::kInt32).to(device);;
         std::tie(unique_counts_cum_reindexed,tmp_1,tmp_2) = torch::unique_consecutive(unique_counts_cum);
+//        std::cout<<avg_nr_points<<std::endl;
 
     };
 
@@ -678,7 +679,6 @@ std::tuple<torch::Tensor,torch::Tensor> parse_cheb_data(
 }
 
 std::tuple<torch::Tensor,torch::Tensor> unbind_sort(torch::Tensor & interactions){
-    interactions = interactions.index({torch::argsort(interactions.slice(1,0,1).squeeze()),torch::indexing::Slice()});
     if (interactions.dim()<2){
         interactions = interactions.unsqueeze(0);
     }
@@ -716,13 +716,13 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> separate_interactions(
         n_tree_cuda<scalar_t,nd> & ntree_X,
         n_tree_cuda<scalar_t,nd> & ntree_Y,
         const std::string & gpu_device,
-        float & min_points,
+        int & small_field_limit,
         int & nr_of_interpolation_points,
         scalar_t & ls,
         bool & var_comp,
         scalar_t & eff_var_limit
 ){
-    auto *d_min_points = allocate_scalar_to_cuda<float>(min_points);
+    auto *d_small_field_limit = allocate_scalar_to_cuda<int>(small_field_limit);
     auto *d_nr_of_interpolation_points = allocate_scalar_to_cuda<int>(nr_of_interpolation_points);
 
     dim3 blockSize,gridSize;
@@ -762,7 +762,7 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> separate_interactions(
                 far_field_mask.packed_accessor64<bool,1,torch::RestrictPtrTraits>(),
                 small_field_mask.packed_accessor64<bool,1,torch::RestrictPtrTraits>(),
                 d_nr_of_interpolation_points,
-                d_min_points,
+                d_small_field_limit,
                 d_eff_var_limit
         );
         cudaDeviceSynchronize();
@@ -777,7 +777,7 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> separate_interactions(
                 far_field_mask.packed_accessor64<bool,1,torch::RestrictPtrTraits>(),
                 small_field_mask.packed_accessor64<bool,1,torch::RestrictPtrTraits>(),
                 d_nr_of_interpolation_points,
-                d_min_points
+                d_small_field_limit
         );
         cudaDeviceSynchronize();
 
@@ -806,6 +806,7 @@ torch::Tensor filter_out_interactions(torch::Tensor & interactions,
             );
     interactions = interactions.index({mask});
     interactions = interactions_readapt_indices<scalar_t, nd>(interactions, ntree_X, ntree_Y);
+    interactions = interactions.index({torch::argsort(interactions.slice(1,0,1).squeeze()),torch::indexing::Slice()});
 
     return interactions;
 
@@ -859,7 +860,8 @@ torch::Tensor far_field_run(
         float & min_points,
         const std::string & gpu_device,
         bool & var_compression,
-        scalar_t  & eff_var_limit
+        scalar_t  & eff_var_limit,
+        int & small_field_limit
 ){
     torch::Tensor interactions,far_field,interactions_x,interactions_y,interactions_x_parsed,cheb_data_X,
             laplace_combinations,
@@ -880,7 +882,7 @@ torch::Tensor far_field_run(
                     ntree_X,
                     ntree_Y,
                     gpu_device,
-                    min_points,
+                    small_field_limit,
                     nr_of_interpolation_points,
                     ls,
                     var_compression,
@@ -924,7 +926,8 @@ torch::Tensor FFM_XY(
         float &min_points,
         int & nr_of_interpolation_points,
         bool &var_compression,
-        scalar_t  & eff_var_limit
+        scalar_t  & eff_var_limit,
+        int & small_field_limit
 ) {
 
     torch::Tensor output = torch::zeros({X_data.size(0),b.size(1)}).to(gpu_device); //initialize empty output
@@ -951,7 +954,8 @@ torch::Tensor FFM_XY(
                     min_points,
                     gpu_device,
                     var_compression,
-                    eff_var_limit
+                    eff_var_limit,
+                    small_field_limit
             );
         }
 
@@ -977,7 +981,8 @@ torch::Tensor FFM_XY(
                     min_points,
                     gpu_device,
                     var_compression,
-                    eff_var_limit
+                    eff_var_limit,
+                    small_field_limit
             );
         }
         if (near_field.numel()>0){
@@ -1109,6 +1114,7 @@ struct FFM_object{
     bool &var_compression;
     scalar_t  & eff_var_limit;
     bool & smooth_flag;
+    int & small_field_limit;
 
     FFM_object( //constructor
             torch::Tensor & X_data,
@@ -1119,9 +1125,10 @@ struct FFM_object{
     int & nr_of_interpolation_points,
     bool & var_comp,
     scalar_t  & eff_var,
-    bool & smooth_flag
+    bool & smooth_flag,
+    int & small_field_limit
     ): X_data(X_data), Y_data(Y_data),ls(ls),gpu_device(gpu_device),min_points(min_points),nr_of_interpolation_points(nr_of_interpolation_points),
-    var_compression(var_comp),eff_var_limit(eff_var),smooth_flag(smooth_flag){
+    var_compression(var_comp),eff_var_limit(eff_var),smooth_flag(smooth_flag),small_field_limit(small_field_limit){
     };
     virtual torch::Tensor operator* (torch::Tensor & b){
         if (X_data.data_ptr()==Y_data.data_ptr()){
@@ -1146,7 +1153,8 @@ struct FFM_object{
                         min_points,
                         nr_of_interpolation_points,
                         var_compression,
-                        eff_var_limit
+                        eff_var_limit,
+                        small_field_limit
                 );
             }
         }else{
@@ -1171,12 +1179,11 @@ struct FFM_object{
                         min_points,
                         nr_of_interpolation_points,
                         var_compression,
-                        eff_var_limit
+                        eff_var_limit,
+                        small_field_limit
                 );
             }
         }
-
-
     };
 };
 template <typename scalar_t, int nd>
@@ -1190,10 +1197,10 @@ struct exact_MV : FFM_object<scalar_t,nd>{
                          int & nr_of_interpolation_points,
                          bool &var_compression,
                         scalar_t  & eff_var_limit,
-                        bool & smooth_flag
-
+                        bool & smooth_flag,
+                        int & small_field_limit
                     )
-                         : FFM_object<scalar_t,nd>(X_data, Y_data, ls, gpu_device,min_points,nr_of_interpolation_points,var_compression,eff_var_limit,smooth_flag){};
+                         : FFM_object<scalar_t,nd>(X_data, Y_data, ls, gpu_device,min_points,nr_of_interpolation_points,var_compression,eff_var_limit,smooth_flag,small_field_limit){};
     torch::Tensor operator* (torch::Tensor & b) override{
         return  rbf_call<scalar_t,nd>(
                 FFM_object<scalar_t,nd>::X_data,

@@ -900,32 +900,6 @@ __global__ void get_centers(
 }
 
 
-template <typename scalar_t, int nd>
-__global__ void boolean_separate_interactions(
-        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> centers_X,
-        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> centers_Y,
-        const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions,
-        const scalar_t * edge,
-        torch::PackedTensorAccessor64<bool,1,torch::RestrictPtrTraits> is_far_field
-){
-    int i = threadIdx.x+blockIdx.x*blockDim.x; // Thread nr
-    int n = interactions.size(0);
-    if (i>n-1){return;}
-    int bx = interactions[i][0];
-    int by = interactions[i][1];
-    scalar_t distance[nd];
-    scalar_t cx[nd];
-    scalar_t cy[nd];
-    for (int k=0;k<nd;k++){
-        cx[k] = centers_X[bx][k];
-        cy[k] = centers_Y[by][k];
-        distance[k]=cy[k] - cx[k];
-    }
-
-    if (get_2_norm<scalar_t,nd>(distance)>=(*edge*2)){
-        is_far_field[i]=true;
-    }
-}
 
 template <typename scalar_t, int nd>
 __global__ void boolean_separate_interactions_small(
@@ -938,7 +912,7 @@ __global__ void boolean_separate_interactions_small(
         torch::PackedTensorAccessor64<bool,1,torch::RestrictPtrTraits> is_far_field,
         torch::PackedTensorAccessor64<bool,1,torch::RestrictPtrTraits> is_small_field,
         const int * nr_interpolation_points,
-        const float * min_points_box
+        const int * small_field_limit
 ){
     int i = threadIdx.x+blockIdx.x*blockDim.x; // Thread nr
     int n = interactions.size(0);
@@ -963,7 +937,7 @@ __global__ void boolean_separate_interactions_small(
             is_far_field[i]=true;
         }
     }else{
-        if ((float)interaction_size<(2* *min_points_box)){
+        if (interaction_size<(2* *small_field_limit)){
             is_small_field[i]=true;
         }
     }
@@ -982,7 +956,7 @@ __global__ void boolean_separate_interactions_small_var_comp(
         torch::PackedTensorAccessor64<bool,1,torch::RestrictPtrTraits> is_far_field,
         torch::PackedTensorAccessor64<bool,1,torch::RestrictPtrTraits> is_small_field,
         const int * nr_interpolation_points,
-        const float * min_points_box,
+        const int * small_field_limit,
         const scalar_t * eff_var_limit
 ){
     int i = threadIdx.x+blockIdx.x*blockDim.x; // Thread nr
@@ -1004,7 +978,7 @@ __global__ void boolean_separate_interactions_small_var_comp(
     }
 
     if (tot_var<= *eff_var_limit){
-        if (interaction_size<(2* *nr_interpolation_points)){
+        if (interaction_size<(2* *small_field_limit)){
             is_small_field[i]=true;
         }else{
             is_far_field[i]=true;
@@ -1017,7 +991,7 @@ __global__ void boolean_separate_interactions_small_var_comp(
                 is_far_field[i]=true;
             }
         }else{
-            if ((float)interaction_size<(2* *min_points_box)){
+            if (interaction_size<(2* *small_field_limit)){
                 is_small_field[i]=true;
             }
         }
