@@ -24,4 +24,5 @@ set_property(TARGET torch_cpu PROPERTY INTERFACE_COMPILE_OPTIONS "")
 target_compile_options(cuda_n_body PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:
         -Xptxas -O3
         --use_fast_math
+        -lineinfo
         >)

@@ -466,7 +466,7 @@ __global__ void lagrange_shared(
     cheb_data_size = combinations.size(0);
     scalar_t factor = 2/(*edge); //rescaling data to langrange node interval (-1,1)
     laplace_n = lap_nodes.size(0);
-    a = x_boxes_count[box_ind];
+    a = x_boxes_count[box_ind]; //Error occurs here
     b = x_boxes_count[box_ind+1];
     i = a+ threadIdx.x+box_block_indicator[blockIdx.x]*blockDim.x; // current thread
     scalar_t x_i[nd];
@@ -695,7 +695,7 @@ __global__ void skip_conv_far_boxes_opt(//needs rethinking
                     int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
                     if (j < cheb_data_size) {
                         for (int k = 0; k < nd; k++) {
-                            yj[nd * threadIdx.x+k] = cheb_data[j][k]+centers_Y[int_m][k] - cX_i[k];
+                            yj[nd * threadIdx.x+k] = cheb_data[j][k]+centers_Y[int_m][k] - cX_i[k]; //Error also occurs here!
                         }
                         bj[threadIdx.x] = b_data[j + int_m * cheb_data_size][b_ind];
                     }

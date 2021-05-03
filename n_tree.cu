@@ -151,10 +151,6 @@ struct n_tree_cuda{
         centers = centers.index({non_empty_mask});
         empty_box_indices = box_idxs.index({torch::logical_not(non_empty_mask)});
         avg_nr_points = unique_counts.toType(torch::kFloat32).max().item<float>();
-        auto median_nr_of_points = unique_counts.toType(torch::kFloat32).median().item<float>();
-        std::cout<<avg_nr_points<<std::endl;
-        std::cout<<median_nr_of_points<<std::endl;
-        std::cout<< "boxes removed " <<unique_counts.size(0)<<std::endl;
         multiply_gpu = multiply_gpu*multiply_gpu_base;
         box_indices_sorted_reindexed = torch::arange(centers.size(0)).toType(torch::kInt32).to(device);;
         std::tie(unique_counts_cum_reindexed,tmp_1,tmp_2) = torch::unique_consecutive(unique_counts_cum);
@@ -456,6 +452,7 @@ void apply_laplace_interpolation_v2(
         torch::Tensor & cheb_w,
         const bool & transpose,
         torch::Tensor & output
+
         ){
     torch::Tensor & boxes_count = n_tree.unique_counts;
     torch::Tensor & idx_reordering = n_tree.sorted_index;
@@ -471,6 +468,7 @@ void apply_laplace_interpolation_v2(
     std::tie(blockSize,gridSize,memory,indicator,box_block) = skip_kernel_launch<scalar_t>(nd,blkSize,boxes_count,n_tree.box_indices_sorted_reindexed);
     memory = memory+2*nodes.size(0)*sizeof(scalar_t)+(nd+1)*sizeof(int); //Seems the last write is where the trouble is...
     torch::Tensor boxes_count_cumulative = n_tree.unique_counts_cum_reindexed;
+
     if (transpose){
 
         lagrange_shared<scalar_t, nd><<<gridSize, blockSize, memory>>>(
@@ -534,7 +532,7 @@ torch::Tensor setup_skip_conv(torch::Tensor &cheb_data,
     int memory;
     unique_sorted_boxes_idx = unique_sorted_boxes_idx.toType(torch::kInt32);
     std::tie(blockSize,gridSize,memory,indicator,box_block) = skip_kernel_launch<scalar_t>(nd,blkSize,boxes_count,unique_sorted_boxes_idx);
-    output = torch::zeros_like(b_data);
+    output = torch::zeros({ centers_X.size(0)*cheb_data.size(0),b_data.size(1)}).toType(dtype<scalar_t>()).to(device_gpu);
     skip_conv_far_boxes_opt<scalar_t,nd><<<gridSize,blockSize,memory>>>(
             cheb_data.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
             b_data.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
@@ -568,7 +566,8 @@ void far_field_compute_v2(
                        torch::Tensor & cheb_w
 ){
     torch::Tensor low_rank_y;
-    low_rank_y = torch::zeros({cheb_data_X.size(0)*x_box.centers.size(0),b.size(1)}).toType(dtype<scalar_t>()).to(device_gpu);
+    low_rank_y = torch::zeros({cheb_data_X.size(0)*y_box.centers.size(0),b.size(1)}).toType(dtype<scalar_t>()).to(device_gpu);
+    //Found the buggie, the low_rank_y is proportioned towards x, but when Y has more non empty boxes things implode!!!
     apply_laplace_interpolation_v2<scalar_t,nd>(y_box,
                                             b,
                                             device_gpu,
@@ -577,8 +576,8 @@ void far_field_compute_v2(
                                                 node_list_cum,
                                                 cheb_w,
                                             true,
-                                            low_rank_y); //no problems here!
-
+                                            low_rank_y
+                                            ); //no problems here!
     low_rank_y =  setup_skip_conv<scalar_t,nd>( //error happens here
             cheb_data_X,
             low_rank_y,
@@ -598,7 +597,8 @@ void far_field_compute_v2(
                                                 node_list_cum,
                                                 cheb_w,
                                                 false,
-                                            output);
+                                            output
+    );
 };
 torch::Tensor get_new_interactions(torch::Tensor & old_near_interactions, int & p,const std::string & gpu_device){//fix tmrw
     int n = old_near_interactions.size(0);
@@ -873,9 +873,7 @@ torch::Tensor far_field_run(
 
     std::tie(cheb_data_X,laplace_combinations,node_list_cum,chebnodes_1D,cheb_w) = smolyak_grid<scalar_t,nd>(nr_of_interpolation_points,gpu_device);
     interactions = get_new_interactions(near_field,ntree_X.dim_fac,gpu_device); //Doesn't work for new setup since the division is changed...
-    std::cout<<"pre filter interactions size "<<interactions.size(0)<<std::endl;
     interactions = filter_out_interactions(interactions,ntree_X,ntree_Y);
-    std::cout<<"post filter interactions size "<<interactions.size(0)<<std::endl;
     std::tie(far_field,small_field,near_field) =
             separate_interactions<scalar_t,nd>(
                     interactions,
@@ -888,15 +886,11 @@ torch::Tensor far_field_run(
                     var_compression,
                     eff_var_limit
             );
-    std::cout<<"far_field size "<<far_field.size(0)<<std::endl;
-    std::cout<<"small_field "<<small_field.size(0)<<std::endl;
-    std::cout<< "near field size: " <<near_field.size(0)<<std::endl;
     if (small_field.numel()>0) {
         near_field_run<scalar_t, nd>(ntree_X, ntree_Y, small_field, output, b, ls, gpu_device);
     }
     if (far_field.numel()>0) {
         torch::Tensor cheb_data = cheb_data_X*ntree_X.edge/2.+ntree_X.edge/2.; //scaling lagrange nodes to edge scale
-        std::cout<<"low_rank_y "<<cheb_data_X.size(0)*ntree_X.centers.size(0)<<std::endl;
         std::tie(interactions_x,interactions_y) = unbind_sort(far_field);
         interactions_x_parsed = process_interactions<nd>(interactions_x,ntree_X.centers.size(0),gpu_device);
         far_field_compute_v2<scalar_t,nd>( //Very many far field interactions quite fast...
