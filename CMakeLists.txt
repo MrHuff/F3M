@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.14)
 set(CMAKE_VERBOSE_MAKEFILE ON)
 set(CMAKE_CUDA_COMPILER "/usr/local/cuda-11.1/bin/nvcc")
 set(CMAKE_CUDA_STANDARD 14)
+set(CMAKE_BUILD_TYPE Debug)
 project(cuda_n_body CUDA)
 enable_language(C)
 enable_language(CXX)
@@ -23,4 +24,5 @@ set_property(TARGET torch_cpu PROPERTY INTERFACE_COMPILE_OPTIONS "")
 target_compile_options(cuda_n_body PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:
         -Xptxas -O3
         --use_fast_math
+        -lineinfo
         >)
