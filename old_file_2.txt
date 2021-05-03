@@ -1184,7 +1184,7 @@ struct FFM_object{
         if (X_data.data_ptr()==Y_data.data_ptr()){
 
             if (smooth_flag){
-                return SUPERSMOOTH_FFM_X<scalar_t,nd>(
+                return SUPERSMOOTH_FFM<scalar_t,nd>(
                         X_data,
                         b,
                         gpu_device,

@@ -938,12 +938,11 @@ torch::Tensor FFM_XY(
     if (X_data.data_ptr()==Y_data.data_ptr()){
         std::tie(edge,xmin,xmax) = calculate_edge_X<scalar_t,nd>(X_data,gpu_device); //actually calculate them
         n_tree_cuda<scalar_t,nd> ntree_X = n_tree_cuda<scalar_t,nd>(edge,X_data,xmin,xmax,gpu_device);
-        n_tree_cuda<scalar_t,nd> & ntree_Y = ntree_X;
         while (near_field.numel()>0 and ntree_X.avg_nr_points > min_points){
             ntree_X.divide();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
             near_field = far_field_run<scalar_t, nd>(
                     ntree_X,
-                    ntree_Y,
+                    ntree_X,
                     near_field,
                     output,
                     b,
@@ -957,7 +956,7 @@ torch::Tensor FFM_XY(
         }
 
         if (near_field.numel()>0){
-            near_field_run<scalar_t,nd>(ntree_X,ntree_Y,near_field,output,b,ls,gpu_device);
+            near_field_run<scalar_t,nd>(ntree_X,ntree_X,near_field,output,b,ls,gpu_device);
 
         }
     }else{
@@ -990,8 +989,9 @@ torch::Tensor FFM_XY(
 }
 
 template <typename scalar_t, int nd>
-torch::Tensor SUPERSMOOTH_FFM_X(
+torch::Tensor SUPERSMOOTH_FFM(
         torch::Tensor &X_data,
+        torch::Tensor &Y_data,
         torch::Tensor &b,
         const std::string & gpu_device,
         scalar_t & ls,
@@ -999,11 +999,8 @@ torch::Tensor SUPERSMOOTH_FFM_X(
         int & nr_of_interpolation_points,
         scalar_t  & eff_var_limit
 ) {
-//    torch::Tensor output = torch::empty({b.size(0),b.size(1)}).zero_().toType(dtype<scalar_t>()).to(gpu_device); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
     torch::Tensor output = torch::zeros_like(b).toType(dtype<scalar_t>()).to(gpu_device); //initialize empty output
     torch::Tensor edge,
-            xmin,
-            xmax,
             interactions,
     interactions_x,interactions_y,interactions_x_parsed,cheb_data_X,
             laplace_combinations,
@@ -1013,53 +1010,36 @@ torch::Tensor SUPERSMOOTH_FFM_X(
             bool_big_enough,
             var_boxes,
             x_var,
+            y_var,
             max_var,
+            max_var_y,
             tmp,
-            top_2
+            top_2,
+            xmin,
+            ymin,
+            xmax,
+            ymax
             ;
-            ;//these are needed to figure out which interactions are near/far field
-    std::tie(edge,xmin,xmax) = calculate_edge_X<scalar_t, nd>(X_data, gpu_device); //actually calculate them
-    n_tree_cuda<scalar_t,nd> ntree_X = n_tree_cuda<scalar_t,nd>(edge,X_data,xmin,xmax,gpu_device);
     float cur_var = 1e6;
-
-    while (cur_var>=eff_var_limit){
-        ntree_X.divide();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
-        x_var = get_low_variance_pairs<scalar_t,nd>(ntree_X,ntree_X.box_indices_sorted);
-        std::tie(max_var,tmp) = x_var.max(1);
-        std::tie(top_2,tmp) = max_var.topk(2);
-        cur_var = top_2.sum().item<scalar_t>()/ls;
-    };
-    int cur_boxes = ntree_X.box_indices_sorted.size(0);
-    std::tie(cheb_data_X,laplace_combinations,node_list_cum,chebnodes_1D,cheb_w) = smolyak_grid<scalar_t,nd>(nr_of_interpolation_points,gpu_device);
-    torch::Tensor cheb_data = cheb_data_X*ntree_X.edge/2.+ntree_X.edge/2.; //scaling lagrange nodes to edge scale
-
-    if (cur_boxes*cur_boxes>1e9){
-        std::vector<torch::Tensor> chunked_bits = torch::chunk(ntree_X.box_indices_sorted_reindexed,4,0);
-        for (torch::Tensor &el:chunked_bits) {
-            interactions_x = el.repeat_interleave(cur_boxes);
-            interactions_y = ntree_X.box_indices_sorted_reindexed.repeat(cur_boxes);
-            interactions_x_parsed = process_interactions<nd>(interactions_x, ntree_X.centers.size(0), gpu_device);
-            far_field_compute_v2<scalar_t, nd>( //Very many far field interactions quite fast...
-                    interactions_x_parsed,
-                    interactions_y,
-                    ntree_X,
-                    ntree_X,
-                    output,
-                    b,
-                    gpu_device,
-                    ls,
-                    chebnodes_1D,
-                    laplace_combinations,
-                    cheb_data,
-                    node_list_cum,
-                    cheb_w
-            ); //far field comput
-        }
-    }else{
+    if (X_data.data_ptr()==Y_data.data_ptr()) {
+        std::tie(edge, xmin, xmax) = calculate_edge_X<scalar_t, nd>(X_data, gpu_device); //actually calculate them
+        n_tree_cuda<scalar_t, nd> ntree_X = n_tree_cuda<scalar_t, nd>(edge, X_data, xmin, xmax, gpu_device);
+        while (cur_var >= eff_var_limit) {
+            ntree_X.divide();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
+            x_var = get_low_variance_pairs<scalar_t, nd>(ntree_X, ntree_X.box_indices_sorted);
+            std::tie(max_var, tmp) = x_var.max(1);
+            std::tie(top_2, tmp) = max_var.topk(2);
+            cur_var = top_2.sum().item<scalar_t>() / ls;
+        };
+        int cur_boxes = ntree_X.box_indices_sorted.size(0);
+        std::tie(cheb_data_X, laplace_combinations, node_list_cum, chebnodes_1D, cheb_w) = smolyak_grid<scalar_t, nd>(
+                nr_of_interpolation_points, gpu_device);
+        torch::Tensor cheb_data =
+                cheb_data_X * ntree_X.edge / 2. + ntree_X.edge / 2.; //scaling lagrange nodes to edge scale
         interactions_x = ntree_X.box_indices_sorted_reindexed.repeat_interleave(cur_boxes);
         interactions_y = ntree_X.box_indices_sorted_reindexed.repeat(cur_boxes);
-        interactions_x_parsed = process_interactions<nd>(interactions_x,ntree_X.centers.size(0),gpu_device);
-        far_field_compute_v2<scalar_t,nd>( //Very many far field interactions quite fast...
+        interactions_x_parsed = process_interactions<nd>(interactions_x, ntree_X.centers.size(0), gpu_device);
+        far_field_compute_v2<scalar_t, nd>( //Very many far field interactions quite fast...
                 interactions_x_parsed,
                 interactions_y,
                 ntree_X,
@@ -1074,7 +1054,47 @@ torch::Tensor SUPERSMOOTH_FFM_X(
                 node_list_cum,
                 cheb_w
         ); //far field comput
-        }
+    }else{
+        std::tie(edge,xmin,ymin,xmax,ymax) = calculate_edge<scalar_t,nd>(X_data,Y_data,gpu_device); //actually calculate them
+        n_tree_cuda<scalar_t,nd> ntree_X = n_tree_cuda<scalar_t,nd>(edge,X_data,xmin,xmax,gpu_device);
+        n_tree_cuda<scalar_t,nd> ntree_Y = n_tree_cuda<scalar_t,nd>(edge,Y_data,ymin,ymax,gpu_device);
+        while (cur_var >= eff_var_limit) {
+            ntree_X.divide();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
+            ntree_Y.divide();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
+            x_var = get_low_variance_pairs<scalar_t, nd>(ntree_X, ntree_X.box_indices_sorted);
+            y_var = get_low_variance_pairs<scalar_t, nd>(ntree_Y, ntree_Y.box_indices_sorted);
+            max_var = x_var.max();
+            max_var_y = y_var.max();
+            cur_var = (max_var+max_var_y).item<scalar_t>() / ls;
+        };
+
+        int cur_boxes_x = ntree_X.box_indices_sorted.size(0);
+        int cur_boxes_y = ntree_Y.box_indices_sorted.size(0);
+        std::tie(cheb_data_X, laplace_combinations, node_list_cum, chebnodes_1D, cheb_w) = smolyak_grid<scalar_t, nd>(
+                nr_of_interpolation_points, gpu_device);
+        torch::Tensor cheb_data = cheb_data_X * ntree_X.edge / 2. + ntree_X.edge / 2.; //scaling lagrange nodes to edge scale
+        interactions_x = ntree_X.box_indices_sorted_reindexed.repeat_interleave(cur_boxes_y);
+        interactions_y = ntree_Y.box_indices_sorted_reindexed.repeat(cur_boxes_x);
+        interactions_x_parsed = process_interactions<nd>(interactions_x, ntree_X.centers.size(0), gpu_device);
+        far_field_compute_v2<scalar_t, nd>( //Very many far field interactions quite fast...
+                interactions_x_parsed,
+                interactions_y,
+                ntree_X,
+                ntree_Y,
+                output,
+                b,
+                gpu_device,
+                ls,
+                chebnodes_1D,
+                laplace_combinations,
+                cheb_data,
+                node_list_cum,
+                cheb_w
+        ); //far field comput
+
+    }
+
+
     return output;
 }
 
@@ -1105,9 +1125,9 @@ struct FFM_object{
     };
     virtual torch::Tensor operator* (torch::Tensor & b){
         if (X_data.data_ptr()==Y_data.data_ptr()){
-
             if (smooth_flag){
-                return SUPERSMOOTH_FFM_X<scalar_t,nd>(
+                return SUPERSMOOTH_FFM<scalar_t, nd>(
+                        X_data,
                         X_data,
                         b,
                         gpu_device,
@@ -1129,19 +1149,31 @@ struct FFM_object{
                         eff_var_limit
                 );
             }
-
         }else{
-            return FFM_XY<scalar_t,nd>(
-                    X_data,
-                    Y_data,
-                    b,
-                    gpu_device,
-                    ls,
-                    min_points,
-                    nr_of_interpolation_points,
-                    var_compression,
-                    eff_var_limit
-            );
+            if (smooth_flag) {
+                return SUPERSMOOTH_FFM<scalar_t, nd>(
+                        X_data,
+                        Y_data,
+                        b,
+                        gpu_device,
+                        ls,
+                        min_points,
+                        nr_of_interpolation_points,
+                        eff_var_limit
+                );
+            }else {
+                return FFM_XY<scalar_t, nd>(
+                        X_data,
+                        Y_data,
+                        b,
+                        gpu_device,
+                        ls,
+                        min_points,
+                        nr_of_interpolation_points,
+                        var_compression,
+                        eff_var_limit
+                );
+            }
         }
 
 
