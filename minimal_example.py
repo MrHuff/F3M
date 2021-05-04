@@ -5,7 +5,7 @@ if __name__ == '__main__':
     n=1000000 #Nr of observations
     device = "cuda:0" #device
     dim=3 #dims, stick to <5
-    X = torch.rand(n,dim).float().to(device) #generate some data
+    X = torch.randn(n,dim).float().to(device) #generate some data
     min_points = float(1000) # stop when dividing when the largest box has 1000 points
     ref_points = 5000 #calculate error on 5000 points
     x_ref = X[0:ref_points,:] #reference X
