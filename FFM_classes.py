@@ -12,13 +12,16 @@ class FFM:
                  eff_var_limit=0.15,
                  var_compression=False,
                  smooth_interpolation=False,
+                 small_field_points = 1000,
                  device = "cuda:0"
                  ):
         self.X = X.to(device).float()
         if torch.is_tensor(Y):
             self.Y = Y.to(device).float()
         else:
-            self.Y = Y
+            self.Y = X
+            print('X==Y assuming kernel covariance matmul')
+            assert self.X.data_ptr() == self.Y.data_ptr()
         self.d = self.X.shape[1]
         try:
             assert self.d>0 and self.d<6
@@ -31,6 +34,7 @@ class FFM:
         self.var_compression = var_compression
         self.smooth_interpolation = smooth_interpolation
         self.device = device
+        self.small_field_points = small_field_points
 
     def update_ls(self,ls):
         try:
@@ -44,80 +48,54 @@ class FFM:
 
     def forward(self,X,Y,b):
         b = b.to(self.device).float()
-        if torch.is_tensor(Y):
-            try:
-                assert Y.shape[1]==X.shape[1]
-                assert Y.shape[0]==b.shape[0]
-            except AssertionError:
-                print('hey check the shapes of your tensor X,Y and b they dont match up!')
+        try:
+            assert Y.shape[1]==X.shape[1]
+            assert Y.shape[0]==b.shape[0]
+        except AssertionError:
+            print('hey check the shapes of your tensor X,Y and b they dont match up!')
+            raise AssertionError
+        if self.smooth_interpolation:
             if self.d==1:
-                return load_obj.FFM_XY_FLOAT_1(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation)
+                return load_obj.SUPERSMOOTH_FFM_FLOAT_1(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
             if self.d==2:
-                return load_obj.FFM_XY_FLOAT_2(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation)
+                return load_obj.SUPERSMOOTH_FFM_FLOAT_2(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
             if self.d==3:
-                return load_obj.FFM_XY_FLOAT_3(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation)
+                return load_obj.SUPERSMOOTH_FFM_FLOAT_3(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
             if self.d==4:
-                return load_obj.FFM_XY_FLOAT_4(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation)
+                return load_obj.SUPERSMOOTH_FFM_FLOAT_4(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
             if self.d==5:
-                return load_obj.FFM_XY_FLOAT_5(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation)
+                return load_obj.SUPERSMOOTH_FFM_FLOAT_5(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
             if self.d==6:
-                return load_obj.FFM_XY_FLOAT_6(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation)
+                return load_obj.SUPERSMOOTH_FFM_FLOAT_6(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
             if self.d==7:
-                return load_obj.FFM_XY_FLOAT_7(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation)
+                return load_obj.SUPERSMOOTH_FFM_FLOAT_7(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
             if self.d==8:
-                return load_obj.FFM_XY_FLOAT_8(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation)
+                return load_obj.SUPERSMOOTH_FFM_FLOAT_8(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
             if self.d==9:
-                return load_obj.FFM_XY_FLOAT_9(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation)
+                return load_obj.SUPERSMOOTH_FFM_FLOAT_9(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
             if self.d==10:
-                return load_obj.FFM_XY_FLOAT_10(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation)
+                return load_obj.SUPERSMOOTH_FFM_FLOAT_10(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
         else:
-            try:
-                assert X.shape[0]==b.shape[0]
-            except AssertionError:
-                print('hey check the shapes of your tensor X and b they dont match up!')
-
-            if not self.smooth_interpolation:
-                if self.d==1:
-                    return load_obj.FFM_X_FLOAT_1(X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit)
-                if self.d==2:
-                    return load_obj.FFM_X_FLOAT_2(X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit)
-                if self.d==3:
-                    return load_obj.FFM_X_FLOAT_3(X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit)
-                if self.d==4:
-                    return load_obj.FFM_X_FLOAT_4(X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit)
-                if self.d==5:
-                    return load_obj.FFM_X_FLOAT_5(X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit)
-                if self.d==6:
-                    return load_obj.FFM_X_FLOAT_6(X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit)
-                if self.d==7:
-                    return load_obj.FFM_X_FLOAT_7(X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit)
-                if self.d==8:
-                    return load_obj.FFM_X_FLOAT_8(X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit)
-                if self.d==9:
-                    return load_obj.FFM_X_FLOAT_9(X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit)
-                if self.d==10:
-                    return load_obj.FFM_X_FLOAT_10(X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit)
-            else:
-                if self.d==1:
-                    return load_obj.SUPERSMOOTH_FFM_X_FLOAT_1(X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
-                if self.d==2:
-                    return load_obj.SUPERSMOOTH_FFM_X_FLOAT_2(X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
-                if self.d==3:
-                    return load_obj.SUPERSMOOTH_FFM_X_FLOAT_3(X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
-                if self.d==4:
-                    return load_obj.SUPERSMOOTH_FFM_X_FLOAT_4(X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
-                if self.d==5:
-                    return load_obj.SUPERSMOOTH_FFM_X_FLOAT_5(X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
-                if self.d==6:
-                    return load_obj.SUPERSMOOTH_FFM_X_FLOAT_6(X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
-                if self.d==7:
-                    return load_obj.SUPERSMOOTH_FFM_X_FLOAT_7(X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
-                if self.d==8:
-                    return load_obj.SUPERSMOOTH_FFM_X_FLOAT_8(X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
-                if self.d==9:
-                    return load_obj.SUPERSMOOTH_FFM_X_FLOAT_9(X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
-                if self.d==10:
-                    return load_obj.SUPERSMOOTH_FFM_X_FLOAT_10(X,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.eff_var_limit)
+            if self.d==1:
+                return load_obj.FFM_XY_FLOAT_1(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit,self.small_field_points)
+            if self.d==2:
+                return load_obj.FFM_XY_FLOAT_2(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit,self.small_field_points)
+            if self.d==3:
+                return load_obj.FFM_XY_FLOAT_3(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit,self.small_field_points)
+            if self.d==4:
+                return load_obj.FFM_XY_FLOAT_4(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit,self.small_field_points)
+            if self.d==5:
+                return load_obj.FFM_XY_FLOAT_5(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit,self.small_field_points)
+            if self.d==6:
+                return load_obj.FFM_XY_FLOAT_6(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit,self.small_field_points)
+            if self.d==7:
+                return load_obj.FFM_XY_FLOAT_7(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit,self.small_field_points)
+            if self.d==8:
+                return load_obj.FFM_XY_FLOAT_8(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit,self.small_field_points)
+            if self.d==9:
+                return load_obj.FFM_XY_FLOAT_9(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit,self.small_field_points)
+            if self.d==10:
+                return load_obj.FFM_XY_FLOAT_10(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit,self.small_field_points)
 
 class benchmark_matmul():
     def __init__(self,
@@ -144,7 +122,6 @@ class benchmark_matmul():
         except AssertionError:
             print('ls less than 0, not allowed')
         self.ls = float(ls)
-
 
     def __matmul__(self, b):
         b = b.to(self.device).float()
@@ -184,22 +161,6 @@ class benchmark_matmul():
             return load_obj.rbf_float_10(self.X,Y,b,self.ls,True)
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 class block_FFM_matmul(FFM):
     def __init__(self,
                  X,
@@ -210,6 +171,7 @@ class block_FFM_matmul(FFM):
                  eff_var_limit=0.15,
                  var_compression=False,
                  smooth_interpolation=False,
+                 small_field_points = 1000,
                  device = "cuda:0",
                  blocks_X=1,
                  blocks_Y=1
@@ -222,6 +184,7 @@ class block_FFM_matmul(FFM):
                                                eff_var_limit=eff_var_limit,
                                                var_compression=var_compression,
                                                smooth_interpolation=smooth_interpolation,
+                                               small_field_points=small_field_points,
                                                device=device
                                                )
         self.blocks_X = blocks_X
