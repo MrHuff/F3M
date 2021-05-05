@@ -5,7 +5,30 @@ import numpy as np
 import os
 from tqdm import tqdm
 
-
+def ConjugateGradientSolver(FFM_obj, b, eps=1e-6):
+    # Conjugate gradient algorithm to solve linear system of the form
+    # Ma=b where linop is a linear operation corresponding
+    # to a symmetric and positive definite matrix
+    delta =b.shape[0] * eps ** 2
+    a = 0
+    r = torch.clone(b)
+    nr2 = (r ** 2).sum()
+    if nr2 < delta:
+        return 0 * r
+    p = torch.clone(r)
+    k = 0
+    while True:
+        Mp = FFM_obj@p
+        alp = nr2 / (p * Mp).sum()
+        a += alp * p
+        r -= alp * Mp
+        nr2new = (r ** 2).sum()
+        if nr2new < delta:
+            break
+        p = r + (nr2new / nr2) * p
+        nr2 = nr2new
+        k += 1
+    return a
 def get_data_sampled(N, d, dist_1, dist_1_a, dist_1_b):
     if dist_1 is None:
         return None
