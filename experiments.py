@@ -4,6 +4,7 @@ from FFM_classes import *
 import torch
 from run_obj import *
 import os
+import os
 columns = ['seed','n','d','effective_variance','min_points','small field limit','nr of node points','effective variance limit','relative error','time (s)']
 import time
 
@@ -33,7 +34,7 @@ def experiment_1(device="cuda:0"):
                         for seed in [1, 2, 3]:
                             if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
                                 torch.manual_seed(seed)
-                                X = torch.empty(n,d).uniform_(0, r2*12**0.5).to(device)
+                                X = torch.empty(n,d).uniform_(0, (r2*12)**0.5).to(device)
                                 b = torch.empty(n, 1).normal_(0,1).float().to(device)  # weights
                                 x_ref = X[0:ref_points, :]  # reference X
                                 keops_benchmark_0 = benchmark_matmul(x_ref, X, ls=ls, device=device)  # get some references
@@ -134,7 +135,7 @@ def experiment_3(device="cuda:0"):
                         for seed in [1, 2, 3]:
                             if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
                                 torch.manual_seed(seed)
-                                X = torch.empty(n, d).uniform_(0, r2*(12**0.5)).to(device)
+                                X = torch.empty(n,d).uniform_(0, (r2*12)**0.5).to(device)
                                 Y = torch.empty(n, d).normal_(0, r2 ** 0.5).to(device)
                                 b = torch.empty(n, 1).normal_(0,1).float().to(device)  # weights
                                 x_ref = X[0:ref_points, :]  # reference X
@@ -184,7 +185,7 @@ def experiment_4(device="cuda:0"):
                         for seed in [1, 2, 3]:
                             if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
                                 torch.manual_seed(seed)
-                                X = torch.empty(n, d).uniform_(0, r2 * (12 ** 0.5)).to(device)
+                                X = torch.empty(n,d).uniform_(0, (r2*12)**0.5).to(device)
                                 Y = torch.empty(n, d).normal_(0, 2*(r2**0.5)).to(device)
                                 b = torch.empty(n, 1).normal_(0,1).float().to(device)  # weights
                                 x_ref = X[0:ref_points, :]  # reference X
@@ -235,7 +236,7 @@ def experiment_5(device="cuda:0"):
                         for seed in [1, 2, 3]:
                             if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
                                 torch.manual_seed(seed)
-                                X = torch.empty(n, d).uniform_(0, r2 * (12 ** 0.5)).to(device)
+                                X = torch.empty(n,d).uniform_(0, (r2*12)**0.5).to(device)
                                 Y = torch.empty(n, d).normal_(0, (r2 ** 0.5)).to(device)+2*r2
                                 b = torch.empty(n, 1).normal_(0,1).float().to(device)  # weights
                                 x_ref = X[0:ref_points, :]  # reference X

@@ -9,18 +9,6 @@ import time
 
 
 """
-FALKON vs Vanilla conjugate FFM 
-
-Best case, worst case data on 3d, real data, "worst case" vs best case
-"""
-
-"""
-FALKON vs preconditioned conjugate FFM 
-
-Best case, worst case data on 3d, real data, "worst case" vs best case
-"""
-
-"""
 FALKON vs FALKON roids
 
 Best case, worst case data on 3d, real data, "worst case" vs best case

@@ -111,7 +111,7 @@ def KernelLinearSolver(FFM_obj,
     binding, K, x, b, alpha=0, eps=1e-6, precond=False, precondKernel=None
 ):
     tools = get_tools(binding)
-    dtype = tools.dtype(x)
+    dtype = 'float32'
 
     def PreconditionedConjugateGradientSolver(linop, b, invprecondop, eps=1e-6):
         # Preconditioned conjugate gradient algorithm to solve linear system of the form
@@ -129,7 +129,8 @@ def KernelLinearSolver(FFM_obj,
             alp = rz / (p * linop_res).sum()
             a += alp * p
             r -= alp *linop_res
-            if (r ** 2).sum() < eps ** 2:
+            print(k,(r**2).sum())
+            if (r ** 2).sum() < eps:
                 break
             z = invprecondop(r)
             rznew = (r * z).sum()
@@ -167,7 +168,7 @@ def KernelLinearSolver(FFM_obj,
         my_routine = tools.Genred(
             formula, variables, reduction_op="Sum", axis=1, dtype=dtype
         )
-        oos2 = tools.array([1.0 / sigma ** 2], dtype=dtype)
+        oos2 = tools.array([1.0 / sigma ** 2], dtype=dtype).cuda()
         KernelMatrix = GaussKernelMatrix(sigma)
 
         def K(x, y, b=None):
@@ -189,7 +190,7 @@ def KernelLinearSolver(FFM_obj,
         my_routine = tools.Genred(
             formula, variables, reduction_op="Sum", axis=1, dtype=dtype
         )
-        oos2 = tools.array([1.0 / sigma ** 2], dtype=dtype)
+        oos2 = tools.array([1.0 / sigma ** 2], dtype=dtype).cuda()
         KernelMatrix = GaussKernelMatrix(sigma)
 
         def K(u, v, x):
