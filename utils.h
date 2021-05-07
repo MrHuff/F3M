@@ -214,9 +214,8 @@ void benchmark_3(int n,float min_points, int threshold,float mean,float var,floa
     auto end_2 = std::chrono::high_resolution_clock::now();
     auto duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(end_2-end);
     torch::Tensor res_compare = res.slice(0,0,threshold);
-    torch::Tensor bool_filter = res_ref>1e-2;
-    torch::Tensor rel_error  = ((res_ref.index({bool_filter})-res_compare.index({bool_filter}))/res_ref.index({bool_filter})).abs_().mean();
-    torch::Tensor abs_error  = (res_ref.index({bool_filter})-res_compare.index({bool_filter})).abs_().mean();
+    torch::Tensor rel_error  = (res_ref-res_compare).abs().sum()/res_ref.abs().sum();
+    torch::Tensor abs_error  = (res_ref-res_compare).abs_().mean();
     auto rel_error_float = rel_error.item<scalar_t>();
     std::cout<<res_ref.slice(0,0,10)<<std::endl;
     std::cout<<res.slice(0,0,10)<<std::endl;

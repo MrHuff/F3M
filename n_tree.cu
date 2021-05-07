@@ -920,7 +920,6 @@ torch::Tensor far_field_run(
         torch::Tensor & b,
         scalar_t & ls,
         int & nr_of_interpolation_points,
-        float & min_points,
         const std::string & gpu_device,
         bool & var_compression,
         scalar_t  & eff_var_limit,
@@ -1018,7 +1017,6 @@ torch::Tensor FFM_XY(
                     b,
                     ls,
                     nr_of_interpolation_points,
-                    min_points,
                     gpu_device,
                     var_compression,
                     eff_var_limit,
@@ -1033,13 +1031,21 @@ torch::Tensor FFM_XY(
         std::tie(edge,xmin,ymin,xmax,ymax,x_edge,y_edge) = calculate_edge<scalar_t,nd>(X_data,Y_data,gpu_device); //actually calculate them
         n_tree_cuda<scalar_t,nd> ntree_X = n_tree_cuda<scalar_t,nd>(edge,X_data,xmin,xmax,gpu_device);
         n_tree_cuda<scalar_t,nd> ntree_Y = n_tree_cuda<scalar_t,nd>(edge,Y_data,ymin,ymax,gpu_device);
-        while (near_field.numel()>0 and (ntree_X.avg_nr_points > min_points or ntree_Y.avg_nr_points > min_points)){
-            if (ntree_X.avg_nr_points > min_points){
-                ntree_X.divide();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
-            }
-            if (ntree_Y.avg_nr_points > min_points) {
-                ntree_Y.divide();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
-            }
+
+        float min_points_X,min_points_Y;
+        if (X_data.size(0)>Y_data.size(0)){
+            min_points_X = min_points;
+            min_points_Y = max((int)ceil(((float)Y_data.size(0)/(float)X_data.size(0))*min_points),(int)nr_of_interpolation_points);
+        }else{
+            min_points_Y = min_points;
+            min_points_X = max((int)ceil(((float)X_data.size(0)/(float)Y_data.size(0))*min_points),(int)nr_of_interpolation_points);
+        }
+
+
+
+        while (near_field.numel()>0 and (ntree_X.avg_nr_points > min_points_X and ntree_Y.avg_nr_points > min_points_Y)){
+            ntree_X.divide();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
+            ntree_Y.divide();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
             near_field = far_field_run<scalar_t, nd>(
                     ntree_X,
                     ntree_Y,
@@ -1048,7 +1054,6 @@ torch::Tensor FFM_XY(
                     b,
                     ls,
                     nr_of_interpolation_points,
-                    min_points,
                     gpu_device,
                     var_compression,
                     eff_var_limit,
