@@ -1,6 +1,6 @@
 import torch
-import matplotlib.pyplot as plt
-plt.style.use('ggplot')
+# import matplotlib.pyplot as plt
+# plt.style.use('ggplot')
 import falkon
 from conjugate_gradient.custom_incore_falkon import InCoreFalkon_custom
 from conjugate_gradient.custom_gaussian_kernel import custom_GaussianKernel

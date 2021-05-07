@@ -24,7 +24,7 @@ class FFM:
             assert self.X.data_ptr() == self.Y.data_ptr()
         self.d = self.X.shape[1]
         try:
-            assert self.d>0 and self.d<6
+            assert self.d<6
         except AssertionError:
             print('Sorry bro, dimensionality of your data is too big; Can only do up to 5')
         self.ls = float(ls)
@@ -47,7 +47,7 @@ class FFM:
         return self.forward(self.X,self.Y,b)
 
     def forward(self,X,Y,b):
-        b = b.to(self.device).float()
+        assert X.device==Y.device==b.device==torch.device(self.device)
         try:
             assert Y.shape[1]==X.shape[1]
             assert Y.shape[0]==b.shape[0]
