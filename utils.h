@@ -194,8 +194,8 @@ void benchmark_3(int n,float min_points, int threshold,float mean,float var,floa
 //    torch::manual_seed(0);
 
     torch::Tensor X_train = torch::empty({n,nd}).normal_(mean, sqrt(var)).toType(dtype<scalar_t>()).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
-    torch::Tensor Y_train = torch::empty({n,nd}).uniform_(mean, sqrt(var*12.0)).toType(dtype<scalar_t>()).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
-    torch::Tensor b_train = torch::randn({n,1}).toType(dtype<scalar_t>()).to(device_cuda);
+    torch::Tensor Y_train = torch::empty({2500,nd}).uniform_(mean, sqrt(var*12.0)).toType(dtype<scalar_t>()).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
+    torch::Tensor b_train = torch::randn({2500,1}).toType(dtype<scalar_t>()).to(device_cuda);
     torch::Tensor res,res_ref;
     FFM_object<scalar_t,nd> ffm_obj = FFM_object<scalar_t,nd>(X_train, Y_train, ls_in, device_cuda,min_points,nr_of_interpolation_points,
                                                               var_comp,var_eff,smooth_flag,small_field_limit); //FMM object

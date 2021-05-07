@@ -88,6 +88,19 @@ struct n_tree_cuda{
         depth = 0;
         side_base = torch::tensor(2.0).toType(dtype<scalar_t>()).to(device);
 
+        /*
+         * 0 init
+         * */
+        box_idxs = torch::arange(centers.size(0)).toType(torch::kInt32).to(device);
+        unique_counts = torch::tensor({(int)data.size(0)}).toType(torch::kInt32).to(device);
+        unique_counts_cum  = torch::tensor({(int)0,(int)data.size(0)}).toType(torch::kInt32).to(device);
+        unique_counts_cum_reindexed = unique_counts_cum;
+        non_empty_mask = unique_counts != 0;
+        box_indices_sorted = box_idxs;
+        empty_box_indices = box_idxs.index({torch::logical_not(non_empty_mask)});
+        avg_nr_points = unique_counts.toType(torch::kFloat32).max().item<float>();
+        box_indices_sorted_reindexed = box_indices_sorted;
+
 
     }
     void natural_center_divide(){
