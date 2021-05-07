@@ -646,7 +646,8 @@ __global__ void laplace_shared_transpose(
 //Thrust
 template <typename scalar_t,int nd>
 __global__ void skip_conv_far_boxes_opt(//needs rethinking
-                                    const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> cheb_data,
+                                    const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> cheb_data_X,
+                                    const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> cheb_data_Y,
                                     const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> b_data,
                                     torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> output,
                                     scalar_t * ls,
@@ -659,7 +660,7 @@ __global__ void skip_conv_far_boxes_opt(//needs rethinking
 
 ){
     int box_ind,a,cheb_data_size,int_m,interactions_a,interactions_b,b_size;
-    cheb_data_size = cheb_data.size(0);
+    cheb_data_size = cheb_data_X.size(0);
     box_ind = indicator[blockIdx.x];
     a = box_ind* cheb_data_size;
     int i = a + threadIdx.x+box_block_indicator[blockIdx.x]*blockDim.x; // Use within box, block index i.e. same size as indicator...
@@ -679,7 +680,7 @@ __global__ void skip_conv_far_boxes_opt(//needs rethinking
     //Load these points only... the rest gets no points... threadIdx.x +a to b. ...
     if (i_calc<cheb_data_size) {
         for (int k = 0; k < nd; k++) {
-            x_i[k] = cheb_data[i_calc][k];
+            x_i[k] = cheb_data_X[i_calc][k];
         }
     }
 
@@ -695,7 +696,7 @@ __global__ void skip_conv_far_boxes_opt(//needs rethinking
                     int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
                     if (j < cheb_data_size) {
                         for (int k = 0; k < nd; k++) {
-                            yj[nd * threadIdx.x+k] = cheb_data[j][k]+centers_Y[int_m][k] - cX_i[k]; //Error also occurs here!
+                            yj[nd * threadIdx.x+k] = cheb_data_Y[j][k]+centers_Y[int_m][k] - cX_i[k]; //Error also occurs here!
                         }
                         bj[threadIdx.x] = b_data[j + int_m * cheb_data_size][b_ind];
                     }
@@ -1130,6 +1131,45 @@ __global__ void transpose_to_existing_only(
         }
     }
 }
+
+__global__ void transpose_to_existing_only_X(
+        torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> removed_indices_x
+){
+    int tid = threadIdx.x+blockDim.x*blockIdx.x;
+    if (tid>interactions.size(0)-1){return;}
+    unsigned int nx = removed_indices_x.size(0);
+    int acc_x=0;
+    int interaction_x = interactions[tid][0];
+    for (int i=0;i<nx;i++){
+        if(interaction_x<removed_indices_x[i]){
+            interactions[tid][0] = interaction_x-acc_x;
+            break;
+        }else{
+            acc_x+=1;
+        }
+    }
+}
+
+__global__ void transpose_to_existing_only_Y(
+        torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> removed_indices_y
+){
+    int tid = threadIdx.x+blockDim.x*blockIdx.x;
+    if (tid>interactions.size(0)-1){return;}
+    unsigned int ny =  removed_indices_y.size(0);
+    int acc_y=0;
+    int interaction_y = interactions[tid][1];
+    for (int j=0;j<ny;j++){
+        if(interaction_y<removed_indices_y[j]){
+            interactions[tid][1] = interaction_y-acc_y;
+            break;
+        }else{
+            acc_y+=1;
+        }
+    }
+}
+
 
 
 template<typename scalar_t,int cols>
