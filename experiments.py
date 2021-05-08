@@ -5,7 +5,7 @@ import torch
 from run_obj import *
 import os
 import os
-columns = ['seed','n','d','effective_variance','min_points','small field limit','nr of node points','effective variance limit','relative error',
+columns = ['seed','n','d','effective_variance','min_points','small field limit','nr of node points','effective variance limit','relative error','relative error 2',
            'relative error max','abs error','abs error max','mean true','std true','min true','max true','time (s)']
 import time
 
@@ -15,13 +15,15 @@ def calculate_results(true_0,res_0,ref_points,seed,n,d,r2,min_points,small_field
     rel_err_1 = calc_max_rel_error(true_res=true_0, approx_res=res_ref)
     rel_err_2 = calc_abs_error(true_res=true_0, approx_res=res_ref)
     rel_err_3 = calc_max_abs_error(true_res=true_0, approx_res=res_ref)
+    rel_err_4 = calc_rel_error_2(true_res=true_0, approx_res=res_ref)
+
     mean = true_0.mean().item()
     std = true_0.std().item()
     min = true_0.abs().min().item()
     max = true_0.abs().max().item()
 
     df = pd.DataFrame(
-        [[seed, n, d, r2, min_points, small_field_limit, nr_of_interpolation, eff_var_limit, rel_err_0.item(),
+        [[seed, n, d, r2, min_points, small_field_limit, nr_of_interpolation, eff_var_limit, rel_err_0.item(),rel_err_4.item(),
           rel_err_1.item(), rel_err_2.item(), rel_err_3.item(), mean, std, min, max
              , calc_time]], columns=columns)
     return df
@@ -143,7 +145,7 @@ def experiment_3(device="cuda:0"):
     dirname = 'experiment_3'
     if not os.path.exists(dirname):
         os.makedirs(dirname)
-    for seed in [1, 2, 3]:
+    for seed in [1, 1000, 3]:
         for d in [3]:
             if d == 1:
                 node_list = [4, 8, 16]
@@ -160,6 +162,8 @@ def experiment_3(device="cuda:0"):
                         for r2 in [0.1,1,10,100]:
                             if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
                                 torch.manual_seed(seed)
+                                print(seed, n, d, r2, min_points,
+                                      small_field_limit, nr_of_interpolation, eff_var_limit,)
                                 X = torch.empty(n,d).uniform_(0, (r2*12)**0.5).to(device)
                                 Y = torch.empty(n, d).normal_(0, r2 ** 0.5).to(device)
                                 b = torch.empty(n, 1).normal_(0,1).float().to(device)  # weights
@@ -194,10 +198,10 @@ def experiment_4(device="cuda:0"):
     ref_points = 5000
     ls = float(1.0)  # lengthscale
     counter = 0
-    dirname = 'experiment_3'
+    dirname = 'experiment_4'
     if not os.path.exists(dirname):
         os.makedirs(dirname)
-    for seed in [1, 2, 3]:
+    for seed in [1, 1000, 3]:
         for d in [3]:
             if d == 1:
                 node_list = [4, 8, 16]
@@ -249,10 +253,10 @@ def experiment_5(device="cuda:0"):
     ref_points = 5000
     ls = float(1.0)  # lengthscale
     counter = 0
-    dirname = 'experiment_3'
+    dirname = 'experiment_5'
     if not os.path.exists(dirname):
         os.makedirs(dirname)
-    for seed in [1, 2, 3]:
+    for seed in [1, 1000, 3]:
         for d in [3]:
             if d == 1:
                 node_list = [4, 8, 16]

@@ -8,9 +8,9 @@ if __name__ == '__main__':
     r2=1
     min_points = float(2500)  # stop when dividing when the largest box has 1000 points
     ref_points = 5000  # calculate error on 5000 points
-    X = torch.empty(2500, d).uniform_(0, (r2 * 12) ** 0.5).to(device)
-    Y = torch.empty(n, d).normal_(0, r2 ** 0.5).to(device)
-    b = torch.empty(n, 1).normal_(0, 1).float().to(device)  # weights
+    X = torch.empty(n, d).uniform_(0, (r2 * 12) ** 0.5).to(device)
+    Y = torch.empty(2500, d).normal_(0, r2 ** 0.5).to(device)
+    b = torch.empty(2500, 1).normal_(0, 1).float().to(device)  # weights
     x_ref = X[0:ref_points, :]  # reference X
     torch.cuda.synchronize()
     ls = float(1.0) #lengthscale

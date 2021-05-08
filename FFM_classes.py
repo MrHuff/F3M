@@ -48,6 +48,7 @@ class FFM:
 
     def forward(self,X,Y,b):
         assert X.device==Y.device==b.device==torch.device(self.device)
+        self.device = str(self.device)
         try:
             assert Y.shape[1]==X.shape[1]
             assert Y.shape[0]==b.shape[0]
