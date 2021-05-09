@@ -14,7 +14,7 @@ from sparse_datasets import PlotData
 def dict2str(d):
     return "\n".join(list(f"{k} : {v}" for k, v in d.items()))
 
-def FFMbench(X, Y, b, ls, plot=False):
+def FFMbench(X, Y, b, ls, title):
     
     # compute reference with KeOps for error evaluation
     ref_points = 5000                         # calculate error on 5000 points
@@ -41,16 +41,22 @@ def FFMbench(X, Y, b, ls, plot=False):
             end = time.time()
             elapsed = np.append(elapsed, end-start)
             print(f'elapsed: {end-start}')
-            rel_err = np.append(rel_err, calc_rel_error(true_res=res_ref, approx_res=res[:ref_points]).item())
+            rel_err = np.append(rel_err, calc_rel_error_norm(true_res=res_ref, approx_res=res[:ref_points]).item())
             print(f'error: {rel_err[-1]}')
-        if plot:
-            #plt.plot(elapsed[None,:], rel_err[None,:],'.')
-            #plt.legend(kwargs_rec)
-            names = list(dict2str(kwargs) for kwargs in kwargs_rec)
-            hover_scatter(elapsed, rel_err,names, plotfun=plt.loglog)
-            plt.xlabel('time(s)')
-            plt.ylabel('relative error')
-            plt.axis('equal')
-            plt.show()
+        Xcpu, Ycpu = X.cpu(), (Y.cpu() if Y is not None else None)
+        return dict(X=Xcpu, Y=Ycpu, b=b, ls=ls, elapsed=elapsed, rel_err=rel_err, kwargs_rec=kwargs_rec, title=title)
     
     return call
+
+def PlotBench(dict_res):
+    elapsed = dict_res["elapsed"]
+    rel_err = dict_res["rel_err"]
+    kwargs_rec = dict_res["kwargs_rec"]
+    #plt.plot(elapsed[None,:], rel_err[None,:],'.')
+    #plt.legend(kwargs_rec)
+    names = list(dict2str(kwargs) for kwargs in kwargs_rec)
+    hover_scatter(elapsed, rel_err,names, plotfun=plt.loglog)
+    plt.xlabel('time(s)')
+    plt.ylabel('relative error')
+    plt.axis('equal')
+    plt.title("benchmark results for "+dict_res["title"])

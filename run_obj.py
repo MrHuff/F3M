@@ -97,6 +97,9 @@ def run_and_record_simulated(args_in):
         os.makedirs(save_path)
     df.to_csv(save_path+f'/job_{job_index}.csv')
 
+def calc_rel_error_norm(true_res,approx_res):
+    return torch.norm(true_res-approx_res)/torch.norm(true_res)
+
 def calc_rel_error(true_res,approx_res):
     bool = torch.abs(true_res)>1e-6
     return torch.mean(torch.abs((true_res[bool].squeeze()-approx_res[bool].squeeze())/true_res[bool].squeeze()))
