@@ -1,8 +1,13 @@
 import matplotlib
-matplotlib.use("MacOSX")
-import matplotlib.pyplot as plt
+import platform
+if platform.system()=='Linux':
+    matplotlib.use("Qt5Agg")
+elif platform.system()=='Darwin':
+    matplotlib.use("MacOSX")
 #interactive backends: GTK3Agg, GTK3Cairo, MacOSX, nbAgg, Qt4Agg, Qt4Cairo, Qt5Agg, Qt5Cairo, TkAgg, TkCairo, WebAgg, WX, WXAgg, WXCairo
 #non-interactive backends: agg, cairo, pdf, pgf, ps, svg, template
+
+import matplotlib.pyplot as plt
 
 from sparse_datasets import PlotData, MaternClusterData, FBMData
 
