@@ -1,20 +1,20 @@
-    
-import os, sys
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-os.chdir('..')
-
-from FFM_classes import *
-from run_obj import *
-import itertools
-
-import matplotlib.pyplot as plt
-from hover_scatter import hover_scatter
-from sparse_datasets import PlotData
+   
+import numpy as np
+import time
 
 def dict2str(d):
     return "\n".join(list(f"{k} : {v}" for k, v in d.items()))
 
 def FFMbench(X, Y, b, ls, title):
+    
+    import os, sys
+    source_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.append(source_dir)
+    os.chdir(source_dir)
+
+    from FFM_classes import FFM
+    from run_obj import benchmark_matmul, calc_rel_error_norm
+    import itertools
     
     # compute reference with KeOps for error evaluation
     ref_points = 5000                         # calculate error on 5000 points
@@ -49,6 +49,9 @@ def FFMbench(X, Y, b, ls, title):
     return call
 
 def PlotBench(dict_res):
+    import matplotlib.pyplot as plt
+    from hover_scatter import hover_scatter
+    from sparse_datasets import PlotData
     elapsed = dict_res["elapsed"]
     rel_err = dict_res["rel_err"]
     kwargs_rec = dict_res["kwargs_rec"]

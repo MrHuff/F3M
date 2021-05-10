@@ -64,7 +64,6 @@ for dataset_fun in todolist:
             smooth_interpolation = smooth_interpolation)
     
     import pickle
-    import os
     
     f = open("benchs_sparse/results/"+title+".pkl", "wb")
     pickle.dump(res, f)
