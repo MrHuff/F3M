@@ -7,7 +7,7 @@ import numpy as np
 import random
 random.seed(0)
 np.random.seed(0)
-torch.manual_seed(0)
+torch.manual_seed(1)
 
 def ClusteredDataset2D():
     title = "ClusteredDataset2D"
@@ -19,7 +19,12 @@ def FBMDataset2D():
     X = FBMData(2,1000000,0.75)
     return X, title
     
-todolist = [ClusteredDataset2D, FBMDataset2D]
+def BMDataset2D():
+    title = "BMDataset2D"
+    X = FBMData(2,1000000,0.5)
+    return X, title
+    
+todolist = [BMDataset2D] #[ClusteredDataset2D, FBMDataset2D]
     
 for dataset_fun in todolist:
     X, title = dataset_fun()
