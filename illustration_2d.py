@@ -1,8 +1,8 @@
 import numpy as np
 from matplotlib import pyplot as plt
 
-a = np.random.rand(*(1000,2))
-b = np.random.randn(*(1000,2))*0.25+0.5
+a = np.random.rand(*(10000,2))
+b = np.random.randn(*(10000,2))*0.25+0.5
 
 plt.scatter(a[:,0],a[:,1],c='r',marker='.')
 plt.scatter(b[:,0],b[:,1],c='b',marker='.')

@@ -3,21 +3,38 @@ import torch
 # plt.style.use('ggplot')
 import falkon
 from conjugate_gradient.custom_incore_falkon import InCoreFalkon_custom
+from conjugate_gradient.custom_falkon import custom_Falkon
 from conjugate_gradient.custom_gaussian_kernel import custom_GaussianKernel
 import time
 import pykeops
 # pykeops.clean_pykeops()          # just in case old build files are still present
 
 if __name__ == '__main__':
-    N=1000000
-    X = torch.rand(N, 3).cuda()
-    Y = torch.randn(N, 1).cuda()
-    kernel = custom_GaussianKernel(3.0)
-    options = falkon.FalkonOptions(use_cpu=False,debug=True)
-    model = InCoreFalkon_custom(kernel=kernel, penalty=1, M=1000, options=options)
+    N=10000000
+    d = 3
+    ls = 3.0
+    penalty = 1e-5
+    M = 100000
+    X = torch.rand(N, d)
+    Y = torch.randn(N, 1)
+    kernel = custom_GaussianKernel(ls)
+    options = falkon.FalkonOptions(debug=True)
+    model = custom_Falkon(kernel=kernel, penalty=penalty, M=M, options=options)
     start = time.time()
     model.fit(X, Y)
     end = time.time()
     print(end-start)
     preds = model.predict(X)
     print(torch.sum((Y-preds)**2))
+
+
+    kernel = falkon.kernels.GaussianKernel(ls)
+    options = falkon.FalkonOptions(use_cpu=False,debug=True)
+    model = falkon.InCoreFalkon(kernel=kernel, penalty=penalty, M=M, options=options)
+    start = time.time()
+    model.fit(X, Y)
+    end = time.time()
+    print(end-start)
+    preds = model.predict(X)
+    print(torch.sum((Y-preds)**2))
+

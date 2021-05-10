@@ -11,18 +11,19 @@ class FFM_kernel_falkon:
         self.ls = sigma**2
 
     def mmv(self,X1, X2, v, obj, out=None, params=None):
+        d  = X1.shape[1]
         self.device  = X1.device
-        FFM_obj = FFM(X=X1,Y=X2, ls=self.ls, min_points=2500, nr_of_interpolation=64,
+        FFM_obj = FFM(X=X1,Y=X2, ls=self.ls, min_points=2500, nr_of_interpolation=4**d,
                       eff_var_limit=0.1, var_compression=True, smooth_interpolation=False, device=self.device,
-                      small_field_points=64)
+                      small_field_points=4**d)
         return FFM_obj@v
 
     def dmmv(self,X1, X2, v, w, obj, out=None, params=None):
         self.device  = X1.device.type + ':'+str(X1.device.index)
-
-        FFM_obj = FFM(X=X1,Y=X2, ls=self.ls, min_points=100, nr_of_interpolation=64,
+        d  = X1.shape[1]
+        FFM_obj = FFM(X=X1,Y=X2, ls=self.ls, min_points=100, nr_of_interpolation=4**d,
                       eff_var_limit=0.1, var_compression=True, smooth_interpolation=False, device=self.device,
-                      small_field_points=64)
+                      small_field_points=4**d)
         if v is None:
             res=w
         else:
@@ -30,8 +31,6 @@ class FFM_kernel_falkon:
                 res = FFM_obj.forward(X1,X2,v)
             else:
                 res = FFM_obj.forward(X1,X2,v) + w
-
-
         res_2 = FFM_obj.forward(X2,X1,res)
         return res_2
 

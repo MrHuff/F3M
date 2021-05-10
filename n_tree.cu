@@ -63,6 +63,7 @@ struct n_tree_cuda{
     unique_counts_cum,
     unique_counts_cum_reindexed,
     coord_tensor,
+    old_new_map,
     perm,
     tmp_1,
     tmp_2;
@@ -100,7 +101,7 @@ struct n_tree_cuda{
         empty_box_indices = box_idxs.index({torch::logical_not(non_empty_mask)});
         avg_nr_points = unique_counts.toType(torch::kFloat32).max().item<float>();
         box_indices_sorted_reindexed = box_indices_sorted;
-
+        old_new_map = box_idxs;
 
     }
     void natural_center_divide(){
@@ -158,6 +159,7 @@ struct n_tree_cuda{
 
         );
         cudaDeviceSynchronize();
+        old_new_map = box_idxs;
         non_empty_mask = unique_counts != 0;
         box_indices_sorted = box_idxs.index({non_empty_mask});
         unique_counts = unique_counts.index({non_empty_mask});
@@ -165,9 +167,15 @@ struct n_tree_cuda{
         empty_box_indices = box_idxs.index({torch::logical_not(non_empty_mask)});
         avg_nr_points = unique_counts.toType(torch::kFloat32).max().item<float>();
         multiply_gpu = multiply_gpu*multiply_gpu_base;
-        box_indices_sorted_reindexed = torch::arange(centers.size(0)).toType(torch::kInt32).to(device);;
+        box_indices_sorted_reindexed = torch::arange(centers.size(0)).toType(torch::kInt32).to(device);
+        std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<int>(1, old_new_map.size(0));
+        transpose_to_existing_only_tree<<<gridSize,blockSize>>>(
+                old_new_map.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                empty_box_indices.packed_accessor64<int,1,torch::RestrictPtrTraits>()
+        );
         std::tie(unique_counts_cum_reindexed,tmp_1,tmp_2) = torch::unique_consecutive(unique_counts_cum);
-//        std::cout<<avg_nr_points<<std::endl;
+
+//        std::cout<<"avg_nr_points: "<<avg_nr_points<<std::endl;
 
     };
 
@@ -386,8 +394,8 @@ torch::Tensor interactions_readapt_indices(torch::Tensor & interactions,
     dim3 blockSize,gridSize;
     int memory;
     std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<int>(2, interactions.size(0));
-    torch::Tensor &removed_idx_X = ntree_X.empty_box_indices;
-    torch::Tensor &removed_idx_Y = ntree_Y.empty_box_indices;
+    torch::Tensor &removed_idx_X = ntree_X.old_new_map;
+    torch::Tensor &removed_idx_Y = ntree_Y.old_new_map;
 
     if(ntree_X.depth==ntree_Y.depth){
         transpose_to_existing_only<<<gridSize,blockSize>>>(
@@ -875,8 +883,6 @@ torch::Tensor filter_out_interactions(torch::Tensor & interactions,
 
 }
 
-
-
 template <typename scalar_t, int nd>
 std::tuple<torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor,torch::Tensor> smolyak_grid(int nr_of_interpolation_points, const std::string & gpu_device){
     torch::Tensor cheb_data_X,
@@ -910,6 +916,58 @@ void near_field_run(
     interactions_x_parsed = process_interactions<nd>(interactions_x,ntree_X.centers.size(0),gpu_device);
     near_field_compute_v2<scalar_t,nd>(interactions_x_parsed,interactions_y,ntree_X, ntree_Y, output, b, gpu_device,ls); //Make sure this thing works first!
 }
+template <typename scalar_t, int nd>
+std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> get_field(
+        torch::Tensor & near_field,
+        n_tree_cuda<scalar_t,nd> & ntree_X,
+        n_tree_cuda<scalar_t,nd> & ntree_Y,
+        scalar_t & ls,
+        int & nr_of_interpolation_points,
+        const std::string & gpu_device,
+        bool & var_compression,
+        scalar_t  & eff_var_limit,
+        int & small_field_limit
+        ){
+
+    torch::Tensor interactions, far_field,small_field;
+//    std::cout<<"active boxes X: "<<ntree_X.box_indices_sorted_reindexed.size(0)<<std::endl;
+//    std::cout<<"active boxes Y: "<<ntree_Y.box_indices_sorted_reindexed.size(0)<<std::endl;
+    if ((near_field.size(0)*ntree_X.dim_fac*ntree_Y.dim_fac)>1e8){
+        std::vector<torch::Tensor> interaction_list ={};
+        std::vector<torch::Tensor>chunked_near_field=torch::chunk(near_field,10,0);
+        for (torch::Tensor &inter_subset : chunked_near_field){
+            inter_subset = get_new_interactions(ntree_X.depth,ntree_Y.depth,inter_subset,ntree_X.dim_fac,gpu_device); //Doesn't work for new setup since the division is changed...
+//            std::cout<<"interactions_1: "<<inter_subset.size(0)<<std::endl;
+            inter_subset = filter_out_interactions(inter_subset,ntree_X,ntree_Y);
+//            std::cout<<"interactions_2: "<<inter_subset.size(0)<<std::endl;
+            interaction_list.push_back(inter_subset);
+        }
+        interactions = torch::cat(interaction_list,0);
+
+    }else{
+        interactions = get_new_interactions(ntree_X.depth,ntree_Y.depth,near_field,ntree_X.dim_fac,gpu_device); //Doesn't work for new setup since the division is changed...
+//        std::cout<<"interactions_1: "<<interactions.size(0)<<std::endl;
+        interactions = filter_out_interactions(interactions,ntree_X,ntree_Y);
+//        std::cout<<"interactions_2: "<<interactions.size(0)<<std::endl;
+    }
+
+    std::tie(far_field,small_field,near_field) =
+            separate_interactions<scalar_t,nd>(
+                    interactions,
+                    ntree_X,
+                    ntree_Y,
+                    gpu_device,
+                    small_field_limit,
+                    nr_of_interpolation_points,
+                    ls,
+                    var_compression,
+                    eff_var_limit
+            );
+    return std::make_tuple(far_field,small_field,near_field);
+
+}
+
+
 
 template <typename scalar_t, int nd>
 torch::Tensor far_field_run(
@@ -925,30 +983,26 @@ torch::Tensor far_field_run(
         scalar_t  & eff_var_limit,
         int & small_field_limit
 ){
-    torch::Tensor interactions,far_field,interactions_x,interactions_y,interactions_x_parsed,cheb_data,
+    torch::Tensor far_field,small_field,interactions_x,interactions_y,interactions_x_parsed,cheb_data,
             laplace_combinations,
             chebnodes_1D,
             node_list_cum,
             cheb_w,
             x_var,
-            max_var,
-            small_field
+            max_var
             ;
 
-    interactions = get_new_interactions(ntree_X.depth,ntree_Y.depth,
-            near_field,ntree_X.dim_fac,gpu_device); //Doesn't work for new setup since the division is changed...
-    interactions = filter_out_interactions(interactions,ntree_X,ntree_Y);
-    std::tie(far_field,small_field,near_field) =
-            separate_interactions<scalar_t,nd>(
-                    interactions,
-                    ntree_X,
-                    ntree_Y,
-                    gpu_device,
-                    small_field_limit,
-                    nr_of_interpolation_points,
-                    ls,
-                    var_compression,
-                    eff_var_limit
+//    std::cout<<"near_field: "<<near_field.size(0)<<std::endl;
+    std::tie(far_field,small_field,near_field) = get_field<scalar_t,nd>(
+            near_field,
+            ntree_X,
+            ntree_Y,
+            ls,
+            nr_of_interpolation_points,
+            gpu_device,
+            var_compression,
+            eff_var_limit,
+            small_field_limit
             );
     if (small_field.numel()>0) {
         near_field_run<scalar_t, nd>(ntree_X, ntree_Y, small_field, output, b, ls, gpu_device);

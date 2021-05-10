@@ -1103,71 +1103,54 @@ __global__ void get_keep_mask(
 }
 __global__ void transpose_to_existing_only(
         torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions,
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> removed_indices_x,
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> removed_indices_y
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> old_new_map_X,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> old_new_map_Y
 ){
     int tid = threadIdx.x+blockDim.x*blockIdx.x;
     if (tid>interactions.size(0)-1){return;}
-    unsigned int nx = removed_indices_x.size(0);
-    unsigned int ny =  removed_indices_y.size(0);
-    int acc_x=0;
-    int acc_y=0;
     int interaction_x = interactions[tid][0];
     int interaction_y = interactions[tid][1];
-    for (int i=0;i<nx;i++){
-        if(interaction_x<removed_indices_x[i]){
-            interactions[tid][0] = interaction_x-acc_x;
-            break;
-        }else{
-            acc_x+=1;
-        }
-    }
-    for (int j=0;j<ny;j++){
-        if(interaction_y<removed_indices_y[j]){
-            interactions[tid][1] = interaction_y-acc_y;
-            break;
-        }else{
-            acc_y+=1;
-        }
-    }
-}
+    interactions[tid][0] = old_new_map_X[interaction_x];
+    interactions[tid][1] = old_new_map_Y[interaction_y];
 
-__global__ void transpose_to_existing_only_X(
-        torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions,
+
+}
+__global__ void transpose_to_existing_only_tree(
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> all_boxes,
         torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> removed_indices_x
 ){
     int tid = threadIdx.x+blockDim.x*blockIdx.x;
-    if (tid>interactions.size(0)-1){return;}
+    if (tid>all_boxes.size(0)-1){return;}
     unsigned int nx = removed_indices_x.size(0);
     int acc_x=0;
-    int interaction_x = interactions[tid][0];
+    int interaction_x = all_boxes[tid];
     for (int i=0;i<nx;i++){
         if(interaction_x<removed_indices_x[i]){
-            interactions[tid][0] = interaction_x-acc_x;
+            all_boxes[tid] = interaction_x-acc_x;
             break;
         }else{
             acc_x+=1;
         }
     }
+}
+__global__ void transpose_to_existing_only_X(
+        torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> old_new_map_X
+){
+    int tid = threadIdx.x+blockDim.x*blockIdx.x;
+    if (tid>interactions.size(0)-1){return;}
+    int interaction_x = interactions[tid][0];
+    interactions[tid][0] = old_new_map_X[interaction_x];
 }
 
 __global__ void transpose_to_existing_only_Y(
         torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions,
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> removed_indices_y
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> old_new_map_Y
 ){
     int tid = threadIdx.x+blockDim.x*blockIdx.x;
     if (tid>interactions.size(0)-1){return;}
-    unsigned int ny =  removed_indices_y.size(0);
-    int acc_y=0;
     int interaction_y = interactions[tid][1];
-    for (int j=0;j<ny;j++){
-        if(interaction_y<removed_indices_y[j]){
-            interactions[tid][1] = interaction_y-acc_y;
-            break;
-        }else{
-            acc_y+=1;
-        }
-    }
+    interactions[tid][1] = old_new_map_Y[interaction_y];
 }
 
 

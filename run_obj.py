@@ -98,15 +98,20 @@ def run_and_record_simulated(args_in):
     df.to_csv(save_path+f'/job_{job_index}.csv')
 
 def calc_rel_error(true_res,approx_res):
-    bool = torch.abs(true_res)>1e-6
-    return torch.mean(torch.abs((true_res[bool].squeeze()-approx_res[bool].squeeze())/true_res[bool].squeeze()))
-
+    try:
+        bool = torch.abs(true_res)>1e-6
+        return torch.mean(torch.abs((true_res[bool].squeeze()-approx_res[bool].squeeze())/true_res[bool].squeeze()))
+    except Exception:
+        return torch.tensor(1e9)
 def calc_rel_error_2(true_res,approx_res):
     return torch.abs(true_res.squeeze()-approx_res.squeeze()).sum()/true_res.abs().squeeze().sum()
 
 def calc_max_rel_error(true_res,approx_res):
-    bool = torch.abs(true_res)>1e-6
-    return torch.max(torch.abs((true_res[bool].squeeze()-approx_res[bool].squeeze())/true_res[bool].squeeze()))
+    try:
+        bool = torch.abs(true_res)>1e-6
+        return torch.max(torch.abs((true_res[bool].squeeze()-approx_res[bool].squeeze())/true_res[bool].squeeze()))
+    except Exception:
+        return torch.tensor(1e9)
 
 def calc_abs_error(true_res,approx_res):
     return torch.mean(torch.abs((true_res.squeeze()-approx_res.squeeze())))

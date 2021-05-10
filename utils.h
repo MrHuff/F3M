@@ -104,27 +104,26 @@ void benchmark_1(int n,float min_points, int threshold,float a,float b,float ls,
     torch::Tensor res,res_ref;
     FFM_object<scalar_t,nd> ffm_obj = FFM_object<scalar_t,nd>(X_train, X_train, ls_in, device_cuda,min_points,nr_of_interpolation_points,
             var_comp,var_eff,smooth_flag,small_field_limit); //FMM object
-//    FFM_object<float> ffm_obj_grad = FFM_object<float>(X,X,ls,op_grad,lambda,device_cuda);
-//    exact_MV<float> ffm_obj_grad_exact = exact_MV<float>(X,X,ls,op_grad,lambda,device_cuda);
+    auto start_2 = std::chrono::high_resolution_clock::now();
+    res = ffm_obj * b_train; //Fast math creates problems... fast math does a lot!!!
+    auto end_2 = std::chrono::high_resolution_clock::now();
+    auto duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(end_2-start_2);
+    std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
     std::cout<<"------------- "<<"Uniform distribution : "<< "a "<<a<<" b "<<b<<" n: "<<n<<" min_points: "<< min_points <<" nr_interpolation_points: "<<nr_of_interpolation_points <<" -------------"<<std::endl;
     torch::Tensor subsampled_X = X_train.slice(0,0,threshold);
     exact_MV<scalar_t,nd> exact_ref = exact_MV<scalar_t,nd>(subsampled_X, X_train, ls_in, device_cuda,min_points,nr_of_interpolation_points,
-            var_comp,var_eff,smooth_flag,small_field_limit); //Exact method reference
-
+                                                            var_comp,var_eff,smooth_flag,small_field_limit); //Exact method reference
     auto start = std::chrono::high_resolution_clock::now();
     res_ref = exact_ref *b_train;
     auto end = std::chrono::high_resolution_clock::now();
     auto duration_1 = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
     std::cout<<"Full matmul time (ms): "<<duration_1.count()<<std::endl;
-    res = ffm_obj * b_train; //Fast math creates problems... fast math does a lot!!!
-    auto end_2 = std::chrono::high_resolution_clock::now();
-    auto duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(end_2-end);
+
     torch::Tensor res_compare = res.slice(0,0,threshold);
     torch::Tensor rel_error  = ((res_ref-res_compare)/res_ref).abs_().mean();
     auto rel_error_float = rel_error.item<scalar_t>();
     std::cout<<res_ref.slice(0,0,10)<<std::endl;
     std::cout<<res.slice(0,0,10)<<std::endl;
-    std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
     std::cout<<"Relative error: "<<rel_error_float<<std::endl;
     writeOnfile_exp_1(fname,a,b,n,nd,min_points,nr_of_interpolation_points,duration_2.count(),rel_error_float);
 
