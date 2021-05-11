@@ -413,16 +413,13 @@ def experiment_8(device="cuda:0"):
     dirname = 'experiment_8'
     if not os.path.exists(dirname):
         os.makedirs(dirname)
+    node_list = [256,512,1024]
     for seed in [1, 1000, 3]:
         for d in [4,5]:
-            if d == 1:
-                node_list = [4, 8, 16]
-            else:
-                node_list = [4, 5, 6]
             for node_nr in node_list:
-                nr_of_interpolation = int(node_nr ** d)  # nr of interpo
+                nr_of_interpolation =node_nr  # nr of interpo
                 for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 250000000],
-                                                            [1000, 1000, 5000, 5000],
+                                                            [1000, 1000, 5000, 10000],
                                                             [nr_of_interpolation, nr_of_interpolation, nr_of_interpolation,
                                                              nr_of_interpolation]):
                     for evarlimit in [0.1,0.3,0.5]:
@@ -458,11 +455,11 @@ def experiment_8(device="cuda:0"):
                             print('counter: ',counter)
 
 if __name__ == '__main__':
-    pass
     # experiment_1()
     # experiment_2()
     # experiment_3()
     # experiment_4()
     # experiment_5()
     experiment_6()
+    # experiment_7()
     experiment_8()

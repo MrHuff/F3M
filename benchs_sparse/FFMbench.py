@@ -43,6 +43,8 @@ def FFMbench(X, Y, b, ls, title):
             print(f'elapsed: {end-start}')
             rel_err = np.append(rel_err, calc_rel_error_norm(true_res=res_ref, approx_res=res[:ref_points]).item())
             print(f'error: {rel_err[-1]}')
+            print(res_ref[:10])
+            print(res[:10])
         Xcpu, Ycpu, bcpu = X.cpu(), (Y.cpu() if Y is not None else None), b.cpu()
         return dict(X=Xcpu, Y=Ycpu, b=bcpu, ls=ls, elapsed=elapsed, rel_err=rel_err, kwargs_rec=kwargs_rec, title=title)
     

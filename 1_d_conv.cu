@@ -1118,20 +1118,19 @@ __global__ void transpose_to_existing_only(
 __global__ void transpose_to_existing_only_tree(
         torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> all_boxes,
         torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> removed_indices_x
-){
+){//Bottle neck perhaps, switch to binary search
     int tid = threadIdx.x+blockDim.x*blockIdx.x;
     if (tid>all_boxes.size(0)-1){return;}
     unsigned int nx = removed_indices_x.size(0);
-    int acc_x=0;
-    int interaction_x = all_boxes[tid];
+    int box_idx = all_boxes[tid];
     for (int i=0;i<nx;i++){
-        if(interaction_x<removed_indices_x[i]){
-            all_boxes[tid] = interaction_x-acc_x;
+        if(box_idx < removed_indices_x[i]){
             break;
         }else{
-            acc_x+=1;
+            all_boxes[tid]-=1;
         }
     }
+
 }
 __global__ void transpose_to_existing_only_X(
         torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions,

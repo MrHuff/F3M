@@ -10,19 +10,24 @@ elif platform.system()=='Darwin':
 import matplotlib.pyplot as plt
 
 from sparse_datasets import PlotData, MaternClusterData, FBMData
-
-X = MaternClusterData(2,100,100,.05)
-PlotData(X)
-
-X = MaternClusterData(3,100,100,.05)
-PlotData(X)
+import random
+import numpy as np
+import torch
+random.seed(0)
+np.random.seed(0)
+torch.manual_seed(1)
+# X = MaternClusterData(2,100,100,.05)
+# PlotData(X)
+#
+# X = MaternClusterData(3,100,100,.05)
+# PlotData(X)
 
 n = 10000
 X = FBMData(2,n,0.25)
 PlotData(X)
 
-X = FBMData(3,n,0.25)
-PlotData(X)
+# X = FBMData(3,n,0.25)
+# PlotData(X)
 
 plt.show()
 
