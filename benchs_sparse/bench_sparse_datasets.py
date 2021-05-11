@@ -20,9 +20,19 @@ def ClusteredDataset2D():
     X = MaternClusterData(2,100,10000,.01)
     return X, title
 
+def ClusteredDataset3D():
+    title = "ClusteredDataset3D"
+    X = MaternClusterData(3,100,10000,.01)
+    return X, title
+
 def FBMDataset2D():
     title = "FBMDataset2D"
     X = FBMData(2,1000000,0.75)
+    return X, title
+    
+def FBMDataset3D():
+    title = "FBMDataset3D"
+    X = FBMData(3,1000000,0.75)
     return X, title
     
 def BMDataset2D():
@@ -30,11 +40,25 @@ def BMDataset2D():
     X = FBMData(2,1000000,0.25)
     return X, title
     
-todolist = [BMDataset2D] #[ClusteredDataset2D, FBMDataset2D]
+def BMDataset3D():
+    title = "BMDataset3D"
+    X = FBMData(3,1000000,0.5)
+    return X, title
+    
+todolist = [ClusteredDataset2D, FBMDataset2D]
     
 for dataset_fun in todolist:
     X, title = dataset_fun()
+<<<<<<< HEAD
     #
+=======
+    
+    tmp = torch.sort(X,dim=0)[0]
+    tmp = tmp[1:,:] - tmp[:-1,:]
+    print(torch.sort(tmp,dim=0)[0][:5,:])
+    input()
+    
+>>>>>>> 9325d6555183654ec01666bec4116b534a4d0a99
     device = "cuda:0"                         # device
     # X = X.float()
     # my_values = {
@@ -72,12 +96,18 @@ for dataset_fun in todolist:
     eff_var_limit = [float(0.1), float(0.3), float(0.35), float(0.4)]
 
     # stop when dividing when the largest box has 1000 points
+<<<<<<< HEAD
     # min_points = [float(250), float(500), float(1000), float(2000)]
     min_points = [float(2500)]
 
     var_compression = [False]
+=======
+    min_points = [float(250), float(500), float(1000), float(2000)]              
     
-    smooth_interpolation = [False]
+    var_compression = [True, False]
+>>>>>>> 9325d6555183654ec01666bec4116b534a4d0a99
+    
+    smooth_interpolation = [True, False]
     
     
     
