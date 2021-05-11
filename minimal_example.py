@@ -28,9 +28,9 @@ if __name__ == '__main__':
     true_2 = keops_benchmark_2@b_2 #calculate reference
 
     #Initialize different FFM objects
-    FFM_X_0 = FFM(X=X,ls=ls,min_points=min_points,nr_of_interpolation=nr_of_interpolation,eff_var_limit=eff_var_limit,var_compression=False,smooth_interpolation=False,device=device,small_field_points=small_field_limit)
-    FFM_X_1 = FFM(X=X,ls=ls,min_points=min_points,nr_of_interpolation=nr_of_interpolation,eff_var_limit=eff_var_limit,var_compression=True,smooth_interpolation=False,device=device,small_field_points=small_field_limit)
-    FFM_X_2 = FFM(X=X,ls=ls,min_points=min_points,nr_of_interpolation=nr_of_interpolation,eff_var_limit=eff_var_limit,var_compression=True,smooth_interpolation=True,device=device,small_field_points=small_field_limit)
+    FFM_X_0 = FFM(X=X,ls=ls,min_points=min_points,nr_of_interpolation=nr_of_interpolation,eff_var_limit=eff_var_limit,var_compression=False, device=device,small_field_points=small_field_limit)
+    FFM_X_1 = FFM(X=X,ls=ls,min_points=min_points,nr_of_interpolation=nr_of_interpolation,eff_var_limit=eff_var_limit,var_compression=True, device=device,small_field_points=small_field_limit)
+    FFM_X_2 = FFM(X=X,ls=ls,min_points=min_points,nr_of_interpolation=nr_of_interpolation,eff_var_limit=eff_var_limit,var_compression=True,device=device,small_field_points=small_field_limit)
     FFM_XY_1 = FFM(X=X,Y=Y,ls=ls,min_points=min_points,nr_of_interpolation=nr_of_interpolation,eff_var_limit=eff_var_limit,device=device,small_field_points=small_field_limit,var_compression=True)
     FFM_XY_2 = FFM(X=X,Y=Y_2,ls=ls,min_points=min_points,nr_of_interpolation=nr_of_interpolation,eff_var_limit=eff_var_limit,device=device,small_field_points=small_field_limit,var_compression=True)
 

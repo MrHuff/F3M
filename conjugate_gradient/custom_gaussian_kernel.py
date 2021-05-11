@@ -11,27 +11,45 @@ class FFM_kernel_falkon:
         self.ls = sigma**2
 
     def mmv(self,X1, X2, v, obj, out=None, params=None):
+        input_device = X1.device
         d  = X1.shape[1]
-        self.device  = X1.device
+        if not params.use_cpu:
+            self.device = "cuda:0"
+            if v is not None:
+                v = v.to(self.device)
+        else:
+            print("FFM only available for GPU")
+            raise NotImplementedError
         FFM_obj = FFM(X=X1,Y=X2, ls=self.ls, min_points=2500, nr_of_interpolation=4**d,
-                      eff_var_limit=0.1, var_compression=True, smooth_interpolation=False, device=self.device,
+                      eff_var_limit=0.1, var_compression=True,  device=self.device,
                       small_field_points=4**d)
-        return FFM_obj@v
-
+        res = FFM_obj.forward(FFM_obj.X, FFM_obj.Y, v).to(input_device)
+        return res
     def dmmv(self,X1, X2, v, w, obj, out=None, params=None):
-        self.device  = X1.device.type + ':'+str(X1.device.index)
+        input_device = X1.device
+        if not params.use_cpu:
+            self.device = "cuda:0"
+            if v is not None:
+                v = v.to(self.device)
+            if w is not None:
+                w = w.to(self.device)
+        else:
+            print("FFM only available for GPU")
         d  = X1.shape[1]
-        FFM_obj = FFM(X=X1,Y=X2, ls=self.ls, min_points=100, nr_of_interpolation=4**d,
-                      eff_var_limit=0.1, var_compression=True, smooth_interpolation=False, device=self.device,
+        FFM_obj = FFM(X=X1,Y=X2, ls=self.ls, min_points=2500, nr_of_interpolation=4**d,
+                      eff_var_limit=0.1, var_compression=True,device=self.device,
                       small_field_points=4**d)
         if v is None:
             res=w
         else:
             if w is None:
-                res = FFM_obj.forward(X1,X2,v)
+                res = FFM_obj.forward(FFM_obj.X,FFM_obj.Y,v)
             else:
-                res = FFM_obj.forward(X1,X2,v) + w
-        res_2 = FFM_obj.forward(X2,X1,res)
+                res = FFM_obj.forward(FFM_obj.X,FFM_obj.Y,v) + w
+        res_2 = FFM_obj.forward(FFM_obj.Y,FFM_obj.X,res).to(input_device)
+        del FFM_obj
+        torch.cuda.empty_cache()
+
         return res_2
 
 class custom_GaussianKernel(GaussianKernel):
