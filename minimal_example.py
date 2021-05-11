@@ -1,6 +1,9 @@
 from FFM_classes import *
 import time
 from run_obj import *
+import pykeops
+pykeops.clean_pykeops()          # just in case old build files are still present
+
 if __name__ == '__main__':
     n=1000000 #Nr of observations
     device = "cuda:0" #device
@@ -19,9 +22,9 @@ if __name__ == '__main__':
     small_field_limit = 1000
 
 
-    keops_benchmark_0 = benchmark_matmul(x_ref,X,ls=ls,device=device) #get some references
-    keops_benchmark_1 = benchmark_matmul(x_ref,Y,ls=ls,device=device) #get some references
-    keops_benchmark_2 = benchmark_matmul(x_ref,Y_2,ls=ls,device=device) #get some references
+    keops_benchmark_0 = keops_matmul(x_ref,X,ls=ls,device=device) #get some references
+    keops_benchmark_1 = keops_matmul(x_ref,Y,ls=ls,device=device) #get some references
+    keops_benchmark_2 = keops_matmul(x_ref,Y_2,ls=ls,device=device) #get some references
 
     true_0 = keops_benchmark_0@b #calculate reference
     true_1 = keops_benchmark_1@b #calculate reference
@@ -39,7 +42,7 @@ if __name__ == '__main__':
     res_0 = FFM_X_0@b
     end= time.time()
     print(f'time exp 0: {end-start}')
-    rel_err_0 = calc_rel_error(true_res=true_0,approx_res=res_0[:ref_points])
+    rel_err_0 = calc_rel_error_2(true_res=true_0,approx_res=res_0[:ref_points])
     print(f'err exp 0: {rel_err_0}')
 
     start = time.time()
@@ -47,14 +50,14 @@ if __name__ == '__main__':
     end= time.time()
 
     print(f'time exp 1: {end-start}')
-    rel_err_1 = calc_rel_error(true_res=true_0,approx_res=res_1[:ref_points])
+    rel_err_1 = calc_rel_error_2(true_res=true_0,approx_res=res_1[:ref_points])
     print(f'err exp 1: {rel_err_1}')
 
     start = time.time()
     res_2 = FFM_X_2@b
     end= time.time()
     print(f'time exp 2: {end-start}')
-    rel_err_2 = calc_rel_error(true_res=true_0,approx_res=res_2[:ref_points])
+    rel_err_2 = calc_rel_error_2(true_res=true_0,approx_res=res_2[:ref_points])
     print(f'err exp 2: {rel_err_2}')
 
     start = time.time()
@@ -62,7 +65,7 @@ if __name__ == '__main__':
     end= time.time()
 
     print(f'time exp 3: {end-start}')
-    rel_err_3 = calc_rel_error(true_res=true_1,approx_res=res_3[:ref_points])
+    rel_err_3 = calc_rel_error_2(true_res=true_1,approx_res=res_3[:ref_points])
     print(f'err exp 3: {rel_err_3}')
 
     start = time.time()
@@ -70,5 +73,5 @@ if __name__ == '__main__':
     end= time.time()
 
     print(f'time exp 4: {end-start}')
-    rel_err_4 = calc_rel_error(true_res=true_2,approx_res=res_4[:ref_points])
+    rel_err_4 = calc_rel_error_2(true_res=true_2,approx_res=res_4[:ref_points])
     print(f'err exp 4: {rel_err_4}')
