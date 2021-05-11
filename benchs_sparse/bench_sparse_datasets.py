@@ -27,29 +27,18 @@ def FBMDataset2D():
     
 def BMDataset2D():
     title = "BMDataset2D"
-    X = FBMData(2,1000000,0.25)
+    X = FBMData(2,1000000,0.5)
     return X, title
     
 todolist = [BMDataset2D] #[ClusteredDataset2D, FBMDataset2D]
     
 for dataset_fun in todolist:
     X, title = dataset_fun()
-    #
     device = "cuda:0"                         # device
-    # X = X.float()
-    # my_values = {
-    #     'X':X.float(),
-    # }
-    # container = torch.jit.script(Container(my_values))
-    # container.save("../faulty_data.pt")
-
-
     X = X.float().to(device)
-
-
     n, dim = X.shape
-    b = torch.ones(n,1).float().to(device)   # weights
-    # b = torch.randn(n,1).float().to(device)   # weights
+    # b = torch.ones(n,1).float().to(device)   # weights
+    b = torch.randn(n,1).float().to(device)   # weights
     # b = torch.rand(n,1).float().to(device)*100   # weights
     ls = float(1.0)                           # lengthscale
     
@@ -75,17 +64,16 @@ for dataset_fun in todolist:
     # min_points = [float(250), float(500), float(1000), float(2000)]
     min_points = [float(2500)]
 
-    var_compression = [False]
+    var_compression = [True]
     
-    smooth_interpolation = [False]
-    
+
     
     
     res = bench_X(nr_of_interpolation = nr_of_interpolation,
             eff_var_limit = eff_var_limit,
             min_points = min_points,
-            var_compression = var_compression, 
-            smooth_interpolation = smooth_interpolation)
+            var_compression = var_compression
+        )
     
     import pickle
     

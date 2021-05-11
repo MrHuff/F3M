@@ -182,7 +182,7 @@ struct n_tree_cuda{
         );
         std::tie(unique_counts_cum_reindexed,tmp_1,tmp_2) = torch::unique_consecutive(unique_counts_cum);
 
-        std::cout<<"size of removed indices: "<<empty_box_indices.size(0)<<std::endl;
+//        std::cout<<"size of removed indices: "<<empty_box_indices.size(0)<<std::endl;
 
     };
 
@@ -1251,7 +1251,6 @@ struct FFM_object{
     float & min_points;
     bool &var_compression;
     scalar_t  & eff_var_limit;
-    bool & smooth_flag;
     int & small_field_limit;
 
     FFM_object( //constructor
@@ -1266,7 +1265,7 @@ struct FFM_object{
     bool & smooth_flag,
     int & small_field_limit
     ): X_data(X_data), Y_data(Y_data),ls(ls),gpu_device(gpu_device),min_points(min_points),nr_of_interpolation_points(nr_of_interpolation_points),
-    var_compression(var_comp),eff_var_limit(eff_var),smooth_flag(smooth_flag),small_field_limit(small_field_limit){
+    var_compression(var_comp),eff_var_limit(eff_var),small_field_limit(small_field_limit){
     };
     virtual torch::Tensor operator* (torch::Tensor & b){
         if (X_data.data_ptr()==Y_data.data_ptr()){
@@ -1310,10 +1309,9 @@ struct exact_MV : FFM_object<scalar_t,nd>{
                          int & nr_of_interpolation_points,
                          bool &var_compression,
                         scalar_t  & eff_var_limit,
-                        bool & smooth_flag,
                         int & small_field_limit
                     )
-                         : FFM_object<scalar_t,nd>(X_data, Y_data, ls, gpu_device,min_points,nr_of_interpolation_points,var_compression,eff_var_limit,smooth_flag,small_field_limit){};
+                         : FFM_object<scalar_t,nd>(X_data, Y_data, ls, gpu_device,min_points,nr_of_interpolation_points,var_compression,eff_var_limit,small_field_limit){};
     torch::Tensor operator* (torch::Tensor & b) override{
         return  rbf_call<scalar_t,nd>(
                 FFM_object<scalar_t,nd>::X_data,
