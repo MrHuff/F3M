@@ -60,7 +60,7 @@ def experiment_1(device="cuda:0"):
                                 torch.cuda.synchronize()
                                 keops_benchmark_0 = benchmark_matmul(x_ref, X, ls=ls, device=device)  # get some references
                                 FFM_obj= FFM(X=X, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
-                                              eff_var_limit=eff_var_limit, var_compression=True, smooth_interpolation=False,
+                                              eff_var_limit=eff_var_limit, var_compression=True, 
                                               device=device, small_field_points=small_field_limit)
                                 true_0 = keops_benchmark_0 @ b  # calculate reference
                                 torch.cuda.synchronize()
@@ -120,7 +120,7 @@ def experiment_2(device="cuda:0"):
                                 torch.cuda.synchronize()
                                 keops_benchmark_0 = benchmark_matmul(x_ref, X, ls=ls, device=device)  # get some references
                                 FFM_obj = FFM(X=X, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
-                                              eff_var_limit=eff_var_limit, var_compression=True, smooth_interpolation=False,
+                                              eff_var_limit=eff_var_limit, var_compression=True, 
                                               device=device, small_field_points=small_field_limit)
                                 true_0 = keops_benchmark_0 @ b  # calculate reference
                                 torch.cuda.synchronize()
@@ -179,7 +179,7 @@ def experiment_3(device="cuda:0"):
                                 torch.cuda.synchronize()
                                 keops_benchmark_0 = benchmark_matmul(x_ref, Y, ls=ls, device=device)  # get some references
                                 FFM_obj = FFM(X=X,Y=Y, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
-                                              eff_var_limit=eff_var_limit, var_compression=True, smooth_interpolation=False,
+                                              eff_var_limit=eff_var_limit, var_compression=True, 
                                               device=device, small_field_points=small_field_limit)
                                 true_0 = keops_benchmark_0 @ b  # calculate reference
                                 torch.cuda.synchronize()
@@ -233,7 +233,7 @@ def experiment_4(device="cuda:0"):
                                 x_ref = X[0:ref_points, :]  # reference X
                                 keops_benchmark_0 = benchmark_matmul(x_ref, Y, ls=ls, device=device)  # get some references
                                 FFM_obj = FFM(X=X, Y=Y, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
-                                              eff_var_limit=eff_var_limit, var_compression=True, smooth_interpolation=False,
+                                              eff_var_limit=eff_var_limit, var_compression=True, 
                                               device=device, small_field_points=small_field_limit)
                                 true_0 = keops_benchmark_0 @ b  # calculate reference
                                 torch.cuda.synchronize()
@@ -287,7 +287,7 @@ def experiment_5(device="cuda:0"):
                                 x_ref = X[0:ref_points, :]  # reference X
                                 keops_benchmark_0 = benchmark_matmul(x_ref, Y, ls=ls, device=device)  # get some references
                                 FFM_obj = FFM(X=X, Y=Y, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
-                                              eff_var_limit=eff_var_limit, var_compression=True, smooth_interpolation=False,
+                                              eff_var_limit=eff_var_limit, var_compression=True, 
                                               device=device, small_field_points=small_field_limit)
                                 true_0 = keops_benchmark_0 @ b  # calculate reference
                                 torch.cuda.synchronize()
@@ -335,7 +335,7 @@ def experiment_6(device="cuda:0"):
                                 torch.cuda.synchronize()
                                 keops_benchmark_0 = benchmark_matmul(x_ref, X, ls=ls, device=device)  # get some references
                                 FFM_obj= FFM(X=X, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
-                                              eff_var_limit=eff_var_limit, var_compression=True, smooth_interpolation=False,
+                                              eff_var_limit=eff_var_limit, var_compression=True, 
                                               device=device, small_field_points=small_field_limit)
                                 true_0 = keops_benchmark_0 @ b  # calculate reference
                                 torch.cuda.synchronize()
@@ -384,7 +384,7 @@ def experiment_7(device="cuda:0"):
                                 torch.cuda.synchronize()
                                 keops_benchmark_0 = benchmark_matmul(x_ref, X, ls=ls, device=device)  # get some references
                                 FFM_obj= FFM(X=X, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
-                                              eff_var_limit=eff_var_limit, var_compression=True, smooth_interpolation=False,
+                                              eff_var_limit=eff_var_limit, var_compression=True, 
                                               device=device, small_field_points=small_field_limit)
                                 true_0 = keops_benchmark_0 @ b  # calculate reference
                                 torch.cuda.synchronize()
@@ -436,7 +436,7 @@ def experiment_8(device="cuda:0"):
                                 torch.cuda.synchronize()
                                 keops_benchmark_0 = benchmark_matmul(x_ref, Y, ls=ls, device=device)  # get some references
                                 FFM_obj = FFM(X=X,Y=Y, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
-                                              eff_var_limit=eff_var_limit, var_compression=True, smooth_interpolation=False,
+                                              eff_var_limit=eff_var_limit, var_compression=True, 
                                               device=device, small_field_points=small_field_limit)
                                 true_0 = keops_benchmark_0 @ b  # calculate reference
                                 torch.cuda.synchronize()
@@ -460,6 +460,6 @@ if __name__ == '__main__':
     # experiment_3()
     # experiment_4()
     # experiment_5()
-    experiment_6()
+    # experiment_6()
     # experiment_7()
     experiment_8()
