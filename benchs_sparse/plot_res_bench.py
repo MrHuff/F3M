@@ -11,6 +11,5 @@ for filename in os.listdir("results"):
         f.close()
         PlotData(res["X"])#, max_npoints=10000)
         plt.title(res["title"])
-        plt.axis('equal')
         PlotBench(res)
 plt.show()
