@@ -71,6 +71,9 @@ int main(int argc, char const *argv[]){
     if(job==4){
         benchmark_4<float,2>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
     }
+    if(job==5){
+        benchmark_5<double,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
+    }
 
     cudaProfilerStop();
     cudaDeviceReset();

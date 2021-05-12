@@ -1262,7 +1262,6 @@ struct FFM_object{
     int & nr_of_interpolation_points,
     bool & var_comp,
     scalar_t  & eff_var,
-    bool & smooth_flag,
     int & small_field_limit
     ): X_data(X_data), Y_data(Y_data),ls(ls),gpu_device(gpu_device),min_points(min_points),nr_of_interpolation_points(nr_of_interpolation_points),
     var_compression(var_comp),eff_var_limit(eff_var),small_field_limit(small_field_limit){

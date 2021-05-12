@@ -10,7 +10,10 @@
 #define BLOCK_SIZE 192
 #define MAXTHREADSPERBLOCK 1024
 #define SHAREDMEMPERBLOCK 49152
-
+#if !defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 600
+#else
+__device__ double atomicAdd(double* a, double b) { return b; }
+#endif
 //template<typename T, int nd>
 
 template<typename T>
@@ -153,7 +156,8 @@ __global__ void rbf_1d_reduce_shared_torch(
         }
     }
     unsigned int y_n = Y_data.size(0);
-    extern __shared__ scalar_t buffer[];
+    extern __shared__ __align__(sizeof(scalar_t)) unsigned char my_smem[];
+    scalar_t *buffer = reinterpret_cast<scalar_t *>(my_smem);
     scalar_t *yj = &buffer[0];
     scalar_t *bj = &buffer[blockDim.x*nd];
     scalar_t acc;
@@ -363,7 +367,8 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor64<scalar_t
     i = a + threadIdx.x+box_block_indicator[blockIdx.x]*blockDim.x; // Use within box, block index i.e. same size as indicator...
     scalar_t x_i[nd];
     scalar_t acc;
-    extern __shared__ scalar_t buffer[];
+    extern __shared__ __align__(sizeof(scalar_t)) unsigned char my_smem[];
+    scalar_t *buffer = reinterpret_cast<scalar_t *>(my_smem);
     scalar_t *yj = &buffer[0];
     scalar_t *bj = &buffer[blockDim.x*nd];
     //Load these points only... the rest gets no points... threadIdx.x +a to b. ...
@@ -474,7 +479,8 @@ __global__ void lagrange_shared(
     bool pBoolean[nd];
     scalar_t b_i;
     extern __shared__ int int_buffer[];
-    extern __shared__ scalar_t buffer[];
+    extern __shared__ __align__(sizeof(scalar_t)) unsigned char my_smem[];
+    scalar_t *buffer = reinterpret_cast<scalar_t *>(my_smem);
     int *node_cum_shared = &int_buffer[0];
     int *yj = &int_buffer[1+nd];
     scalar_t *l_p = &buffer[blockDim.x*nd+1+nd];
@@ -572,7 +578,8 @@ __global__ void laplace_shared_transpose(
     bool pBoolean[nd];
     scalar_t acc;
     extern __shared__ int int_buffer[];
-    extern __shared__ scalar_t buffer[];
+    extern __shared__ __align__(sizeof(scalar_t)) unsigned char my_smem[];
+    scalar_t *buffer = reinterpret_cast<scalar_t *>(my_smem);
     int *node_cum_shared = &int_buffer[0];
     int *yj = &int_buffer[1+nd];
     scalar_t *bj = &buffer[(blockDim.x+1) * nd+1];
@@ -668,7 +675,8 @@ __global__ void skip_conv_far_boxes_opt(//needs rethinking
     scalar_t x_i[nd];
 //    scalar_t y_j[nd];
     scalar_t acc;
-    extern __shared__ scalar_t buffer[];
+    extern __shared__ __align__(sizeof(scalar_t)) unsigned char my_smem[];
+    scalar_t *buffer = reinterpret_cast<scalar_t *>(my_smem);
     scalar_t *yj = &buffer[0];
     scalar_t *bj = &buffer[blockDim.x*nd];
 //    scalar_t *distance = &buffer[cheb_data_size*(nd+1)];
@@ -837,7 +845,8 @@ __global__ void get_cheb_idx_data(
     int lap_nodes = cheb_nodes.size(0);
     int idx;
     int tmp;
-    extern __shared__ scalar_t buffer[];
+    extern __shared__ __align__(sizeof(scalar_t)) unsigned char my_smem[];
+    scalar_t *buffer = reinterpret_cast<scalar_t *>(my_smem);
     if (threadIdx.x<lap_nodes){
         buffer[threadIdx.x] = cheb_nodes[threadIdx.x];
     }
@@ -861,7 +870,8 @@ __global__ void get_smolyak_indices(
     int n = cheb_data.size(0);
     int i = threadIdx.x+blockIdx.x*blockDim.x; // Thread nr
     if (i>n-1){return;}
-    extern __shared__ scalar_t buffer[];
+    extern __shared__ __align__(sizeof(scalar_t)) unsigned char my_smem[];
+    scalar_t *buffer = reinterpret_cast<scalar_t *>(my_smem);
     int lap_nodes = cheb_nodes.size(0);
     int idx;
     int tmp;
@@ -950,8 +960,8 @@ __global__ void boolean_separate_interactions_small_var_comp(
         const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> centers_Y,
         const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> unique_og_X,
         const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> unique_og_Y,
-        const torch::PackedTensorAccessor64<float,1,torch::RestrictPtrTraits> eff_var_X,
-        const torch::PackedTensorAccessor64<float,1,torch::RestrictPtrTraits> eff_var_Y,
+        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> eff_var_X,
+        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> eff_var_Y,
         const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions,
         const scalar_t * edge,
         torch::PackedTensorAccessor64<bool,1,torch::RestrictPtrTraits> is_far_field,
