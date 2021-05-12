@@ -12,7 +12,6 @@ class bench_kernel_falkon:
 
     def mmv(self,X1, X2, v, obj, out=None, params=None):
         input_device = X1.device
-        d  = X1.shape[1]
         if not params.use_cpu:
             self.device = "cuda:0"
             if v is not None:

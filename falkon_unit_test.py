@@ -63,11 +63,11 @@ if __name__ == '__main__':
     d = 3
     ls = 3.0
     penalty = 1e-5
-    M = 100000
+    M = 10000
     X = torch.rand(N, d)
     Y = torch.randn(N, 1)
-    # kernel = bench_GaussianKernel(ls)
-    # options = falkon.FalkonOptions(debug=True)
+    # kernel = custom_GaussianKernel(ls)
+    # options = falkon.FalkonOptions(use_cpu=False,debug=True)
     # model = custom_Falkon(kernel=kernel, penalty=penalty, M=M, options=options)
     # start = time.time()
     # model.fit(X, Y)

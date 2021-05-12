@@ -138,7 +138,7 @@ class benchmark_matmul():
                  device = "cuda:0"):
         self.X = X.float().to(device)
         if torch.is_tensor(Y):
-            self.Y = X.float().to(device)
+            self.Y = Y.float().to(device)
         else:
             self.Y = self.X
         self.d = self.X.shape[1]
