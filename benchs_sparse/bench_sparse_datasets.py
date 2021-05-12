@@ -91,8 +91,7 @@ for dataset_fun in todolist:
     min_points = [float(250), float(500), float(1000), float(2000), float(4000)]              
     
     var_compression = [True]
-    
-    smooth_interpolation = [False]
+
     
 
     
@@ -100,8 +99,7 @@ for dataset_fun in todolist:
     res = bench_X(nr_of_interpolation = nr_of_interpolation,
             eff_var_limit = eff_var_limit,
             min_points = min_points,
-            var_compression = var_compression, 
-            smooth_interpolation = smooth_interpolation)
+            var_compression = var_compression)
             
     print("best time : ", min(res["elapsed"]))
     print("best accuracy : ", min(res["rel_err"]))
