@@ -41,28 +41,32 @@ def experiment_1(device="cuda:0"):
         os.makedirs(dirname)
     for seed in [1, 2, 3]:
         for d in [3]:
-            if d==1:
-                node_list = [4,8,16]
+            if d == 1:
+                node_list = [4, 8, 16]
             else:
-                node_list = [4,5,6]
+                node_list = [4, 5, 6]
             for node_nr in node_list:
-                nr_of_interpolation = int(node_nr**d)  # nr of interpolation nodes
-                for evarlimit in [0.1,0.3,0.5]:
-                    eff_var_limit = float(evarlimit)
-                    for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 1000000000],
-                                                                [1000, 1000, 5000, 5000], [nr_of_interpolation, nr_of_interpolation, nr_of_interpolation, 2500]):
-                        for r2 in [0.1,1,10,100]:
+                nr_of_interpolation = int(node_nr ** d)
+                for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 1000000000],
+                                                            [1000, 1000, 5000, 5000],
+                                                            [nr_of_interpolation, nr_of_interpolation, nr_of_interpolation,
+                                                             2500]):
+                    for r2 in [0.1, 1, 10, 100]:
+                        torch.manual_seed(seed)
+                        X = torch.empty(n, d).uniform_(0, (r2 * 12) ** 0.5)
+                        b = torch.empty(n, 1).normal_(0, 1)
+                        x_ref = X[0:ref_points, :]  # reference X
+                        keops_benchmark_0 = keops_matmul(x_ref, X, ls=ls, device=device)  # get some references
+                        true_0 = keops_benchmark_0 @ b  # calculate reference
+                        del keops_benchmark_0,x_ref
+                        torch.cuda.empty_cache()
+                        for evarlimit in [0.1,0.3,0.5]:
+                            eff_var_limit = float(evarlimit)
                             if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
-                                torch.manual_seed(seed)
-                                X = torch.empty(n,d).uniform_(0, (r2*12)**0.5).to(device)
-                                b = torch.empty(n, 1).normal_(0,1).float().to(device)  # weights
-                                x_ref = X[0:ref_points, :]  # reference X
                                 torch.cuda.synchronize()
-                                keops_benchmark_0 = benchmark_matmul(x_ref, X, ls=ls, device=device)  # get some references
                                 FFM_obj= FFM(X=X, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
-                                              eff_var_limit=eff_var_limit, var_compression=True, smooth_interpolation=False,
+                                              eff_var_limit=eff_var_limit, var_compression=True,
                                               device=device, small_field_points=small_field_limit)
-                                true_0 = keops_benchmark_0 @ b  # calculate reference
                                 torch.cuda.synchronize()
                                 start = time.time()
                                 res_0 = FFM_obj @ b
@@ -72,11 +76,12 @@ def experiment_1(device="cuda:0"):
                                 df = calculate_results(true_0,res_0,ref_points,seed,n,d,r2,min_points,small_field_limit,nr_of_interpolation, eff_var_limit,calc_time)
                                 df.to_csv(f'{dirname}/{dirname}_{counter}.csv')
                                 print('Wrote experiments: ',counter)
-                                del X,b,x_ref,keops_benchmark_0,FFM_obj,true_0,res_0
+                                del FFM_obj,res_0
                                 torch.cuda.empty_cache()
                             counter+=1
                             print('counter: ',counter)
-
+                        del X,b,true_0
+                        torch.cuda.empty_cache()
 def experiment_2(device="cuda:0"):
     """
     k(X,X) - normal distribution with varying effective variance, N and d.
@@ -98,31 +103,25 @@ def experiment_2(device="cuda:0"):
             for node_nr in node_list:
                 nr_of_interpolation = int(node_nr ** d)  # nr of interpolation nodes
                 for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 1000000000],
-                                                            [1000, 1000, 5000, 5000],
+                                                            [2500, 2500, 5000, 5000],
                                                             [nr_of_interpolation, nr_of_interpolation, nr_of_interpolation,
                                                              2500]):
-                    old_min_points = copy.deepcopy(min_points)
-                    old_small_field_limit = copy.deepcopy(small_field_limit)
-                    for evarlimit in [0.1,0.3,0.5]:
-                        eff_var_limit = float(evarlimit)
-                        for r2 in [0.1,1,10,100]:
-                            if r2==100 and n==1000000000 and node_nr>4:
-                                min_points=10000
-                                small_field_limit = 5000
-                            else:
-                                min_points = old_min_points
-                                small_field_limit = old_small_field_limit
+                    for r2 in [0.1, 1, 10, 100]:
+                        torch.manual_seed(seed)
+                        X = torch.empty(n, d).normal_(0, r2 ** 0.5)
+                        b = torch.empty(n, 1).normal_(0, 1)  # weights
+                        x_ref = X[0:ref_points, :]  # reference X
+                        keops_benchmark_0 = keops_matmul(x_ref, X, ls=ls, device=device)  # get some references
+                        true_0 = keops_benchmark_0 @ b  # calculate reference
+
+                        for evarlimit in [0.1, 0.3, 0.5]:
+                            eff_var_limit = float(evarlimit)
                             if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
-                                torch.manual_seed(seed)
-                                X = torch.empty(n, d).normal_(0, r2**0.5).to(device)
-                                b = torch.empty(n, 1).normal_(0,1).float().to(device)  # weights
-                                x_ref = X[0:ref_points, :]  # reference X
                                 torch.cuda.synchronize()
-                                keops_benchmark_0 = benchmark_matmul(x_ref, X, ls=ls, device=device)  # get some references
+
                                 FFM_obj = FFM(X=X, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
-                                              eff_var_limit=eff_var_limit, var_compression=True, smooth_interpolation=False,
+                                              eff_var_limit=eff_var_limit, var_compression=True,
                                               device=device, small_field_points=small_field_limit)
-                                true_0 = keops_benchmark_0 @ b  # calculate reference
                                 torch.cuda.synchronize()
                                 start = time.time()
                                 res_0 = FFM_obj @ b
@@ -162,26 +161,26 @@ def experiment_3(device="cuda:0"):
             for node_nr in node_list:
                 nr_of_interpolation = int(node_nr ** d)  # nr of interpo
                 for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 500000000],
-                                                            [1000, 1000, 5000, 5000],
+                                                            [2500, 2500, 5000, 5000],
                                                             [nr_of_interpolation, nr_of_interpolation, nr_of_interpolation,
                                                              2500]):
-                    for evarlimit in [0.1,0.3,0.5]:
-                        eff_var_limit = float(evarlimit)
-                        for r2 in [0.1,1,10,100]:
+                    for r2 in [0.1,1,10,100]:
+                        torch.manual_seed(seed)
+                        print(seed, n, d, r2, min_points,
+                              small_field_limit, nr_of_interpolation, eff_var_limit, )
+                        X = torch.empty(n, d).uniform_(0, (r2 * 12) ** 0.5)
+                        Y = torch.empty(n, d).normal_(0, r2 ** 0.5)
+                        b = torch.empty(n, 1).normal_(0, 1)
+                        x_ref = X[0:ref_points, :]  # reference X
+                        keops_benchmark_0 = keops_matmul(x_ref, Y, ls=ls, device=device)  # get some references
+                        true_0 = keops_benchmark_0 @ b  # calculate reference
+                        for evarlimit in [0.1,0.3,0.5]:
+                            eff_var_limit = float(evarlimit)
                             if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
-                                torch.manual_seed(seed)
-                                print(seed, n, d, r2, min_points,
-                                      small_field_limit, nr_of_interpolation, eff_var_limit,)
-                                X = torch.empty(n,d).uniform_(0, (r2*12)**0.5).to(device)
-                                Y = torch.empty(n, d).normal_(0, r2 ** 0.5).to(device)
-                                b = torch.empty(n, 1).normal_(0,1).float().to(device)  # weights
-                                x_ref = X[0:ref_points, :]  # reference X
                                 torch.cuda.synchronize()
-                                keops_benchmark_0 = benchmark_matmul(x_ref, Y, ls=ls, device=device)  # get some references
                                 FFM_obj = FFM(X=X,Y=Y, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
-                                              eff_var_limit=eff_var_limit, var_compression=True, smooth_interpolation=False,
+                                              eff_var_limit=eff_var_limit, var_compression=True, 
                                               device=device, small_field_points=small_field_limit)
-                                true_0 = keops_benchmark_0 @ b  # calculate reference
                                 torch.cuda.synchronize()
                                 start = time.time()
                                 res_0 = FFM_obj @ b
@@ -218,25 +217,25 @@ def experiment_4(device="cuda:0"):
             for node_nr in node_list:
                 nr_of_interpolation = int(node_nr ** d)  #
                 for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 500000000],
-                                                            [1000, 1000, 5000, 5000],
+                                                            [2500, 2500, 5000, 5000],
                                                             [nr_of_interpolation, nr_of_interpolation, nr_of_interpolation,
                                                              2500]):
-                    for evarlimit in [0.1,0.3,0.5]:
-                        eff_var_limit = float(evarlimit)
-                        for r2 in [0.1,1,10,100]:
+                    for r2 in [0.1, 1, 10, 100]:
+                        torch.manual_seed(seed)
+                        X = torch.empty(n, d).uniform_(0, (r2 * 12) ** 0.5)
+                        Y = torch.empty(n, d).normal_(0, 2 * (r2 ** 0.5))
+                        b = torch.empty(n, 1).normal_(0, 1)  # weights
+                        x_ref = X[0:ref_points, :]  # reference X
+                        keops_benchmark_0 = keops_matmul(x_ref, Y, ls=ls, device=device)  # get some references
+                        true_0 = keops_benchmark_0 @ b  # calculate reference
+
+                        for evarlimit in [0.1,0.3,0.5]:
+                            eff_var_limit = float(evarlimit)
                             if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
-                                torch.manual_seed(seed)
-                                X = torch.empty(n,d).uniform_(0, (r2*12)**0.5).to(device)
-                                Y = torch.empty(n, d).normal_(0, 2*(r2**0.5)).to(device)
-                                b = torch.empty(n, 1).normal_(0,1).float().to(device)  # weights
                                 torch.cuda.synchronize()
-                                x_ref = X[0:ref_points, :]  # reference X
-                                keops_benchmark_0 = benchmark_matmul(x_ref, Y, ls=ls, device=device)  # get some references
                                 FFM_obj = FFM(X=X, Y=Y, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
-                                              eff_var_limit=eff_var_limit, var_compression=True, smooth_interpolation=False,
+                                              eff_var_limit=eff_var_limit, var_compression=True, 
                                               device=device, small_field_points=small_field_limit)
-                                true_0 = keops_benchmark_0 @ b  # calculate reference
-                                torch.cuda.synchronize()
                                 start = time.time()
                                 res_0 = FFM_obj @ b
                                 end = time.time()
@@ -273,23 +272,24 @@ def experiment_5(device="cuda:0"):
             for node_nr in node_list:
                 nr_of_interpolation = int(node_nr ** d)  #
                 for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 500000000],
-                                                            [1000, 1000, 5000, 5000],
+                                                            [2500, 2500, 5000, 5000],
                                                             [nr_of_interpolation, nr_of_interpolation, nr_of_interpolation,
                                                              2500]):
-                    for evarlimit in [0.1,0.3,0.5]:
-                        eff_var_limit = float(evarlimit)
-                        for r2 in [0.1,1,10,100]:
+                    for r2 in [0.1, 1, 10, 100]:
+                        torch.manual_seed(seed)
+                        X = torch.empty(n, d).uniform_(0, (r2 * 12) ** 0.5)
+                        Y = torch.empty(n, d).normal_(0, (r2 ** 0.5)) + 2 * r2
+                        b = torch.empty(n, 1).normal_(0, 1)  # weights
+                        x_ref = X[0:ref_points, :]  # reference X
+                        keops_benchmark_0 = keops_matmul(x_ref, Y, ls=ls, device=device)  # get some references
+                        true_0 = keops_benchmark_0 @ b  # calculate reference
+
+                        for evarlimit in [0.1,0.3,0.5]:
+                            eff_var_limit = float(evarlimit)
                             if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
-                                torch.manual_seed(seed)
-                                X = torch.empty(n,d).uniform_(0, (r2*12)**0.5).to(device)
-                                Y = torch.empty(n, d).normal_(0, (r2 ** 0.5)).to(device)+2*r2
-                                b = torch.empty(n, 1).normal_(0,1).float().to(device)  # weights
-                                x_ref = X[0:ref_points, :]  # reference X
-                                keops_benchmark_0 = benchmark_matmul(x_ref, Y, ls=ls, device=device)  # get some references
                                 FFM_obj = FFM(X=X, Y=Y, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
-                                              eff_var_limit=eff_var_limit, var_compression=True, smooth_interpolation=False,
+                                              eff_var_limit=eff_var_limit, var_compression=True, 
                                               device=device, small_field_points=small_field_limit)
-                                true_0 = keops_benchmark_0 @ b  # calculate reference
                                 torch.cuda.synchronize()
                                 start = time.time()
                                 res_0 = FFM_obj @ b
@@ -322,22 +322,22 @@ def experiment_6(device="cuda:0"):
         for d in [4,5]:
             for node_nr in node_list:
                 nr_of_interpolation = node_nr  # nr of interpolation nodes
-                for evarlimit in [0.1,0.3,0.5]:
-                    eff_var_limit = float(evarlimit)
-                    for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 500000000],
-                                                                [1000, 1000, 5000, 20000], [nr_of_interpolation, nr_of_interpolation, nr_of_interpolation, nr_of_interpolation]):
-                        for r2 in [0.1,1,10,100]:
+                for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 500000000],
+                                                            [2500, 2500, 5000, 20000], [nr_of_interpolation, nr_of_interpolation, nr_of_interpolation, nr_of_interpolation]):
+                    for r2 in [0.1,1,10,100]:
+                        torch.manual_seed(seed)
+                        X = torch.empty(n, d).uniform_(0, (r2 * 12) ** 0.5)
+                        b = torch.empty(n, 1).normal_(0, 1)  # weights
+                        x_ref = X[0:ref_points, :]  # reference X
+                        keops_benchmark_0 = keops_matmul(x_ref, X, ls=ls, device=device)  # get some references
+                        true_0 = keops_benchmark_0 @ b  # calculate reference
+
+                        for evarlimit in [0.1, 0.3, 0.5]:
+                            eff_var_limit = float(evarlimit)
                             if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
-                                torch.manual_seed(seed)
-                                X = torch.empty(n,d).uniform_(0, (r2*12)**0.5).to(device)
-                                b = torch.empty(n, 1).normal_(0,1).float().to(device)  # weights
-                                x_ref = X[0:ref_points, :]  # reference X
-                                torch.cuda.synchronize()
-                                keops_benchmark_0 = benchmark_matmul(x_ref, X, ls=ls, device=device)  # get some references
                                 FFM_obj= FFM(X=X, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
-                                              eff_var_limit=eff_var_limit, var_compression=True, smooth_interpolation=False,
+                                              eff_var_limit=eff_var_limit, var_compression=True, 
                                               device=device, small_field_points=small_field_limit)
-                                true_0 = keops_benchmark_0 @ b  # calculate reference
                                 torch.cuda.synchronize()
                                 start = time.time()
                                 res_0 = FFM_obj @ b
@@ -371,20 +371,22 @@ def experiment_7(device="cuda:0"):
                 node_list = [4,5,6]
             for node_nr in node_list:
                 nr_of_interpolation = int(node_nr**d)  # nr of interpolation nodes
-                for evarlimit in [0.1,0.3,0.5]:
-                    eff_var_limit = float(evarlimit)
-                    for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 500000000],
-                                                                [1000, 1000, 5000, 5000], [nr_of_interpolation, nr_of_interpolation, nr_of_interpolation, nr_of_interpolation]):
-                        for r2 in [0.1,1,10,100]:
+
+                for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 500000000],
+                                                            [1000, 1000, 5000, 5000], [nr_of_interpolation, nr_of_interpolation, nr_of_interpolation, nr_of_interpolation]):
+                    for r2 in [0.1,1,10,100]:
+                        torch.manual_seed(seed)
+                        X = torch.empty(n, d).normal_(0, r2 ** 0.5)
+                        b = torch.empty(n, 1).normal_(0, 1)  # weights
+                        for evarlimit in [0.1, 0.3, 0.5]:
+                            eff_var_limit = float(evarlimit)
                             if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
-                                torch.manual_seed(seed)
-                                X = torch.empty(n,d).normal_(0, r2**0.5).to(device)
-                                b = torch.empty(n, 1).normal_(0,1).float().to(device)  # weights
+                             
                                 x_ref = X[0:ref_points, :]  # reference X
                                 torch.cuda.synchronize()
-                                keops_benchmark_0 = benchmark_matmul(x_ref, X, ls=ls, device=device)  # get some references
+                                keops_benchmark_0 = keops_matmul(x_ref, X, ls=ls, device=device)  # get some references
                                 FFM_obj= FFM(X=X, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
-                                              eff_var_limit=eff_var_limit, var_compression=True, smooth_interpolation=False,
+                                              eff_var_limit=eff_var_limit, var_compression=True, 
                                               device=device, small_field_points=small_field_limit)
                                 true_0 = keops_benchmark_0 @ b  # calculate reference
                                 torch.cuda.synchronize()
@@ -419,26 +421,27 @@ def experiment_8(device="cuda:0"):
             for node_nr in node_list:
                 nr_of_interpolation =node_nr  # nr of interpo
                 for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 250000000],
-                                                            [1000, 1000, 5000, 10000],
+                                                            [2500, 2500, 5000, 10000],
                                                             [nr_of_interpolation, nr_of_interpolation, nr_of_interpolation,
                                                              nr_of_interpolation]):
-                    for evarlimit in [0.1,0.3,0.5]:
-                        eff_var_limit = float(evarlimit)
-                        for r2 in [0.1,1,10,100]:
+                    for r2 in [0.1,1,10,100]:
+                        torch.manual_seed(seed)
+                        print(seed, n, d, r2, min_points,
+                              small_field_limit, nr_of_interpolation, eff_var_limit, )
+                        X = torch.empty(n, d).uniform_(0, (r2 * 12) ** 0.5)
+                        Y = torch.empty(n, d).normal_(0, r2 ** 0.5)
+                        b = torch.empty(n, 1).normal_(0, 1)  # weights
+                        x_ref = X[0:ref_points, :]  # reference X
+                        keops_benchmark_0 = keops_matmul(x_ref, Y, ls=ls, device=device)  # get some references
+                        true_0 = keops_benchmark_0 @ b  # calculate reference
+
+                        for evarlimit in [0.1, 0.3, 0.5]:
+                            eff_var_limit = float(evarlimit)
                             if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
-                                torch.manual_seed(seed)
-                                print(seed, n, d, r2, min_points,
-                                      small_field_limit, nr_of_interpolation, eff_var_limit,)
-                                X = torch.empty(n,d).uniform_(0, (r2*12)**0.5).to(device)
-                                Y = torch.empty(n, d).normal_(0, r2 ** 0.5).to(device)
-                                b = torch.empty(n, 1).normal_(0,1).float().to(device)  # weights
-                                x_ref = X[0:ref_points, :]  # reference X
                                 torch.cuda.synchronize()
-                                keops_benchmark_0 = benchmark_matmul(x_ref, Y, ls=ls, device=device)  # get some references
                                 FFM_obj = FFM(X=X,Y=Y, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
-                                              eff_var_limit=eff_var_limit, var_compression=True, smooth_interpolation=False,
+                                              eff_var_limit=eff_var_limit, var_compression=True, 
                                               device=device, small_field_points=small_field_limit)
-                                true_0 = keops_benchmark_0 @ b  # calculate reference
                                 torch.cuda.synchronize()
                                 start = time.time()
                                 res_0 = FFM_obj @ b
@@ -455,11 +458,11 @@ def experiment_8(device="cuda:0"):
                             print('counter: ',counter)
 
 if __name__ == '__main__':
-    # experiment_1()
+    experiment_1()
     # experiment_2()
     # experiment_3()
     # experiment_4()
     # experiment_5()
-    experiment_6()
+    # experiment_6()
     # experiment_7()
-    experiment_8()
+    # experiment_8()

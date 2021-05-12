@@ -89,7 +89,6 @@ template <typename scalar_t, int nd>
 void benchmark_1(int n,float min_points, int threshold,float a,float b,float ls,int nr_of_interpolation_points,
         bool var_comp,
         scalar_t var_eff,
-                 bool smooth_flag,
         int small_field_limit,
         char* fname
         ){
@@ -135,7 +134,6 @@ template <typename scalar_t,int nd>
 void benchmark_2(int n,float min_points, int threshold,float mean,float var,float ls,int nr_of_interpolation_points,
                  bool var_comp,
                  scalar_t var_eff,
-                 bool smooth_flag,
                 int small_field_limit,
                  char* fname){
     const std::string device_cuda = "cuda:0"; //officially retarded
@@ -184,7 +182,6 @@ template <typename scalar_t,int nd>
 void benchmark_3(int n,float min_points, int threshold,float mean,float var,float ls,int nr_of_interpolation_points,
                  bool var_comp,
                  scalar_t var_eff,
-                 bool smooth_flag,
                  int small_field_limit,
                  char* fname
                  ){
@@ -231,7 +228,6 @@ template <typename scalar_t,int nd>
 void benchmark_4(int n,float min_points, int threshold,float mean,float var,float ls,int nr_of_interpolation_points,
                  bool var_comp,
                  scalar_t var_eff,
-                 bool smooth_flag,
                  int small_field_limit,
                  char* fname){
     const std::string device_cuda = "cuda:0"; //officially retarded

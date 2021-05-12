@@ -14,7 +14,7 @@ if __name__ == '__main__':
     d = 3
     ls = 3.0
     penalty = 1e-5
-    M = 100000
+    M = 10000
     X = torch.rand(N, d)
     Y = torch.randn(N, 1)
     kernel = custom_GaussianKernel(ls)
@@ -30,7 +30,7 @@ if __name__ == '__main__':
 
     kernel = falkon.kernels.GaussianKernel(ls)
     options = falkon.FalkonOptions(use_cpu=False,debug=True)
-    model = falkon.InCoreFalkon(kernel=kernel, penalty=penalty, M=M, options=options)
+    model = falkon.Falkon(kernel=kernel, penalty=penalty, M=M, options=options)
     start = time.time()
     model.fit(X, Y)
     end = time.time()

@@ -65,17 +65,7 @@ for dataset_fun in todolist:
     X, title = dataset_fun()
 
     device = "cuda:0"                         # device
-    # X = X.float()
-    # my_values = {
-    #     'X':X.float(),
-    # }
-    # container = torch.jit.script(Container(my_values))
-    # container.save("../faulty_data.pt")
-
-
     X = X.float().to(device)
-
-
     n, dim = X.shape
     b = torch.randn(n,1).float().to(device)   # weights
     sqls = float(.01)**2                     # square of lengthscale
@@ -104,6 +94,7 @@ for dataset_fun in todolist:
     
     smooth_interpolation = [False]
     
+
     
     
     res = bench_X(nr_of_interpolation = nr_of_interpolation,
