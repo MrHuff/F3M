@@ -64,11 +64,17 @@ class ConjugateGradient(Optimizer):
             with TicToc("Chol Iter", debug=False):
                 t_start = time.time()
                 AP = mmv(P)
+                mmv_1_time_end = time.time()
+                print('mmv1 time: ',mmv_1_time_end-t_start)
+
                 alpha = Rsold / (torch.sum(P * AP, dim=0) + m_eps)
                 X.addmm_(P, torch.diag(alpha))
 
                 if (i + 1) % self.params.cg_full_gradient_every == 0:
+                    mmv_2_start = time.time()
                     R = B - mmv(X)
+                    mmv_2_end = time.time()
+                    print('mmv2 time: ', mmv_2_end-mmv_2_start)
                 else:
                     R = R - torch.mm(AP, torch.diag(alpha))
                     # R.addmm_(mat1=AP, mat2=torch.diag(alpha), alpha=-1.0)

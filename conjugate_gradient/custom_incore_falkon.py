@@ -75,7 +75,7 @@ class InCoreFalkon_custom(FalkonBase):
     Running Falkon on a random dataset
     >>> X = torch.randn(1000, 10).cuda()
     >>> Y = torch.randn(1000, 1).cuda()
-    >>> kernel = falkon.kernels.GaussianKernel(3.0)
+    >>> kernel = falkon.kernels.GaussianKernelV100(3.0)
     >>> options = FalkonOptions(use_cpu=True)
     >>> model = InCoreFalkon(kernel=kernel, penalty=1e-6, M=500, options=options)
     >>> model.fit(X, Y)
