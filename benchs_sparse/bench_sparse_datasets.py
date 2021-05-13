@@ -5,8 +5,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pickle
 import sys
-
 import random
+import pykeops
+# pykeops.clean_pykeops()
 random.seed(0)
 np.random.seed(0)
 torch.manual_seed(0)
@@ -20,9 +21,9 @@ class Container(torch.nn.Module):
 
 def DoBench(todolist):
 
-    todo_N = ["1e6", "1e7", "1e8"]                         # number of points 
-    Niters = [100, 10, 1]  # nb of trials for each N
-    todo_ls = [float(.01), float(.1), float(1)]          # lengthscales
+    todo_N = ["1e6", "1e7", "1e8","1e9"]                         # number of points
+    Niters = [3, 3,3,3]  # nb of trials for each N
+    todo_ls = [float(.01), float(.1), float(1),float(10)]          # lengthscales
     
     # FFM parameters
     # nr of interpolation nodes
@@ -44,11 +45,10 @@ def DoBench(todolist):
                     title += "_ls" + str(ls)
                 
                     sqls = ls**2                              # square of lengthscale
-                    device = "cuda:0"                         # device
-                    X = X.float().to(device)
+                    X = X.float()
                     n, dim = X.shape
-                    b = torch.randn(n,1).float().to(device)   # weights              
-                    
+                    b = torch.randn(n,1).float()   # weights
+
                     bench_X = FFMbench(X,None,b,sqls,title,Niter=1)
                     
                     res = bench_X(nr_of_interpolation = nr_of_interpolation,

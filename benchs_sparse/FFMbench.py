@@ -14,15 +14,15 @@ def FFMbench(X, Y, b, sqls, title, Niter):
     os.chdir(source_dir)
 
     from FFM_classes import FFM
-    from run_obj import benchmark_matmul, calc_rel_error_norm
+    from run_obj import benchmark_matmul, calc_rel_error_norm,benchmark_matmul_double
     import itertools
     import torch
     
     
     # compute reference for error evaluation
-    ref_points = 1000                         # calculate error on 1000 points
+    ref_points = 5000                         # calculate error on 1000 points
     x_ref = X[0:ref_points,:]                 # reference X
-    device = X.device
+    device = "cuda:0"
     XY = X if Y is None else Y
         
     # compute reference using KeOps with double precision:
@@ -31,9 +31,9 @@ def FFMbench(X, Y, b, sqls, title, Niter):
     #res_ref = ((-((x_ref_keops-XY_keops)**2).sum(dim=2)/2/sqls).exp() @ b.type(torch.cuda.DoubleTensor))
     
     # compute reference using KeOps with Kahan scheme:
-    x_ref_keops = LazyTensor(x_ref[:,None,:])
-    XY_keops = LazyTensor(XY[None,:,:])
-    res_ref = (-((x_ref_keops-XY_keops)**2).sum(dim=2)/2/sqls).exp().__matmul__(b, sum_scheme="kahan_scheme")
+    # x_ref_keops = LazyTensor(x_ref[:,None,:])
+    # XY_keops = LazyTensor(XY[None,:,:])
+    # res_ref = (-((x_ref_keops-XY_keops)**2).sum(dim=2)/2/sqls).exp().__matmul__(b, sum_scheme="kahan_scheme")
     
     # compute reference using PyTorch :
     #x_ref_double = x_ref[:,None,:].type(torch.cuda.DoubleTensor)
@@ -41,8 +41,7 @@ def FFMbench(X, Y, b, sqls, title, Niter):
     #res_ref = ((-((x_ref_double-XY_double)**2).sum(dim=2)/2/sqls).exp() @ b.type(torch.cuda.DoubleTensor))
     
     # compute reference using benchmark_matmul :
-    #res_ref = benchmark_matmul(x_ref,XY,ls=sqls,device=device) @ b
-
+    res_ref = benchmark_matmul_double(x_ref,XY,ls=sqls,device=device) @ b
 
     def call(**kwargs_list):
         elapsed = np.array([])
@@ -54,7 +53,8 @@ def FFMbench(X, Y, b, sqls, title, Niter):
                 kwargs[key] = p
             kwargs_rec.append(kwargs)
             print("\ntesting with parameters :", dict2str(kwargs))
-            myFFM = FFM(X=X, Y=Y, ls=sqls, device=device, **kwargs)
+            print("\n datasize: ", X.shape[0])
+            myFFM = FFM(X=X, ls=sqls, device=device, **kwargs)
             elapsed_k = rel_err_k = 0
             for it in range(Niter):
                 start = time.time()
@@ -68,6 +68,8 @@ def FFMbench(X, Y, b, sqls, title, Niter):
             print(f'error: {rel_err_k} (averaged over {Niter} iteration(s))')
             elapsed = np.append(elapsed, elapsed_k)
             rel_err = np.append(rel_err, rel_err_k)
+            del myFFM
+            torch.cuda.empty_cache()
         Xcpu, Ycpu, bcpu = X.cpu(), (Y.cpu() if Y is not None else None), b.cpu()
         return dict(X=Xcpu, Y=Ycpu, b=bcpu, sqls=sqls, elapsed=elapsed, rel_err=rel_err, kwargs_list=kwargs_list, kwargs_rec=kwargs_rec, title=title)
     

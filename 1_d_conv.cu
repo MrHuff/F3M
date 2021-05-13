@@ -256,7 +256,7 @@ __device__ scalar_t calculate_lagrange_product( //Tends to become really inaccur
 template <typename scalar_t,int nd>
 __device__ scalar_t calculate_barycentric_lagrange(//not sure this is such a great idea, when nan how avoid...
         scalar_t *l_p,
-        scalar_t *W,
+        scalar_t *w_shared,
         scalar_t *x_i,
         scalar_t *l_x,
         const bool * pBoolean,
@@ -270,11 +270,54 @@ __device__ scalar_t calculate_barycentric_lagrange(//not sure this is such a gre
                 break;
             }
         }else{
-            b*=l_x[i]*W[combs[i]]/(x_i[i]-l_p[combs[i]]);
+            b*= l_x[i] * w_shared[combs[i]] / (x_i[i] - l_p[combs[i]]);
         }
     }
     return b;
 }
+
+
+template <typename scalar_t,int nd>
+__device__ scalar_t calculate_barycentric_lagrange_one_pass(//not sure this is such a great idea, when nan how avoid...
+        scalar_t *y_in,
+        scalar_t * center,
+        const int *combs,
+        scalar_t * factor,
+        scalar_t *l_p,
+        scalar_t *w,
+        scalar_t b,
+        const int * node_cum_shared
+
+){
+    bool pBoolean;
+    scalar_t x_i;
+    scalar_t l_x;
+    for (int i = 0; i < nd; i++) {
+        x_i = *factor*(y_in[i]-center[i]); //correct y_in, correct center
+        scalar_t tmp = 0.;
+        pBoolean=false;
+        for (int l=node_cum_shared[i];l<node_cum_shared[i+1];l++){ //node_cum_index is wrong or l_p is loaded completely incorrectly!
+            if (x_i==l_p[l]){
+                pBoolean=true;
+                tmp=1;
+                break;
+            }else{
+                tmp += w[l]/(x_i-l_p[l]);
+            }
+        }
+        l_x = 1/tmp;
+        if (pBoolean){
+            if (x_i!=l_p[combs[i]]){
+                b=(scalar_t) 0;
+                break;
+            }
+        }else{
+            b*= l_x * w[combs[i]] / (x_i - l_p[combs[i]]);
+        }
+    }
+    return b;
+}
+
 
 __device__ int calculate_box_ind(int &current_thread_idx,
         torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> counts,
@@ -395,7 +438,7 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor64<scalar_t
                     int j = start + tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
                     if (j < end) { // we load yj from device global memory only if j<ny
                         torch_load_y_v2<scalar_t, nd>(y_idx_reordering[j], yj, Y_data);
-                        torch_load_b_v2<scalar_t, nd>(b_ind, y_idx_reordering[j], bj, b_data);
+                        torch_load_b_v2<scalar_t, nd>(b_ind,y_idx_reordering[j], bj, b_data);
                     }
                     __syncthreads();
                     if (i < b) { // we compute x1i only if needed
@@ -416,6 +459,77 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor64<scalar_t
         __syncthreads();
     }
 }
+
+template <typename scalar_t,int nd>
+__global__ void skip_conv_1d_shared_transpose(const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
+                                    const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> Y_data,
+                                    const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> b_data,
+                                    torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> output,
+                                    scalar_t * ls,
+                                    const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> x_boxes_count,
+                                    const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> y_boxes_count,
+                                    const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> block_box_indicator,
+                                    const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> box_block_indicator,
+                                    const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> x_idx_reordering,
+                                    const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> y_idx_reordering,
+                                    const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions_y_parsed,
+                                    const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> interactions_x
+
+){
+    int i,box_ind,start,end,a,b,int_m,y_idx_reorder,b_size,interactions_a,interactions_b;
+    box_ind = block_box_indicator[blockIdx.x];
+    a = y_boxes_count[box_ind];
+    b = y_boxes_count[box_ind+1];
+    i = a + threadIdx.x+box_block_indicator[blockIdx.x]*blockDim.x; // Use within box, block index i.e. same size as indicator...
+    scalar_t y_i[nd];
+    scalar_t b_i;
+    extern __shared__ __align__(sizeof(scalar_t)) unsigned char my_smem[];
+    scalar_t *buffer = reinterpret_cast<scalar_t *>(my_smem);
+    scalar_t *xj = &buffer[0];
+    if (i<b) {
+        y_idx_reorder = y_idx_reordering[i];
+        for (int k = 0; k < nd; k++) {
+            y_i[k] = Y_data[y_idx_reorder][k];
+        }
+    }
+
+    __syncthreads();
+    interactions_a = interactions_y_parsed[box_ind][0];
+    interactions_b= interactions_y_parsed[box_ind][1];
+    b_size = b_data.size(1);
+    for (int b_ind=0; b_ind<b_size; b_ind++) {
+        if (i<b) {
+            b_i = b_data[y_idx_reorder][b_ind];
+        }
+        if (interactions_a>-1) {
+            for (int m = interactions_a; m < interactions_b; m++) {
+                int_m = interactions_x[m];
+                start = x_boxes_count[int_m]; // 0 to something
+                end = x_boxes_count[int_m + 1]; // seomthing
+                for (int jstart = start, tile = 0; jstart < end; jstart += blockDim.x, tile++) {
+                    int j = start + tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
+                    if (j < end) { // we load yj from device global memory only if j<ny
+                        torch_load_y_v2<scalar_t, nd>(x_idx_reordering[j], xj, X_data);
+                    }
+                    __syncthreads();
+                    if (i < b) { // we compute x1i only if needed
+                        scalar_t *xjrel = xj; // Loop on the columns of the current block.
+                        for (int jrel = 0; (jrel < blockDim.x) && (jrel < end - jstart); jrel++, xjrel += nd) {
+                            atomicAdd(&output[x_idx_reordering[jstart+jrel]][b_ind],rbf<scalar_t, nd>(xjrel, y_i, ls) * b_i); //for each p, sum accross x's...
+                        }
+                    }
+                    __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
+                };
+            }
+        __syncthreads();
+
+        }
+    };
+    __syncthreads();
+
+}
+
+
 template <typename scalar_t,int nd>
 __device__ void lagrange_data_load(scalar_t w[],
                                    scalar_t x_i[],
@@ -447,6 +561,8 @@ __device__ void lagrange_data_load(scalar_t w[],
 
 }
 
+
+
 //Implement shuffle reduce.
 template <typename scalar_t,int nd>
 __global__ void lagrange_shared(
@@ -465,12 +581,12 @@ __global__ void lagrange_shared(
         const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> W
 
 ){
-    int i,a,b,cheb_data_size,idx_reorder,laplace_n,b_size,box_ind;
+    int i,a,b,cheb_data_size,idx_reorder,lagrange_n,b_size,box_ind;
     box_ind = indicator[blockIdx.x];
     b_size = output.size(1);
     cheb_data_size = combinations.size(0);
     scalar_t factor = 2/(*edge); //rescaling data to langrange node interval (-1,1)
-    laplace_n = lap_nodes.size(0);
+    lagrange_n = lap_nodes.size(0);
     a = x_boxes_count[box_ind]; //Error occurs here
     b = x_boxes_count[box_ind+1];
     i = a+ threadIdx.x+box_block_indicator[blockIdx.x]*blockDim.x; // current thread
@@ -484,7 +600,7 @@ __global__ void lagrange_shared(
     int *node_cum_shared = &int_buffer[0];
     int *yj = &int_buffer[1+nd];
     scalar_t *l_p = &buffer[blockDim.x*nd+1+nd];
-    scalar_t *w_shared = &buffer[blockDim.x*nd+1+nd+laplace_n];
+    scalar_t *w_shared = &buffer[blockDim.x*nd+1+nd+lagrange_n];
 
     if (threadIdx.x<nd+1){
         if (threadIdx.x==0){
@@ -495,9 +611,9 @@ __global__ void lagrange_shared(
     }
     __syncthreads();
 
-    for (int jstart = 0, tile = 0; jstart < laplace_n; jstart += blockDim.x, tile++) {
+    for (int jstart = 0, tile = 0; jstart < lagrange_n; jstart += blockDim.x, tile++) {
         int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
-        if (j < laplace_n) { // we load yj from device global memory only if j<ny
+        if (j < lagrange_n) { // we load yj from device global memory only if j<ny
             l_p[j] = lap_nodes[j];
             w_shared[j] = W[j];
         }
@@ -548,7 +664,7 @@ __global__ void lagrange_shared(
 }
 
 template <typename scalar_t,int nd>
-__global__ void laplace_shared_transpose(
+__global__ void lagrange_shared_transpose(
         const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
         const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> b_data, //also put b's in shared mem for maximum perform.
         const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> lap_nodes,
@@ -564,14 +680,14 @@ __global__ void laplace_shared_transpose(
         const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> W
 ) {
 
-    int laplace_n,i, box_ind, a, b,cheb_data_size,idx_reorder,b_size;
+    int lagrange_n,i, box_ind, a, b,cheb_data_size,idx_reorder,b_size;
     cheb_data_size = combinations.size(0);
     scalar_t factor = 2/(*edge);
     box_ind = indicator[blockIdx.x];
     a = x_boxes_count[box_ind];
     b = x_boxes_count[box_ind + 1];
     i = a + threadIdx.x + box_block_indicator[blockIdx.x] * blockDim.x; // current thread
-    laplace_n = lap_nodes.size(0);
+    lagrange_n = lap_nodes.size(0);
     b_size =  b_data.size(1);
     scalar_t x_i[nd];
     scalar_t l_x[nd];
@@ -584,7 +700,7 @@ __global__ void laplace_shared_transpose(
     int *yj = &int_buffer[1+nd];
     scalar_t *bj = &buffer[(blockDim.x+1) * nd+1];
     scalar_t *l_p = &buffer[(blockDim.x+1) * nd+blockDim.x+1];
-    scalar_t *w_shared = &buffer[(blockDim.x+1) * nd+blockDim.x+1+laplace_n];
+    scalar_t *w_shared = &buffer[(blockDim.x+1) * nd+blockDim.x+1+lagrange_n];
     if (threadIdx.x<nd+1){
         if (threadIdx.x==0){
             node_cum_shared[0] = (int) 0;
@@ -595,9 +711,9 @@ __global__ void laplace_shared_transpose(
     }
     __syncthreads();
 
-    for (int jstart = 0, tile = 0; jstart < laplace_n; jstart += blockDim.x, tile++) {
+    for (int jstart = 0, tile = 0; jstart < lagrange_n; jstart += blockDim.x, tile++) {
         int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
-        if (j < laplace_n) { // we load yj from device global memory only if j<ny
+        if (j < lagrange_n) { // we load yj from device global memory only if j<ny
             l_p[j] = lap_nodes[j];
             w_shared[j] = W[j];
         }
@@ -729,6 +845,111 @@ __global__ void skip_conv_far_boxes_opt(//needs rethinking
 //        __syncthreads();
     }
 }
+
+template <typename scalar_t,int nd>
+__global__ void lagrange_shared_v2(
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> Y_data,
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> b_data, //also put b's in shared mem for maximum perform.
+        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> lap_nodes,
+        const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> combinations,
+        torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> output,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> indicator,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> box_block_indicator,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> y_cum, //error is here! I think it does an access here when its not supposed to...
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> centers,
+        const scalar_t * edge,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> idx_reordering,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> node_list_cum,
+        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> W
+
+){
+    int i,a,cheb_data_size,lagrange_n,b_size,box_ind,i_calc;
+    box_ind = indicator[blockIdx.x];
+    b_size = output.size(1);
+    cheb_data_size = combinations.size(0);
+    scalar_t factor = 2/(*edge); //rescaling data to langrange node interval (-1,1)
+    lagrange_n = lap_nodes.size(0);
+    a = cheb_data_size*box_ind;
+    i = a+ threadIdx.x+box_block_indicator[blockIdx.x]*blockDim.x; // current thread
+    i_calc = threadIdx.x+box_block_indicator[blockIdx.x]*blockDim.x;
+    int x_i[nd];
+    if (i_calc<cheb_data_size) {
+        for (int k = 0; k < nd; k++) {
+            x_i[k] = combinations[i_calc][k];
+        }
+    }
+    extern __shared__ int int_buffer[];
+    extern __shared__ __align__(sizeof(scalar_t)) unsigned char my_smem[];
+    scalar_t *buffer = reinterpret_cast<scalar_t *>(my_smem);
+    int *node_cum_shared = &int_buffer[0];
+    scalar_t *yj = &buffer[1+nd];
+    scalar_t *bj = &buffer[(blockDim.x+1) * nd+1];
+    scalar_t *center = &buffer[(blockDim.x+1) * nd+blockDim.x+1];
+    scalar_t *l_p = &buffer[(blockDim.x+1) * nd+blockDim.x+1+nd];
+    scalar_t *w_shared = &buffer[(blockDim.x+1) * nd+blockDim.x+1+lagrange_n+nd];
+    if (threadIdx.x<nd+1){
+        if (threadIdx.x<nd){
+            center[threadIdx.x]=centers[box_ind][threadIdx.x];
+        }
+        if (threadIdx.x==0){
+            node_cum_shared[threadIdx.x]=0;
+        }else{
+            node_cum_shared[threadIdx.x] = node_list_cum[threadIdx.x-1];
+        }
+    }
+    __syncthreads();
+
+    for (int jstart = 0, tile = 0; jstart < lagrange_n; jstart += blockDim.x, tile++) {
+        int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
+        if (j < lagrange_n) { // we load yj from device global memory only if j<ny
+            l_p[j] = lap_nodes[j];
+            w_shared[j] = W[j];
+        }
+        __syncthreads();
+    }
+
+    __syncthreads();
+    scalar_t acc;
+    int Y_start = y_cum[box_ind];
+    int Y_end = y_cum[box_ind+1];
+    for (int b_ind=0; b_ind<b_size; b_ind++) {
+        acc=0;
+        for (int jstart = Y_start, tile = 0; jstart < Y_end; jstart += blockDim.x, tile++) {
+            int j =jstart+ tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
+            if (j < Y_end) { // we load yj from device global memory only if j<ny
+                torch_load_y_v2<scalar_t, nd>(idx_reordering[j], yj, Y_data);
+                torch_load_b_v2<scalar_t, nd>(b_ind,idx_reordering[j],bj, b_data);
+            }
+            __syncthreads();
+            if (i_calc < cheb_data_size) { // we compute x1i only if needed
+                scalar_t *yjrel = yj; // Loop on the columns of the current block.
+                for (int jrel = 0; (jrel < blockDim.x) && (jrel < Y_end - jstart); jrel++, yjrel += nd) {
+                    acc += calculate_barycentric_lagrange_one_pass<scalar_t,nd>(
+                            yjrel,
+                            center,
+                            x_i,
+                            &factor,
+                             l_p,
+                            w_shared,
+                            bj[jrel],
+                    node_cum_shared
+                            );
+                }
+            }
+            __syncthreads();
+
+        };
+        if (i_calc < cheb_data_size) { // we compute x1i only if needed
+            output[i][b_ind] = acc;
+        }
+    };
+    __syncthreads();
+
+}
+
+
+
+
 /*****
  *
  * UTILS

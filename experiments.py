@@ -504,27 +504,32 @@ def experiment_9(device="cuda:0"):
     seed=0
     if not os.path.exists(dirname):
         os.makedirs(dirname)
-    min_points = 5000
+    min_points = 50000
     for d in [2]:
         for ls in [1000,100,10,1,0.1,1e-2,1e-3]:
-            X = torch.load('standardized_data_osm.pt')
-            n = X.size(0)
-            b = torch.empty(n, 1).normal_(0, 1)
-            x_ref = X[0:ref_points, :]  # reference X
-            keops_benchmark_0 = benchmark_matmul_double(x_ref, X, ls=ls, device=device)  # get some references
-            true_0 = keops_benchmark_0 @ b  # calculate reference
-            torch.cuda.synchronize()
-            del keops_benchmark_0,x_ref
-            torch.cuda.empty_cache()
-            print("benchmarks done\n")
-            for evarlimit in [0.1,0.3,0.5]:
+
+            if ls <0.1:
+                evarlimit_list= [0.1]
+            else:
+                evarlimit_list= [0.1,0.3,0.5]
+            for evarlimit in evarlimit_list:
                 node_list = [3, 4, 5, 6, 7, 8, 9, 10]
                 for node_nr in node_list:
                     nr_of_interpolation = int(node_nr ** d)
-                    small_field_limit = nr_of_interpolation
+                    small_field_limit = nr_of_interpolation if ls <0.1 else 10000
                     eff_var_limit = float(evarlimit)
                     if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
                         torch.cuda.synchronize()
+                        X = torch.load('standardized_data_osm.pt')
+                        n = X.size(0)
+                        b = torch.empty(n, 1).normal_(0, 1)
+                        x_ref = X[0:ref_points, :]  # reference X
+                        keops_benchmark_0 = benchmark_matmul_double(x_ref, X, ls=ls, device=device)  # get some references
+                        true_0 = keops_benchmark_0 @ b  # calculate reference
+                        torch.cuda.synchronize()
+                        del keops_benchmark_0
+                        torch.cuda.empty_cache()
+                        print("benchmarks done\n")
                         FFM_obj= FFM(X=X, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
                                       eff_var_limit=eff_var_limit, var_compression=True,
                                       device=device, small_field_points=small_field_limit)
@@ -537,11 +542,10 @@ def experiment_9(device="cuda:0"):
                         df = calculate_results(true_0,res_0,ref_points,seed,n,d,1/ls,min_points,small_field_limit,nr_of_interpolation, eff_var_limit,calc_time)
                         df.to_csv(f'{dirname}/{dirname}_{counter}.csv')
                         print('Wrote experiments: ',counter)
-                        del FFM_obj,res_0
+                        del FFM_obj,res_0,X,b,x_ref,true_0
                         torch.cuda.empty_cache()
                     counter+=1
                     print('counter: ',counter)
-            del X, b, true_0
             torch.cuda.empty_cache()
 
 if __name__ == '__main__':
