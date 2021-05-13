@@ -2,6 +2,12 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 
+
+def UnitBox(X):
+    X = X - X.min(dim=0, keepdims=True)[0]
+    X = X / X.max(dim=0, keepdims=True)[0]
+    return X
+    
 def PlotData(X, max_npoints = np.inf):
     n, dim = X.shape
     m = min(n,max_npoints)
@@ -18,7 +24,17 @@ def PlotData(X, max_npoints = np.inf):
         raise ValueError("not implemented")
 
 
+def MultiScaleClusterData(dim,n_branches,r):
+    sigma = n = 1
+    X = np.zeros((1,dim))
+    for n_br in n_branches:
+        n *= n_br
+        X = np.repeat(X,n_br,axis=0) + sigma * np.random.randn(n,dim)
+        sigma *= r
+    return torch.from_numpy(X)
 
+        
+        
 def MaternClusterData(dim,lam,mu,r):
     Np = np.random.poisson(lam)
     C = (1+2*r) * np.random.rand(Np,dim)
@@ -47,7 +63,7 @@ def MaternClusterData(dim,lam,mu,r):
 
 def FBMData(dim, n, hurst):
     from fbm import FBM
-    f = FBM(n=n, hurst=hurst)
+    f = FBM(n=n-1, hurst=hurst)
     X = []
     for k in range(dim):
         X.append(f.fbm())
@@ -55,3 +71,194 @@ def FBMData(dim, n, hurst):
     return X  
   
   
+
+
+
+
+
+
+
+
+    
+def Uniform2D1e6():
+    title = "Uniform_D2_N1e6"
+    X = torch.rand(1000000,2)
+    return X, title
+
+def Uniform2D1e7():
+    title = "Uniform_D2_N1e7"
+    X = torch.rand(10000000,2)
+    return X, title
+
+def Uniform2D1e8():
+    title = "Uniform_D2_N1e8"
+    X = torch.rand(100000000,2)
+    return X, title
+
+def Uniform2D1e9():
+    title = "Uniform_D2_N1e9"
+    X = torch.rand(1000000000,2)
+    return X, title
+
+
+
+def Uniform3D1e6():
+    title = "Uniform_D3_N1e6"
+    X = torch.rand(1000000,3)
+    return X, title
+
+def Uniform3D1e7():
+    title = "Uniform_D3_N1e7"
+    X = torch.rand(10000000,3)
+    return X, title
+
+def Uniform3D1e8():
+    title = "Uniform_D3_N1e8"
+    X = torch.rand(100000000,3)
+    return X, title
+
+def Uniform3D1e9():
+    title = "Uniform_D3_N1e9"
+    X = torch.rand(1000000000,3)
+    return X, title
+
+
+
+
+def ClusteredDataset2D1e6():
+    title = "Clustered_Dataset_D2_N1e6"
+    X = MultiScaleClusterData(2,[100,100,100],.03)
+    return UnitBox(X), title
+
+def ClusteredDataset2D1e7():
+    title = "Clustered_Dataset_D2_N1e7"
+    X = MultiScaleClusterData(2,[10,100,100,100],.03)
+    return UnitBox(X), title
+
+def ClusteredDataset2D1e8():
+    title = "Clustered_Dataset_D2_N1e8"
+    X = MultiScaleClusterData(2,[100,100,100,100],.03)
+    return UnitBox(X), title
+
+def ClusteredDataset2D1e9():
+    title = "Clustered_Dataset_D2_N1e9"
+    X = MultiScaleClusterData(2,[10,100,100,100,100],.03)
+    return UnitBox(X), title
+
+
+
+def ClusteredDataset3D1e6():
+    title = "Clustered_Dataset_D3_N1e6"
+    X = MultiScaleClusterData(2,[100,100,100],.03)
+    return UnitBox(X), title
+
+def ClusteredDataset3D1e7():
+    title = "Clustered_Dataset_D3_N1e7"
+    X = MultiScaleClusterData(3,[10,100,100,100],.03)
+    return UnitBox(X), title
+
+def ClusteredDataset3D1e8():
+    title = "Clustered_Dataset_D3_N1e8"
+    X = MultiScaleClusterData(3,[100,100,100,100],.03)
+    return UnitBox(X), title
+
+def ClusteredDataset3D1e9():
+    title = "Clustered_Dataset_D3_N1e9"
+    X = MultiScaleClusterData(3,[10,100,100,100,100],.03)
+    return UnitBox(X), title
+
+
+
+
+
+
+
+
+def FBMDataset2D1e6():
+    title = "Fractional_Brownian_Motion_Dataset_D2_N1e6"
+    X = FBMData(2,1000000,0.75)
+    return UnitBox(X), title
+    
+def FBMDataset2D1e7():
+    title = "Fractional_Brownian_Motion_Dataset_D2_N1e7"
+    X = FBMData(2,10000000,0.75)
+    return UnitBox(X), title
+    
+def FBMDataset2D1e8():
+    title = "Fractional_Brownian_Motion_Dataset_D2_N1e8"
+    X = FBMData(2,100000000,0.75)
+    return UnitBox(X), title
+    
+def FBMDataset2D1e9():
+    title = "Fractional_Brownian_Motion_Dataset_D2_N1e9"
+    X = FBMData(2,1000000000,0.75)
+    return UnitBox(X), title
+    
+    
+def FBMDataset3D1e6():
+    title = "Fractional_Brownian_Motion_Dataset_D3_N1e6"
+    X = FBMData(3,1000000,0.75)
+    return UnitBox(X), title
+    
+def FBMDataset3D1e7():
+    title = "Fractional_Brownian_Motion_Dataset_D3_N1e7"
+    X = FBMData(3,10000000,0.75)
+    return UnitBox(X), title
+    
+def FBMDataset3D1e8():
+    title = "Fractional_Brownian_Motion_Dataset_D3_N1e8"
+    X = FBMData(3,100000000,0.75)
+    return UnitBox(X), title
+    
+def FBMDataset3D1e9():
+    title = "Fractional_Brownian_Motion_Dataset_D3_N1e9"
+    X = FBMData(3,1000000000,0.75)
+    return UnitBox(X), title
+    
+    
+    
+
+def BMDataset2D1e6():
+    title = "Brownian_Motion_Dataset_D2_N1e6"
+    X = FBMData(2,1000000,0.5)
+    return UnitBox(X), title
+    
+def BMDataset2D1e7():
+    title = "Brownian_Motion_Dataset_D2_N1e7"
+    X = FBMData(2,10000000,0.5)
+    return UnitBox(X), title
+    
+def BMDataset2D1e8():
+    title = "Brownian_Motion_Dataset_D2_N1e8"
+    X = FBMData(2,100000000,0.5)
+    return UnitBox(X), title
+    
+def BMDataset2D1e9():
+    title = "Brownian_Motion_Dataset_D2_N1e9"
+    X = FBMData(2,1000000000,0.5)
+    return UnitBox(X), title
+    
+    
+def BMDataset3D1e6():
+    title = "Brownian_Motion_Dataset_D3_N1e6"
+    X = FBMData(3,1000000,0.5)
+    return UnitBox(X), title
+    
+def BMDataset3D1e7():
+    title = "Brownian_Motion_Dataset_D3_N1e7"
+    X = FBMData(3,10000000,0.5)
+    return UnitBox(X), title
+    
+def BMDataset3D1e8():
+    title = "Brownian_Motion_Dataset_D3_N1e8"
+    X = FBMData(3,100000000,0.5)
+    return UnitBox(X), title
+    
+def BMDataset3D1e9():
+    title = "Brownian_Motion_Dataset_D3_N1e9"
+    X = FBMData(3,1000000000,0.5)
+    return UnitBox(X), title
+    
+    
+    
+
