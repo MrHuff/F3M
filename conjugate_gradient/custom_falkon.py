@@ -84,7 +84,7 @@ class custom_Falkon(FalkonBase):
     Running Falkon on a random dataset
     >>> X = torch.randn(1000, 10)
     >>> Y = torch.randn(1000, 1)
-    >>> kernel = falkon.kernels.GaussianKernel(3.0)
+    >>> kernel = falkon.kernels.GaussianKernelV100(3.0)
     >>> options = FalkonOptions(use_cpu=True)
     >>> model = Falkon(kernel=kernel, penalty=1e-6, M=500, options=options)
     >>> model.fit(X, Y)

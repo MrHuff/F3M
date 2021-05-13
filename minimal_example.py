@@ -1,9 +1,6 @@
 from FFM_classes import *
 import time
 from run_obj import *
-import pykeops
-pykeops.clean_pykeops()          # just in case old build files are still present
-
 if __name__ == '__main__':
     n=1000000 #Nr of observations
     device = "cuda:0" #device
@@ -22,9 +19,9 @@ if __name__ == '__main__':
     small_field_limit = 1000
 
 
-    keops_benchmark_0 = keops_matmul(x_ref,X,ls=ls,device=device) #get some references
-    keops_benchmark_1 = keops_matmul(x_ref,Y,ls=ls,device=device) #get some references
-    keops_benchmark_2 = keops_matmul(x_ref,Y_2,ls=ls,device=device) #get some references
+    keops_benchmark_0 = benchmark_matmul_double(x_ref,X,ls=ls,device=device) #get some references
+    keops_benchmark_1 = benchmark_matmul_double(x_ref,Y,ls=ls,device=device) #get some references
+    keops_benchmark_2 = benchmark_matmul_double(x_ref,Y_2,ls=ls,device=device) #get some references
 
     true_0 = keops_benchmark_0@b #calculate reference
     true_1 = keops_benchmark_1@b #calculate reference

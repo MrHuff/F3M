@@ -16,9 +16,9 @@ class FFM:
                  small_field_points = 1000,
                  device = "cuda:0"
                  ):
-        self.X = X.to(device).float()
+        self.X = X.float().to(device)
         if torch.is_tensor(Y):
-            self.Y = Y.to(device).float()
+            self.Y = Y.float().to(device)
         else:
             self.Y = self.X
             print('X==Y assuming kernel covariance matmul')
@@ -136,16 +136,17 @@ class benchmark_matmul():
                  Y=None,
                  ls=1.0,
                  device = "cuda:0"):
-        self.X = X.to(device).float()
+        self.X = X.float().to(device)
         if torch.is_tensor(Y):
-            self.Y = Y.to(device).float()
+            self.Y = Y.float().to(device)
         else:
-            self.Y = Y
+            self.Y = self.X
         self.d = self.X.shape[1]
         try:
             assert self.d>0 and self.d<6
         except AssertionError:
             print('Sorry bro, dimensionality of your data is too big; Can only do up to 5')
+            raise AssertionError
         self.ls = float(ls)
         self.device = device
 
@@ -154,45 +155,100 @@ class benchmark_matmul():
             assert ls>0
         except AssertionError:
             print('ls less than 0, not allowed')
+            raise AssertionError
+
         self.ls = float(ls)
 
     def __matmul__(self, b):
-        b = b.to(self.device).float()
-        if torch.is_tensor(self.Y):
-            try:
-                assert self.Y.shape[1]==self.X.shape[1]
-                assert self.Y.shape[0]==b.shape[0]
-            except AssertionError:
-                print('hey check the shapes of your tensor X,Y and b they dont match up!')
-
-            Y=self.Y
-        else:
-            Y=self.X
-            try:
-                assert self.X.shape[0]==b.shape[0]
-            except AssertionError:
-                print('hey check the shapes of your tensor X and b they dont match up!')
+        self.b = b.float().to(self.device)
+        self.forward(self.X,self.Y,self.b)
+    def forward(self,X,Y,b):
+        try:
+            assert Y.shape[1]==X.shape[1]
+            assert Y.shape[0]==b.shape[0]
+        except AssertionError:
+            print('hey check the shapes of your tensor X,Y and b they dont match up!')
+            raise AssertionError
         if self.d==1:
-            return load_obj.rbf_float_1(self.X,Y,b,self.ls,True)
+            return load_obj.rbf_float_1(X,Y,b,self.ls,True)
         if self.d==2:
-            return load_obj.rbf_float_2(self.X,Y,b,self.ls,True)
+            return load_obj.rbf_float_2(X,Y,b,self.ls,True)
         if self.d==3:
-            return load_obj.rbf_float_3(self.X,Y,b,self.ls,True)
+            return load_obj.rbf_float_3(X,Y,b,self.ls,True)
         if self.d==4:
-            return load_obj.rbf_float_4(self.X,Y,b,self.ls,True)
+            return load_obj.rbf_float_4(X,Y,b,self.ls,True)
         if self.d==5:
-            return load_obj.rbf_float_5(self.X,Y,b,self.ls,True)
+            return load_obj.rbf_float_5(X,Y,b,self.ls,True)
         if self.d==6:
-            return load_obj.rbf_float_6(self.X,Y,b,self.ls,True)
+            return load_obj.rbf_float_6(X,Y,b,self.ls,True)
         if self.d==7:
-            return load_obj.rbf_float_7(self.X,Y,b,self.ls,True)
+            return load_obj.rbf_float_7(X,Y,b,self.ls,True)
         if self.d==8:
-            return load_obj.rbf_float_8(self.X,Y,b,self.ls,True)
+            return load_obj.rbf_float_8(X,Y,b,self.ls,True)
         if self.d==9:
-            return load_obj.rbf_float_9(self.X,Y,b,self.ls,True)
+            return load_obj.rbf_float_9(X,Y,b,self.ls,True)
         if self.d==10:
-            return load_obj.rbf_float_10(self.X,Y,b,self.ls,True)
+            return load_obj.rbf_float_10(X,Y,b,self.ls,True)
 
+class benchmark_matmul_double():
+    def __init__(self,
+                 X,
+                 Y=None,
+                 ls=1.0,
+                 device = "cuda:0"):
+        self.X = X.double().to(device)
+        if torch.is_tensor(Y):
+            self.Y = Y.double().to(device)
+        else:
+            self.Y = self.X
+        self.d = self.X.shape[1]
+        try:
+            assert self.d>0 and self.d<6
+        except AssertionError:
+            print('Sorry bro, dimensionality of your data is too big; Can only do up to 5')
+            raise AssertionError
+
+        self.ls = float(ls)
+        self.device = device
+
+    def update_ls(self,ls):
+        try:
+            assert ls>0
+        except AssertionError:
+            print('ls less than 0, not allowed')
+            raise AssertionError
+
+        self.ls = float(ls)
+
+    def __matmul__(self, b):
+        self.b = b.double().to(self.device)
+        try:
+            assert self.Y.shape[1]==self.X.shape[1]
+            assert self.Y.shape[0]==b.shape[0]
+        except AssertionError:
+            print('hey check the shapes of your tensor X,Y and b they dont match up!')
+            raise AssertionError
+
+        if self.d==1:
+            return load_obj.rbf_double_1(self.X,self.Y,self.b,self.ls,True)
+        if self.d==2:
+            return load_obj.rbf_double_2(self.X,self.Y,self.b,self.ls,True)
+        if self.d==3:
+            return load_obj.rbf_double_3(self.X,self.Y,self.b,self.ls,True)
+        if self.d==4:
+            return load_obj.rbf_double_4(self.X,self.Y,self.b,self.ls,True)
+        if self.d==5:
+            return load_obj.rbf_double_5(self.X,self.Y,self.b,self.ls,True)
+        if self.d==6:
+            return load_obj.rbf_double_6(self.X,self.Y,self.b,self.ls,True)
+        if self.d==7:
+            return load_obj.rbf_double_7(self.X,self.Y,self.b,self.ls,True)
+        if self.d==8:
+            return load_obj.rbf_double_8(self.X,self.Y,self.b,self.ls,True)
+        if self.d==9:
+            return load_obj.rbf_double_9(self.X,self.Y,self.b,self.ls,True)
+        if self.d==10:
+            return load_obj.rbf_double_10(self.X,self.Y,self.b,self.ls,True)
 
 class block_FFM_matmul(FFM):
     def __init__(self,
@@ -245,9 +301,6 @@ class block_FFM_matmul(FFM):
                         output_append += self.forward(x, y, b_chunks[j]).cpu()
                 output_list.append(output_append)
             return torch.cat(output_list,dim=0)
-
-
-
 
 
 
