@@ -964,25 +964,65 @@ __global__ void lagrange_shared_v2(
 //
 
 
+
 template <typename scalar_t, int nd>
 __global__ void box_division_cum(
         const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
         const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> alpha,
         const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> multiply,
-        const scalar_t * int_mult,
         const scalar_t * edge,
         torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> global_vector_counter_cum,
-        const float * max_index
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> perm,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> old_perm,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> depth_perm_idx_adder,
+        const int * current_depth,
+        const int * dim_fac
+
 ){
     int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
     if (i>X_data.size(0)-1){return;}
-    float n = (float)global_vector_counter_cum.size(0)-1;
-    int idx=0;
-    for (int p = 0;p<nd;p++) {
-        idx += multiply[p]*(int)floor( *int_mult * (X_data[i][p] - alpha[p]) / *edge);
+    int idx;
+    scalar_t cur_edge;
+    scalar_t cur_alpha[nd];
+    int bin;
+    if (*current_depth==0){
+        idx=0;
+        for (int p = 0;p<nd;p++) {
+            idx += multiply[p]*(int)floor( 2 * (X_data[i][p] - alpha[p]) / *edge);
+        }
+        atomicAdd(&global_vector_counter_cum[perm[idx]+1],1);
+        return;
+    }else{
+        /*
+         * Initialize
+         */
+        int global_idx=0;
+        cur_edge = *edge;
+        for (int p = 0;p<nd;p++) {
+            cur_alpha[p]=alpha[p];
+        }
+        /*
+         * Iterate over previous iterations
+         * */
+        for (int d=0;d<*current_depth;d++){
+            cur_edge = cur_edge/(float)pow(2.0,d);
+            idx=0;
+            for (int p = 0;p<nd;p++) {
+                bin = (int)floor( 2 * (X_data[i][p] - cur_alpha[p])/cur_edge);
+                cur_alpha[p] = cur_alpha[p]+bin*cur_edge/2;
+                idx += multiply[p]*bin;
+            }
+            global_idx = old_perm[depth_perm_idx_adder[d]+idx+global_idx*(*dim_fac)];
+        }
+        cur_edge = cur_edge/2;
+        idx=0;
+        for (int p = 0;p<nd;p++) {
+            bin = (int)floor( 2 * (X_data[i][p] - cur_alpha[p])/cur_edge);
+            idx += multiply[p]*bin;
+        }
+        atomicAdd(&global_vector_counter_cum[perm[global_idx*(*dim_fac) + idx]+1],1);
+        return;
     }
-    int true_index = (int)max(ceil(n* (float)idx/(*max_index))-1,(float)0);
-    atomicAdd(&global_vector_counter_cum[true_index+1],1);
 
 }
 
@@ -990,16 +1030,55 @@ template <typename scalar_t, int nd>
 __global__ void center_perm(const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> centers_natural,
                             const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> alpha,
                             const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> multiply,
-                            const scalar_t * int_mult,
                             const scalar_t * edge,
-                            torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> perm){
+                            torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> perm,
+                            torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> old_perm,
+                            torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> depth_perm_idx_adder,
+                            const int * current_depth,
+                            const int * dim_fac
+                            ){
     int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
     if (i>centers_natural.size(0)-1){return;}
-    int idx=0;
-    for (int p = 0;p<nd;p++) {
-        idx += multiply[p]*(int)floor( *int_mult * (centers_natural[i][p] - alpha[p]) / *edge);
+    int idx;
+    scalar_t cur_edge;
+    scalar_t cur_alpha[nd];
+    int bin;
+    if (*current_depth==0){
+        idx=0;
+        for (int p = 0;p<nd;p++) {
+            idx += multiply[p]*(int)floor( 2 * (centers_natural[i][p] - alpha[p]) / *edge);
+        }
+        perm[idx] = i;
+        return;
+    }else{
+        int global_idx=0;
+        for (int p = 0;p<nd;p++) {
+            cur_alpha[p]=alpha[p];
+        }
+        for (int d=0;d<*current_depth;d++){
+            cur_edge = *edge/(float)pow(2.0,d);
+            idx=0;
+            for (int p = 0;p<nd;p++) {
+                bin = (int)floor( 2 * (centers_natural[i][p] - cur_alpha[p])/cur_edge);
+                cur_alpha[p] = cur_alpha[p]+bin*cur_edge/2;
+                idx += multiply[p]*bin;
+            }
+//            printf("inside index %i : depth perm adder %i  idx %i  \n",d,depth_perm_idx_adder[d],idx);
+//            printf("global_index in depth %i = %i \n",d,old_perm[depth_perm_idx_adder[d]+idx+global_idx*(*dim_fac)]);
+
+            global_idx = old_perm[depth_perm_idx_adder[d]+idx+global_idx*(*dim_fac)];
+        }
+        cur_edge = cur_edge/2;
+        idx=0;
+        for (int p = 0;p<nd;p++) {
+            bin = (int)floor( 2 * (centers_natural[i][p] - cur_alpha[p])/cur_edge);
+            idx += multiply[p]*bin;
+        }
+//        printf("global_index = %i \n",global_idx*(*dim_fac)+idx);
+//        printf("idx bottom line = %i \n",idx);
+        perm[global_idx*(*dim_fac)+idx]=i;
+        return;
     }
-    perm[i] = idx; //apply transformation post-hoc to get a mapping from "natural box indices" to current number of indices.
 
 }
 
@@ -1009,24 +1088,66 @@ __global__ void box_division_assign(
         const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
         const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> alpha,
         const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> multiply,
-        const scalar_t * int_mult,
         const scalar_t * edge,
         torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> global_vector_counter_cum,
-        const float * max_index,
         torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> global_unique,
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> sorted_index
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> sorted_index,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> perm,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> old_perm,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> depth_perm_idx_adder,
+        const int * current_depth,
+        const int * dim_fac
 ){
 
     int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
     if (i>X_data.size(0)-1){return;}
-    float n = (float)global_vector_counter_cum.size(0)-1;
-    int idx=0;
-    for (int p = 0;p<nd;p++) {
-        idx += multiply[p]*(int)floor( *int_mult * (X_data[i][p] - alpha[p]) / *edge);
+    int idx;
+    scalar_t cur_edge;
+    scalar_t cur_alpha[nd];
+    int bin;
+    if (*current_depth==0){
+        idx=0;
+        for (int p = 0;p<nd;p++) {
+            idx += multiply[p]*(int)floor( 2 * (X_data[i][p] - alpha[p]) / *edge);
+        }
+        sorted_index[atomicAdd(&global_unique[perm[idx]],1)+global_vector_counter_cum[perm[idx]]] = i;
+        return;
+    }else{
+        /*
+         * Initialize
+         */
+        int global_idx=0;
+        cur_edge = *edge;
+        for (int p = 0;p<nd;p++) {
+            cur_alpha[p]=alpha[p];
+        }
+        /*
+         * Iterate over previous iterations
+         * */
+        for (int d=0;d<*current_depth;d++){
+            cur_edge = cur_edge/(float)pow(2.0,d);
+            idx=0;
+            for (int p = 0;p<nd;p++) {
+                bin = (int)floor( 2 * (X_data[i][p] - cur_alpha[p])/cur_edge);
+                cur_alpha[p] = cur_alpha[p]+bin*cur_edge/2;
+                idx += multiply[p]*bin;
+            }
+            global_idx = old_perm[depth_perm_idx_adder[d]+idx+global_idx*(*dim_fac)];
+        }
+        cur_edge = cur_edge/2;
+        idx=0;
+        for (int p = 0;p<nd;p++) {
+            bin = (int)floor( 2 * (X_data[i][p] - cur_alpha[p])/cur_edge);
+            idx += multiply[p]*bin;
+        }
+        global_idx = global_idx*(*dim_fac) + idx;
+        sorted_index[atomicAdd(&global_unique[perm[global_idx]],1)+global_vector_counter_cum[perm[global_idx]]] = i;
+        return;
     }
-    int true_index = (int)max(ceil(n* (float)idx/(*max_index))-1,(float)0);
-    sorted_index[atomicAdd(&global_unique[true_index],1)+global_vector_counter_cum[true_index]] = i;
 }
+
+
+
 
 //
 
