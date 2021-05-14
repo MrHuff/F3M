@@ -45,6 +45,7 @@ struct n_tree_cuda{
     torch::Tensor &data;
     torch::Tensor edge,
     box_max_var,
+    max_center_ind,
     edge_og,
     xmin,
     xmax,
@@ -66,7 +67,6 @@ struct n_tree_cuda{
     coord_tensor,
     old_new_map,
     perm,
-    arrange_empty,
     tmp_1,
     tmp_2;
     std::string device;
@@ -79,7 +79,6 @@ struct n_tree_cuda{
         edge = e;
         edge_og = e;
         dim_fac = pow(2,dim);
-        arrange_empty  = torch::arange({dim_fac}).toType(torch::kInt32).to(device);
         sorted_index  = torch::arange({data.size(0)}).toType(torch::kInt32).to(device);
         avg_nr_points =  (float)d.size(0);
         multiply_gpu_base = torch::pow(2, torch::arange(dim - 1, -1, -1).toType(torch::kInt32)).to(device);
@@ -124,7 +123,7 @@ struct n_tree_cuda{
         box_idxs = torch::arange(centers.size(0)).toType(torch::kInt32).to(device);
         unique_counts_cum = torch::zeros(centers.size(0)+1).toType(torch::kInt32).to(device);//matrix -> existing boxes * 2^dim bounded over nr or points... betting on boxing dissapears...
         unique_counts= torch::zeros(centers.size(0)).toType(torch::kInt32).to(device);
-        perm = torch::zeros(pow(dim_fac,depth)).toType(torch::kInt32).to(device);
+        perm = torch::zeros(centers.size(0)).toType(torch::kInt32).to(device);
         dim3 blockSize,gridSize;
         int memory;
         std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(dim, centers.size(0));
@@ -136,8 +135,14 @@ struct n_tree_cuda{
                         edge_og.data_ptr<scalar_t>(),
                         perm.packed_accessor64<int,1,torch::RestrictPtrTraits>()
                                 ); //Apply same hack but to centers to get perm
-
         cudaDeviceSynchronize();
+        perm = perm.toType(torch::kFloat32);
+        max_center_ind = perm.max().toType(torch::kFloat32);
+
+//                torch::relu(torch::ceil(perm/(perm.max())*centers.size(0))-1);
+//        max_center_ind = max_center_ind.toType(torch::kInt32);
+
+
         std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(dim, data.size(0));
         box_division_cum<scalar_t,dim><<<gridSize,blockSize>>>(
                 data.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
@@ -146,8 +151,8 @@ struct n_tree_cuda{
                 side.data_ptr<scalar_t>(),
                 edge_og.data_ptr<scalar_t>(),
                 unique_counts_cum.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
-                perm.packed_accessor64<int,1,torch::RestrictPtrTraits>()
-        );
+                max_center_ind.data_ptr<float>()
+                );
         cudaDeviceSynchronize();
         unique_counts_cum = unique_counts_cum.cumsum(0).toType(torch::kInt32);
         box_division_assign<scalar_t,dim><<<gridSize,blockSize>>>(
@@ -157,7 +162,7 @@ struct n_tree_cuda{
                 side.data_ptr<scalar_t>(),
                 edge_og.data_ptr<scalar_t>(),
                 unique_counts_cum.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
-                perm.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                max_center_ind.data_ptr<float>(),
                 unique_counts.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
                 sorted_index.packed_accessor64<int,1,torch::RestrictPtrTraits>()
 
@@ -169,8 +174,6 @@ struct n_tree_cuda{
         unique_counts = unique_counts.index({non_empty_mask});
         centers = centers.index({non_empty_mask});
         empty_box_indices = box_idxs.index({torch::logical_not(non_empty_mask)});
-//        empty_box_indices = arrange_empty.repeat(empty_box_indices.size(0))+dim_fac*empty_box_indices.repeat_interleave(dim_fac,0);
-//        empty_box_indices = torch::cat({empty_box_indices,empty_box_indices_current},0);
         std::tie(empty_box_indices,tmp_1) = empty_box_indices.sort(0);
         avg_nr_points = unique_counts.toType(torch::kFloat32).max().item<float>();
         multiply_gpu = multiply_gpu*multiply_gpu_base;

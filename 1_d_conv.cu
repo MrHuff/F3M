@@ -972,15 +972,17 @@ __global__ void box_division_cum(
         const scalar_t * int_mult,
         const scalar_t * edge,
         torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> global_vector_counter_cum,
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> perm
+        const float * max_index
 ){
     int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
     if (i>X_data.size(0)-1){return;}
+    float n = (float)global_vector_counter_cum.size(0)-1;
     int idx=0;
     for (int p = 0;p<nd;p++) {
         idx += multiply[p]*(int)floor( *int_mult * (X_data[i][p] - alpha[p]) / *edge);
     }
-    atomicAdd(&global_vector_counter_cum[perm[idx]+1],1);
+    int true_index = (int)max(ceil(n*(float)idx/(*max_index))-1,(float)0);
+    atomicAdd(&global_vector_counter_cum[true_index+1],1);
 
 }
 
@@ -997,7 +999,7 @@ __global__ void center_perm(const torch::PackedTensorAccessor64<scalar_t,2,torch
     for (int p = 0;p<nd;p++) {
         idx += multiply[p]*(int)floor( *int_mult * (centers_natural[i][p] - alpha[p]) / *edge);
     }
-    perm[idx] = i;
+    perm[i] = idx; //apply transformation post-hoc to get a mapping from "natural box indices" to current number of indices.
 
 }
 
@@ -1010,18 +1012,20 @@ __global__ void box_division_assign(
         const scalar_t * int_mult,
         const scalar_t * edge,
         torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> global_vector_counter_cum,
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> perm,
+        const float * max_index,
         torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> global_unique,
         torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> sorted_index
 ){
 
     int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
     if (i>X_data.size(0)-1){return;}
+    float n = (float)global_vector_counter_cum.size(0)-1;
     int idx=0;
     for (int p = 0;p<nd;p++) {
         idx += multiply[p]*(int)floor( *int_mult * (X_data[i][p] - alpha[p]) / *edge);
     }
-    sorted_index[atomicAdd(&global_unique[perm[idx]],1)+global_vector_counter_cum[perm[idx]]] = i;
+    int true_index = (int)max(ceil(n*(float)idx/(*max_index))-1,(float)0);
+    sorted_index[atomicAdd(&global_unique[true_index],1)+global_vector_counter_cum[true_index]] = i;
 }
 
 //
