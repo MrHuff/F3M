@@ -981,7 +981,7 @@ __global__ void box_division_cum(
     for (int p = 0;p<nd;p++) {
         idx += multiply[p]*(int)floor( *int_mult * (X_data[i][p] - alpha[p]) / *edge);
     }
-    int true_index = (int)max(ceil(n*(float)idx/(*max_index))-1,(float)0);
+    int true_index = (int)max(ceil(n* (float)idx/(*max_index))-1,(float)0);
     atomicAdd(&global_vector_counter_cum[true_index+1],1);
 
 }
@@ -1024,7 +1024,7 @@ __global__ void box_division_assign(
     for (int p = 0;p<nd;p++) {
         idx += multiply[p]*(int)floor( *int_mult * (X_data[i][p] - alpha[p]) / *edge);
     }
-    int true_index = (int)max(ceil(n*(float)idx/(*max_index))-1,(float)0);
+    int true_index = (int)max(ceil(n* (float)idx/(*max_index))-1,(float)0);
     sorted_index[atomicAdd(&global_unique[true_index],1)+global_vector_counter_cum[true_index]] = i;
 }
 
