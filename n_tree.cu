@@ -151,7 +151,6 @@ struct n_tree_cuda{
                         dim_fac_tensor.data_ptr<int>()
         ); //Apply same hack but to centers to get perm
         cudaDeviceSynchronize();
-
         std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(dim, data.size(0));
         box_division_cum<scalar_t,dim><<<gridSize,blockSize>>>(
                 data.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
@@ -182,9 +181,6 @@ struct n_tree_cuda{
                 dim_fac_tensor.data_ptr<int>()
         );
         cudaDeviceSynchronize();
-
-
-
         old_new_map = box_idxs;
         non_empty_mask = unique_counts != 0;
         box_indices_sorted = box_idxs.index({non_empty_mask});
@@ -201,7 +197,7 @@ struct n_tree_cuda{
         );
 
         std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<int>(1, perm.size(0));
-        transpose_to_existing_only_tree<<<gridSize,blockSize>>>(
+        transpose_to_existing_only_tree_perm<<<gridSize,blockSize>>>(
                 perm.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
                 empty_box_indices.packed_accessor64<int,1,torch::RestrictPtrTraits>()
         );
@@ -209,7 +205,7 @@ struct n_tree_cuda{
             old_perms = perm;
 
         }else{
-            old_perms = torch::cat({old_perms,perm},0);
+            old_perms = torch::cat({old_perms,perm},0); //For normal we have a negative index wtf...
         }
         std::tie(unique_counts_cum_reindexed,tmp_1,tmp_2) = torch::unique_consecutive(unique_counts_cum);
         edge = edge*0.5;
