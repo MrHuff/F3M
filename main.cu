@@ -56,24 +56,32 @@ int main(int argc, char const *argv[]){
     bool var_comp = (bool) std::stoi(argv[8]);
     float eff_var =  std::stof(argv[9]);
     int small_field_limit = std::stoi(argv[10]);
-    int job = std::stoi(argv[11]);
-    char * fname = const_cast<char *>(argv[12]);
+    bool small_x = (bool)std::stoi(argv[11]);
+    int job = std::stoi(argv[12]);
+    char * fname = const_cast<char *>(argv[13]);
 
     if (job==1){
-        benchmark_1<float,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,fname); //Can't do a billion points for 3 dim...
+        benchmark_1<float,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,small_x,fname); //Can't do a billion points for 3 dim...
     }
     if(job==2){
-        benchmark_2<float,5>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
+        benchmark_2<float,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,small_x,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
     }
     if(job==3){
-        benchmark_3<float,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
+        benchmark_3<float,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,small_x,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
     }
     if(job==4){
-        benchmark_4<float,2>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
+        benchmark_4<float,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,small_x,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
     }
     if(job==5){
-        benchmark_5<double,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
+        benchmark_5<double,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,small_x,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
     }
+    if(job==6){
+        benchmark_6<float,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,small_x,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
+    }
+    if(job==7){
+        benchmark_7<float,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,small_x,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
+    }
+
 
     cudaProfilerStop();
     cudaDeviceReset();

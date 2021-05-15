@@ -149,7 +149,7 @@ def ClusteredDataset2D1e9():
 
 def ClusteredDataset3D1e6():
     title = "Clustered_Dataset_D3_N1e6"
-    X = MultiScaleClusterData(2,[100,100,100],.03)
+    X = MultiScaleClusterData(3,[100,100,100],.03)
     return UnitBox(X), title
 
 def ClusteredDataset3D1e7():
