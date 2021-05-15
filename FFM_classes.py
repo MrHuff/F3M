@@ -1,7 +1,7 @@
 import torch
 from torch.utils.cpp_extension import load
 from pykeops.torch import Genred
-
+import torch.multiprocessing as mp
 load_obj = load(name='ffm_3d_float', sources=['pybinder_setup.cu'])
 
 class FFM:
@@ -76,6 +76,34 @@ class FFM:
             return load_obj.FFM_XY_FLOAT_9(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit,self.small_field_points)
         if self.d==10:
             return load_obj.FFM_XY_FLOAT_10(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit,self.small_field_points)
+
+class par_FFM(FFM):
+    def __init__(self,
+                 X,
+                 Y=None,
+                 ls=1.0,
+                 min_points=1000,
+                 nr_of_interpolation=64,
+                 eff_var_limit=0.15,
+                 var_compression=False,
+                 small_field_points = 1000,
+                 device = "cuda:0",
+                 par_factor = 10):
+        super(par_FFM, self).__init__(X,Y=Y,ls=ls,min_points=min_points,
+                                                       nr_of_interpolation=nr_of_interpolation,
+                                                           eff_var_limit=eff_var_limit,
+                                                       var_compression=var_compression,
+                                                       small_field_points = small_field_points,
+                                                       device = device)
+        self.par_factor = par_factor
+    def __matmul__(self, b):
+        self.b = b.float().to(self.device)
+        chunked_b = torch.chunk(self.b,self.par_factor,0)
+        chunked_Y = torch.chunk(self.Y,self.par_factor,0)
+        inputs = [(torch.clone(self.X),Y,b) for Y,b in zip(chunked_Y,chunked_b)]
+        with mp.Pool(processes = self.par_factor) as p:   # Paralleizing over 2 GPUs
+            results = p.starmap(self.forward,inputs)
+        return results
 
 
 class keops_matmul():

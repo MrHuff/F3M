@@ -259,7 +259,7 @@ __device__ scalar_t calculate_barycentric_lagrange(//not sure this is such a gre
         scalar_t *w_shared,
         scalar_t *x_i,
         scalar_t *l_x,
-        const bool * pBoolean,
+        bool * pBoolean,
         const int *combs,
         scalar_t b
         ){
@@ -289,33 +289,26 @@ __device__ scalar_t calculate_barycentric_lagrange_one_pass(//not sure this is s
         const int * node_cum_shared
 
 ){
-    bool pBoolean;
-    scalar_t x_i;
-    scalar_t l_x;
-    for (int i = 0; i < nd; i++) {
-        x_i = *factor*(y_in[i]-center[i]); //correct y_in, correct center
+
+    scalar_t x_i[nd];
+    scalar_t l_x[nd];
+    bool pBoolean[nd];
+    for (int k = 0; k < nd; k++) {
+        x_i[k] = (*factor)*(y_in[k]-center[k]);
         scalar_t tmp = 0.;
-        pBoolean=false;
-        for (int l=node_cum_shared[i];l<node_cum_shared[i+1];l++){ //node_cum_index is wrong or l_p is loaded completely incorrectly!
-            if (x_i==l_p[l]){
-                pBoolean=true;
+        pBoolean[k]=false;
+        for (int l=node_cum_shared[k];l<node_cum_shared[k+1];l++){ //node_cum_index is wrong or l_p is loaded completely incorrectly!
+            if (x_i[k]==l_p[l]){
+                pBoolean[k]=true;
                 tmp=1;
                 break;
             }else{
-                tmp += w[l]/(x_i-l_p[l]);
+                tmp += w[l]/(x_i[k]-l_p[l]);
             }
         }
-        l_x = 1/tmp;
-        if (pBoolean){
-            if (x_i!=l_p[combs[i]]){
-                b=(scalar_t) 0;
-                break;
-            }
-        }else{
-            b*= l_x * w[combs[i]] / (x_i - l_p[combs[i]]);
-        }
+        l_x[k] = 1/tmp;
     }
-    return b;
+    return calculate_barycentric_lagrange<scalar_t,nd>(l_p,w,x_i,l_x,pBoolean,combs,b);
 }
 
 
@@ -885,8 +878,8 @@ __global__ void lagrange_shared_v2(
     scalar_t *yj = &buffer[1+nd];
     scalar_t *bj = &buffer[(blockDim.x+1) * nd+1];
     scalar_t *center = &buffer[(blockDim.x+1) * nd+blockDim.x+1];
-    scalar_t *l_p = &buffer[(blockDim.x+1) * nd+blockDim.x+1+nd];
-    scalar_t *w_shared = &buffer[(blockDim.x+1) * nd+blockDim.x+1+lagrange_n+nd];
+    scalar_t *l_p = &buffer[(blockDim.x+1) * nd+blockDim.x+1+nd]; //nd long
+    scalar_t *w_shared = &buffer[(blockDim.x+1) * nd+blockDim.x+1+lagrange_n+nd]; //lagrange_n long
     if (threadIdx.x<nd+1){
         if (threadIdx.x<nd){
             center[threadIdx.x]=centers[box_ind][threadIdx.x];
@@ -914,8 +907,8 @@ __global__ void lagrange_shared_v2(
     int Y_end = y_cum[box_ind+1];
     for (int b_ind=0; b_ind<b_size; b_ind++) {
         acc=0;
-        for (int jstart = Y_start, tile = 0; jstart < Y_end; jstart += blockDim.x, tile++) {
-            int j =jstart+ tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
+        for (int jstart = Y_start; jstart < Y_end; jstart += blockDim.x) {
+            int j =jstart+ threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
             if (j < Y_end) { // we load yj from device global memory only if j<ny
                 torch_load_y_v2<scalar_t, nd>(idx_reordering[j], yj, Y_data);
                 torch_load_b_v2<scalar_t, nd>(b_ind,idx_reordering[j],bj, b_data);

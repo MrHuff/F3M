@@ -313,7 +313,7 @@ void benchmark_6(int n,float min_points, int threshold,float mean,float var,floa
     scalar_t ls_in = (scalar_t) ls;
 
     torch::Tensor Y_train = torch::empty({n,nd}).normal_(mean, sqrt(var)).toType(dtype<scalar_t>()).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
-    torch::Tensor X_train = torch::empty({100000,nd}).normal_(mean, sqrt(var)).toType(dtype<scalar_t>()).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
+    torch::Tensor X_train = torch::empty({10000,nd}).normal_(mean, sqrt(var)).toType(dtype<scalar_t>()).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
     torch::Tensor b_train = torch::randn({n,1}).toType(dtype<scalar_t>()).to(device_cuda);
     torch::Tensor res,res_ref;
     FFM_object<scalar_t,nd> ffm_obj = FFM_object<scalar_t,nd>(X_train, Y_train, ls_in, device_cuda,min_points,nr_of_interpolation_points,

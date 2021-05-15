@@ -512,10 +512,12 @@ void apply_laplace_interpolation_v3(
     torch::Tensor indicator,box_block;
     int cheb_data_size=laplace_indices.size(0);
     int blkSize = optimal_blocksize(cheb_data_size);
-    torch::Tensor boxes_count = cheb_data_size * torch::ones(box_indices.size(0)).toType(torch::kInt32).to(device_gpu);
+    torch::Tensor boxes_count = cheb_data_size * torch::ones(centers.size(0)).toType(torch::kInt32).to(device_gpu);
     dim3 blockSize,gridSize;
     int memory;
     std::tie(blockSize,gridSize,memory,indicator,box_block) = skip_kernel_launch<scalar_t>(nd,blkSize,boxes_count,box_indices);
+    memory = memory+2*nodes.size(0)*sizeof(scalar_t)+(nd+1)*sizeof(int)+nd*sizeof(scalar_t); //Seems the last write is where the trouble is...
+
     torch::Tensor boxes_count_cumulative = n_tree_Y.unique_counts_cum_reindexed;
 
     lagrange_shared_v2<scalar_t, nd><<<gridSize, blockSize, memory>>>(
@@ -605,26 +607,32 @@ void far_field_compute_v2(
 
     //if bottom mode i.e. max points = 1 skip y interpolation
 
-    apply_laplace_interpolation_v2<scalar_t,nd>(y_box,
-                                            b,
-                                            device_gpu,
-                                            chebnodes_1D,
-                                            laplace_combinations,
-                                                node_list_cum,
-                                                cheb_w,
-                                            true,
-                                            low_rank_y
-                                            ); //no problems here!
-//    apply_laplace_interpolation_v3<scalar_t,nd>(y_box,
-//                                                    b,
-//                                                    device_gpu,
-//                                                    chebnodes_1D,
-//                                                    laplace_combinations,
-//                                                    node_list_cum,
-//                                                    cheb_w,
-//                                                    low_rank_y
-//    ); //no problems here!
-    // replace cheb_data_Y = 0 points, low_rank_y = b, cheb_Data_Y = 0
+    if(low_rank_y.size(0)<50000){
+        apply_laplace_interpolation_v2<scalar_t,nd>(y_box,
+                                                    b,
+                                                    device_gpu,
+                                                    chebnodes_1D,
+                                                    laplace_combinations,
+                                                    node_list_cum,
+                                                    cheb_w,
+                                                    true,
+                                                    low_rank_y
+        ); //no problems here!
+
+    }else{
+        apply_laplace_interpolation_v3<scalar_t,nd>(y_box,
+                                                    b,
+                                                    device_gpu,
+                                                    chebnodes_1D,
+                                                    laplace_combinations,
+                                                    node_list_cum,
+                                                    cheb_w,
+                                                    low_rank_y
+        ); //no problems here!
+    }
+
+
+
     low_rank_y =  setup_skip_conv<scalar_t,nd>( //error happens here
             cheb_data_X,
             cheb_data_Y,
@@ -1128,8 +1136,7 @@ torch::Tensor FFM_XY(
         int & nr_of_interpolation_points,
         bool &var_compression,
         scalar_t  & eff_var_limit,
-        int & small_field_limit,
-        bool small_x
+        int & small_field_limit
 ) {
 
     torch::Tensor output = torch::zeros({X_data.size(0),b.size(1)}).to(gpu_device); //initialize empty output
@@ -1187,11 +1194,11 @@ torch::Tensor FFM_XY(
                     var_compression,
                     eff_var_limit,
                     small_field_limit,
-                    small_x
+                    false
             );
         }
         if (near_field.numel()>0){
-            near_field_run<scalar_t,nd>(ntree_X,ntree_Y,near_field,output,b,ls,gpu_device,small_x);
+            near_field_run<scalar_t,nd>(ntree_X,ntree_Y,near_field,output,b,ls,gpu_device,false);
         }
     }
 
@@ -1237,8 +1244,7 @@ struct FFM_object{
                     nr_of_interpolation_points,
                     var_compression,
                     eff_var_limit,
-                    small_field_limit,
-                    false
+                    small_field_limit
             );
 //            }
         }else{
@@ -1252,8 +1258,7 @@ struct FFM_object{
                         nr_of_interpolation_points,
                         var_compression,
                         eff_var_limit,
-                        small_field_limit,
-                        small_x
+                        small_field_limit
                 );
         }
     };
