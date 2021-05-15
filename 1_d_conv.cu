@@ -1467,22 +1467,7 @@ __global__ void transpose_to_existing_only(
 
 
 }
-__global__ void transpose_to_existing_only_tree(
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> all_boxes,
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> removed_indices_x
-){//Bottle neck perhaps, switch to binary search
-    int tid = threadIdx.x+blockDim.x*blockIdx.x;
-    if (tid>all_boxes.size(0)-1){return;}
-    unsigned int nx = removed_indices_x.size(0);
-    int box_idx = all_boxes[tid];
-    for (int i=0;i<nx;i++){
-        if(box_idx < removed_indices_x[i]){
-            break;
-        }else{
-            all_boxes[tid]-=1;
-        }
-    }
-}
+
 
 __global__ void transpose_to_existing_only_tree_perm(
         torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> perm,
@@ -1503,29 +1488,29 @@ __global__ void transpose_to_existing_only_tree_perm(
     }
 }
 
-//__global__ void transpose_to_existing_only_tree(
-//        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> all_boxes,
-//        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> removed_indices_x
-//){
-//    int tid = threadIdx.x+blockDim.x*blockIdx.x;
-//    if (tid>all_boxes.size(0)-1){return;}
-//    unsigned int i_max = removed_indices_x.size(0);
-//    if(i_max==0) return;
-//    unsigned int i_min = 0;
-//    int box_idx = all_boxes[tid];
-//    if(box_idx <= removed_indices_x[i_min]) return;
-//    if(box_idx >= removed_indices_x[i_max-1]) {all_boxes[tid] -= i_max; return;}
-//    unsigned int i_try;
-//    while(true){
-//        i_try = (i_min+i_max)/2;
-//        if(box_idx < removed_indices_x[i_try]) {i_max = i_try;}
-//        else if(box_idx > removed_indices_x[i_try]) {i_min = i_try;}
-//        else return;
-//        if(i_min==i_max-1) break;
-//    }
-//    all_boxes[tid] -= i_max;
-//}
-//
+__global__ void transpose_to_existing_only_tree(
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> all_boxes,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> removed_indices_x
+){
+    int tid = threadIdx.x+blockDim.x*blockIdx.x;
+    if (tid>all_boxes.size(0)-1){return;}
+    unsigned int i_max = removed_indices_x.size(0);
+    if(i_max==0) return;
+    unsigned int i_min = 0;
+    int box_idx = all_boxes[tid];
+    if(box_idx <= removed_indices_x[i_min]) return;
+    if(box_idx >= removed_indices_x[i_max-1]) {all_boxes[tid] -= i_max; return;}
+    unsigned int i_try;
+    while(true){
+        i_try = (i_min+i_max)/2;
+        if(box_idx < removed_indices_x[i_try]) {i_max = i_try;}
+        else if(box_idx > removed_indices_x[i_try]) {i_min = i_try;}
+        else return;
+        if(i_min==i_max-1) break;
+    }
+    all_boxes[tid] -= i_max;
+}
+
 
 __global__ void transpose_to_existing_only_X(
         torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions,
