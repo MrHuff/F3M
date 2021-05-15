@@ -14,13 +14,14 @@ class bench_GaussianKernel(GaussianKernel):
         self.ls = sigma ** 2
         self.min_points = min_points
         self.ffm_initialized = False
+        self.device = "cuda:0"
 
     def _decide_mmv_impl(self, X1, X2, v, opt: FalkonOptions):
         if not self.ffm_initialized:
             d = X1.shape[1]
             if self.min_points is None:
                 self.min_points = 4 ** d
-            self.FFM_obj = benchmark_matmul(X=X1, Y=X2, ls=self.ls, device="cuda:0")
+            self.bench_obj = benchmark_matmul(X=X1, Y=X2, ls=self.ls, device=self.device)
             self.ffm_initialized = True
 
         return self.mmv_
@@ -30,8 +31,7 @@ class bench_GaussianKernel(GaussianKernel):
             d = X1.shape[1]
             if self.min_points is None:
                 self.min_points = 4 ** d
-            self.FFM_obj = benchmark_matmul(X=X1, Y=X2, ls=self.ls, device="cuda:0")
-
+            self.bench_obj =benchmark_matmul(X=X1, Y=X2, ls=self.ls, device=self.device)
             self.ffm_initialized = True
 
         return self.dmmv_
@@ -46,7 +46,7 @@ class bench_GaussianKernel(GaussianKernel):
             print("FFM only available for GPU")
             raise NotImplementedError
 
-        res = self.FFM_obj.forward(self.FFM_obj.X, self.FFM_obj.Y, v).to(input_device)
+        res = self.bench_obj.forward(self.bench_obj.X, self.bench_obj.Y, v).to(input_device)
         torch.cuda.empty_cache()
         return res
 
@@ -65,10 +65,10 @@ class bench_GaussianKernel(GaussianKernel):
             res = w
         else:
             if w is None:
-                res = self.FFM_obj.forward(self.FFM_obj.X, self.FFM_obj.Y, v)
+                res = self.bench_obj.forward(self.bench_obj.X, self.bench_obj.Y, v)
             else:
-                res = self.FFM_obj.forward(self.FFM_obj.X, self.FFM_obj.Y, v) + w
-        res_2 = self.FFM_obj.forward(self.FFM_obj.Y, self.FFM_obj.X, res).to(input_device)
+                res = self.bench_obj.forward(self.bench_obj.X, self.bench_obj.Y, v) + w
+        res_2 = self.bench_obj.forward(self.bench_obj.Y, self.bench_obj.X, res).to(input_device)
         torch.cuda.empty_cache()
 
         return res_2

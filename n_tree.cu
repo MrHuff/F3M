@@ -607,7 +607,7 @@ void far_field_compute_v2(
 
     //if bottom mode i.e. max points = 1 skip y interpolation
 
-    if(low_rank_y.size(0)<50000){
+    if(low_rank_y.size(0)<(y_box.data.size(0)/100)){
         apply_laplace_interpolation_v2<scalar_t,nd>(y_box,
                                                     b,
                                                     device_gpu,

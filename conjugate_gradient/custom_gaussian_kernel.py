@@ -5,7 +5,7 @@ import torch
 from falkon.options import BaseOptions, FalkonOptions
 import functools
 from FFM_classes import *
-
+import time
 class custom_GaussianKernel(GaussianKernel):
     def __init__(self, sigma: Union[float, torch.Tensor], opt: Optional[FalkonOptions] = None,min_points: [float]=None):
         super(custom_GaussianKernel, self).__init__(sigma,opt)
@@ -47,9 +47,8 @@ class custom_GaussianKernel(GaussianKernel):
             print("FFM only available for GPU")
             raise NotImplementedError
 
-        res = self.FFM_obj.forward(self.FFM_obj.X, self.FFM_obj.Y, v).to(input_device)
-        torch.cuda.empty_cache()
-        return res
+        res = self.FFM_obj.forward(self.FFM_obj.X, self.FFM_obj.Y, v)
+        return res.to(input_device)
     
     def dmmv_(self,X1, X2, v, w, obj, out=None, params=None):
         input_device = X1.device
@@ -61,7 +60,7 @@ class custom_GaussianKernel(GaussianKernel):
                 w = w.to(self.device)
         else:
             print("FFM only available for GPU")
-
+        start=time.time()
         if v is None:
             res=w
         else:
@@ -69,7 +68,7 @@ class custom_GaussianKernel(GaussianKernel):
                 res = self.FFM_obj.forward(self.FFM_obj.X,self.FFM_obj.Y,v)
             else:
                 res = self.FFM_obj.forward(self.FFM_obj.X,self.FFM_obj.Y,v) + w
-        res_2 = self.FFM_obj.forward(self.FFM_obj.Y,self.FFM_obj.X,res).to(input_device)
-        torch.cuda.empty_cache()
-
-        return res_2
+        res_2 = self.FFM_obj.forward(self.FFM_obj.Y,self.FFM_obj.X,res)
+        end = time.time()
+        print("FFM actual time: ", end-start)
+        return res_2.to(input_device)

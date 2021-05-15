@@ -145,9 +145,10 @@ class FalkonConjugateGradient_custom(Optimizer):
         with TicToc("MMV", False):
             v = prec.invA(sol)
             v_t = prec.invT(v)
-
+            start = time.time()
             cc = self.kernel.dmmv(X, M, v_t, None, opt=self.params)
-
+            end = time.time()
+            print("Actual MMV time: ", end-start)
             # AT^-1 @ (TT^-1 @ (cc / n) + penalty * v)
             cc_ = cc.div_(n)
             v_ = v.mul_(penalty)

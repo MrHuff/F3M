@@ -413,20 +413,20 @@ def experiment_6(device="cuda:0"):
 #                                 x_ref = X[0:ref_points, :]  # reference X
 #                                 torch.cuda.synchronize()
 #                                 keops_benchmark_0 = benchmark_matmul_double(x_ref, X, ls=ls, device=device)  # get some references
-#                                 FFM_obj= FFM(X=X, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
+#                                 bench_obj= FFM(X=X, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
 #                                               eff_var_limit=eff_var_limit, var_compression=True,
 #                                               device=device, small_field_points=small_field_limit)
 #                                 true_0 = keops_benchmark_0 @ b  # calculate reference
 #                                 torch.cuda.synchronize()
 #                                 start = time.time()
-#                                 res_0 = FFM_obj @ b
+#                                 res_0 = bench_obj @ b
 #                                 end = time.time()
 #                                 torch.cuda.synchronize()
 #                                 calc_time = end-start
 #                                 df = calculate_results(true_0,res_0,ref_points,seed,n,d,r2,min_points,small_field_limit,nr_of_interpolation, eff_var_limit,calc_time)
 #                                 df.to_csv(f'{dirname}/{dirname}_{counter}.csv')
 #                                 print('Wrote experiments: ',counter)
-#                                 del FFM_obj, res_0
+#                                 del bench_obj, res_0
 #                                 torch.cuda.empty_cache()
 #                             counter += 1
 #                             print('counter: ', counter,'\n')

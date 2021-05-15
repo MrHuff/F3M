@@ -189,7 +189,8 @@ class benchmark_matmul():
 
     def __matmul__(self, b):
         self.b = b.float().to(self.device)
-        self.forward(self.X,self.Y,self.b)
+        return self.forward(self.X,self.Y,self.b)
+
     def forward(self,X,Y,b):
         try:
             assert Y.shape[1]==X.shape[1]
