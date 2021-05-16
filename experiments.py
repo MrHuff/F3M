@@ -380,58 +380,56 @@ def experiment_6(device="cuda:0"):
                         del X, b, true_0
                         torch.cuda.empty_cache()
 
-# def experiment_7(device="cuda:0"):
-#     """
-#     k(X,X) - uniform distribution with varying effective variance, N and d.
-#     :return:
-#     """
-#     dirname = 'experiment_7'
-#     ref_points = 5000
-#     ls = float(1.0) #lengthscale
-#     counter = 0
-#     if not os.path.exists(dirname):
-#         os.makedirs(dirname)
-#     for seed in [1337,9001,69]:
-#         for d in [4]:
-#             if d==1:
-#                 node_list = [4,8,16]
-#             else:
-#                 node_list = [4,5,6]
-#             for node_nr in node_list:
-#                 nr_of_interpolation = int(node_nr**d)  # nr of interpolation nodes
-#
-#                 for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 500000000],
-#                                                             [1000, 1000, 5000, 5000], [nr_of_interpolation, nr_of_interpolation, nr_of_interpolation, nr_of_interpolation]):
-#                     for r2 in [0.1,1,10,100]:
-#                         torch.manual_seed(seed)
-#                         X = torch.empty(n, d).normal_(0, r2 ** 0.5)
-#                         b = torch.empty(n, 1).normal_(0, 1)  # weights
-#                         for evarlimit in [0.1, 0.3, 0.5]:
-#                             eff_var_limit = float(evarlimit)
-#                             if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
-#
-#                                 x_ref = X[0:ref_points, :]  # reference X
-#                                 torch.cuda.synchronize()
-#                                 keops_benchmark_0 = benchmark_matmul_double(x_ref, X, ls=ls, device=device)  # get some references
-#                                 bench_obj= FFM(X=X, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
-#                                               eff_var_limit=eff_var_limit, var_compression=True,
-#                                               device=device, small_field_points=small_field_limit)
-#                                 true_0 = keops_benchmark_0 @ b  # calculate reference
-#                                 torch.cuda.synchronize()
-#                                 start = time.time()
-#                                 res_0 = bench_obj @ b
-#                                 end = time.time()
-#                                 torch.cuda.synchronize()
-#                                 calc_time = end-start
-#                                 df = calculate_results(true_0,res_0,ref_points,seed,n,d,r2,min_points,small_field_limit,nr_of_interpolation, eff_var_limit,calc_time)
-#                                 df.to_csv(f'{dirname}/{dirname}_{counter}.csv')
-#                                 print('Wrote experiments: ',counter)
-#                                 del bench_obj, res_0
-#                                 torch.cuda.empty_cache()
-#                             counter += 1
-#                             print('counter: ', counter,'\n')
-#                         del X, b, true_0
-#                         torch.cuda.empty_cache()
+def experiment_7(device="cuda:0"):
+    """
+    k(X,X) - uniform distribution with varying effective variance, N and d.
+    :return:
+    """
+    dirname = 'experiment_7'
+    ref_points = 5000
+    ls = float(1.0) #lengthscale
+    counter = 0
+    if not os.path.exists(dirname):
+        os.makedirs(dirname)
+    for seed in [1337,9001,69]:
+        for d in [4,5]:
+            node_list = [256, 512, 1024]
+            for nr_of_interpolation in node_list:
+                for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 500000000],
+                                                            [1000, 1000, 5000, 20000], [nr_of_interpolation, nr_of_interpolation, nr_of_interpolation, 5000]):
+                    for r2 in [0.1,1,10,100]:
+                        torch.manual_seed(seed)
+                        X = torch.empty(n, d).normal_(0, r2 ** 0.5)
+                        b = torch.empty(n, 1).normal_(0, 1)  # weights
+                        x_ref = X[0:ref_points, :]  # reference X
+                        keops_benchmark_0 = benchmark_matmul_double(x_ref, X, ls=ls,
+                                                                    device=device)  # get some references
+                        true_0 = keops_benchmark_0 @ b  # calculate reference
+                        torch.cuda.synchronize()
+                        del keops_benchmark_0, x_ref
+                        torch.cuda.empty_cache()
+                        print("benchmarks done\n")
+                        for evarlimit in [0.1, 0.3, 0.5]:
+                            eff_var_limit = float(evarlimit)
+                            if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
+                                FFM_obj= FFM(X=X, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
+                                              eff_var_limit=eff_var_limit, var_compression=True,
+                                              device=device, small_field_points=small_field_limit)
+                                torch.cuda.synchronize()
+                                start = time.time()
+                                res_0 = FFM_obj @ b
+                                end = time.time()
+                                torch.cuda.synchronize()
+                                calc_time = end-start
+                                df = calculate_results(true_0,res_0,ref_points,seed,n,d,r2,min_points,small_field_limit,nr_of_interpolation, eff_var_limit,calc_time)
+                                df.to_csv(f'{dirname}/{dirname}_{counter}.csv')
+                                print('Wrote experiments: ',counter)
+                                del FFM_obj, res_0
+                                torch.cuda.empty_cache()
+                            counter += 1
+                            print('counter: ', counter,'\n')
+                    del X, b, true_0
+                    torch.cuda.empty_cache()
 def experiment_8(device="cuda:0"):
     """
     k(X,Y) - uniform X, normal Y with varying effective variance, N and d. 0 distance between X and Y
@@ -504,7 +502,7 @@ def experiment_9(device="cuda:0"):
     seed=0
     if not os.path.exists(dirname):
         os.makedirs(dirname)
-    min_points = 50000
+    min_points = 5000
     for d in [2]:
         for ls in [1000,100,10,1,0.1,1e-2,1e-3]:
 
@@ -516,7 +514,7 @@ def experiment_9(device="cuda:0"):
                 node_list = [3, 4, 5, 6, 7, 8, 9, 10]
                 for node_nr in node_list:
                     nr_of_interpolation = int(node_nr ** d)
-                    small_field_limit = nr_of_interpolation if ls <0.1 else 10000
+                    small_field_limit = nr_of_interpolation
                     eff_var_limit = float(evarlimit)
                     if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
                         torch.cuda.synchronize()
@@ -563,6 +561,8 @@ if __name__ == '__main__':
         experiment_5()
     elif idx==6:
         experiment_6()
+    elif idx==7:
+        experiment_7()
     elif idx==8:
         experiment_8()
     elif idx==9:

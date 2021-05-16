@@ -12,9 +12,9 @@
 #define SHAREDMEMPERBLOCK 49152
 #if !defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 600
 #else
-__device__ double atomicAdd(double* a, double b) { return b; }
+__device__ inline double atomicAdd(double* a, double b) { return b; }
 #endif
-//template<typename T, int nd>
+////template<typename T, int nd>
 
 template<typename T>
 std::tuple<dim3,dim3,int> get_kernel_launch_params(int cols,int height){
@@ -50,12 +50,12 @@ std::tuple<dim3,dim3,int,torch::Tensor,torch::Tensor> skip_kernel_launch(int col
 };
 
 template<typename T>
-__device__ inline T square(T x){
+__device__   T square(T x){
     return x*x;
 };
 
 template<typename T>
-__device__ inline  T cube(T x){
+__device__    T cube(T x){
     return x*x*x;
 };
 
@@ -69,7 +69,7 @@ __device__ T rbf_simple(T x[],T y[]){
 };
 
 template<typename T, int nd>
-__device__ inline static T square_dist(T x[],T y[]){
+__device__   static T square_dist(T x[],T y[]){
     T dist=(T)0;
     for (int k=0;k<nd;k++){
         dist += square<T>(x[k]-y[k]);
@@ -78,17 +78,17 @@ __device__ inline static T square_dist(T x[],T y[]){
 };
 
 template<typename T, int nd>
-__device__ inline static T rbf(T x[],T y[],const T *ls){
+__device__   static T rbf(T x[],T y[],const T *ls){
     T dist=square_dist<T,nd>(x,y);
     return expf(-dist/(2* *ls));
 };
 template<typename T, int nd>
-__device__ inline static T rbf_grad_ls(T x[],T y[],const T *ls){
+__device__  static T rbf_grad_ls(T x[],T y[],const T *ls){
     T dist=square_dist<T,nd>(x,y);
     return expf(-dist/(2* *ls))*dist/square<T>(*ls);
 };
 template<typename T, int nd>
-__device__ inline static T rbf_grad_dist_abs(T x[],T y[],const T *ls){
+__device__  static T rbf_grad_dist_abs(T x[],T y[],const T *ls){
     T dist=square_dist<T,nd>(x,y);
     return expf(-dist/(2* *ls))*sqrt(dist)/(*ls);
 };
@@ -100,7 +100,7 @@ __device__ inline static T rbf_grad_dist_abs(T x[],T y[],const T *ls){
 //
 
 template <typename scalar_t,int nd>
-__device__ inline static void torch_load_y(int index, scalar_t *shared_mem, torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> y){
+__device__   static void torch_load_y(int index, scalar_t *shared_mem, torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> y){
 #pragma unroll
     for (int k = 0; k < nd; k++) {
         //assert(&((*px)[i * FIRST + k]) != nullptr);
@@ -110,7 +110,7 @@ __device__ inline static void torch_load_y(int index, scalar_t *shared_mem, torc
     }
 }
 template <typename scalar_t>
-__device__ inline static void torch_load_b(
+__device__   static void torch_load_b(
         int col_index,
         int index,
         scalar_t *shared_mem,
@@ -118,7 +118,7 @@ __device__ inline static void torch_load_b(
     shared_mem[threadIdx.x] = b[index][col_index];
 }
 template <typename scalar_t,int nd>
-__device__ inline static void torch_load_y_v2(int reorder_index, scalar_t *shared_mem,
+__device__   static void torch_load_y_v2(int reorder_index, scalar_t *shared_mem,
         const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> y
         ){
 #pragma unroll
@@ -130,7 +130,7 @@ __device__ inline static void torch_load_y_v2(int reorder_index, scalar_t *share
     }
 }
 template <typename scalar_t,int nd>
-__device__ inline static void torch_load_b_v2(
+__device__   static void torch_load_b_v2(
         int col_index,
         int reorder_index,
         scalar_t *shared_mem,
@@ -217,7 +217,7 @@ __global__ void rbf_1d_reduce_simple_torch(const torch::PackedTensorAccessor64<s
 };
 
 template <typename scalar_t>
-__device__ scalar_t calculate_lagrange( //Try using double precision!
+__device__   scalar_t calculate_lagrange( //Try using double precision!
         scalar_t *l_p,
         scalar_t & x_ij,
         int & feature_num,
@@ -234,7 +234,7 @@ __device__ scalar_t calculate_lagrange( //Try using double precision!
 }
 
 template <typename scalar_t,int nd>
-__device__ scalar_t calculate_lagrange_product( //Tends to become really inaccurate for high dims and "too many lagrange nodes"
+__device__   scalar_t calculate_lagrange_product( //Tends to become really inaccurate for high dims and "too many lagrange nodes"
         scalar_t *l_p,
         scalar_t *x_i,
             int *combs,
@@ -254,7 +254,7 @@ __device__ scalar_t calculate_lagrange_product( //Tends to become really inaccur
 }
 
 template <typename scalar_t,int nd>
-__device__ scalar_t calculate_barycentric_lagrange(//not sure this is such a great idea, when nan how avoid...
+__device__   scalar_t calculate_barycentric_lagrange(//not sure this is such a great idea, when nan how avoid...
         scalar_t *l_p,
         scalar_t *w_shared,
         scalar_t *x_i,
@@ -263,6 +263,7 @@ __device__ scalar_t calculate_barycentric_lagrange(//not sure this is such a gre
         const int *combs,
         scalar_t b
         ){
+#pragma unroll
     for (int i = 0; i < nd; i++) {
         if (pBoolean[i]){
             if (x_i[i]!=l_p[combs[i]]){
@@ -278,7 +279,7 @@ __device__ scalar_t calculate_barycentric_lagrange(//not sure this is such a gre
 
 
 template <typename scalar_t,int nd>
-__device__ scalar_t calculate_barycentric_lagrange_one_pass(//not sure this is such a great idea, when nan how avoid...
+__device__   scalar_t calculate_barycentric_lagrange_one_pass(//not sure this is such a great idea, when nan how avoid...
         scalar_t *y_in,
         scalar_t * center,
         const int *combs,
@@ -293,6 +294,7 @@ __device__ scalar_t calculate_barycentric_lagrange_one_pass(//not sure this is s
     scalar_t x_i[nd];
     scalar_t l_x[nd];
     bool pBoolean[nd];
+#pragma unroll
     for (int k = 0; k < nd; k++) {
         x_i[k] = (*factor)*(y_in[k]-center[k]);
         scalar_t tmp = 0.;
@@ -312,10 +314,12 @@ __device__ scalar_t calculate_barycentric_lagrange_one_pass(//not sure this is s
 }
 
 
-__device__ int calculate_box_ind(int &current_thread_idx,
+__device__   int calculate_box_ind(int &current_thread_idx,
         torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> counts,
         torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> x_box_idx){
     int nr_of_counts = counts.size(0); //remember 0 included!
+
+#pragma unroll
     for (int i=0;i<nr_of_counts-1;i++){
         if ( current_thread_idx>=counts[i] && current_thread_idx<counts[i+1]){
             return x_box_idx[i];
@@ -325,7 +329,7 @@ __device__ int calculate_box_ind(int &current_thread_idx,
 
 
 template <typename scalar_t,int nd>
-__device__ scalar_t get_2_norm(scalar_t * dist){
+__device__   scalar_t get_2_norm(scalar_t * dist){
     scalar_t acc=0;
 #pragma unroll
     for (int k = 0; k < nd; k++) {
@@ -405,6 +409,7 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor64<scalar_t
     scalar_t acc;
     extern __shared__ __align__(sizeof(scalar_t)) unsigned char my_smem[];
     scalar_t *buffer = reinterpret_cast<scalar_t *>(my_smem);
+    extern __shared__ scalar_t buffer[];
     scalar_t *yj = &buffer[0];
     scalar_t *bj = &buffer[blockDim.x*nd];
     //Load these points only... the rest gets no points... threadIdx.x +a to b. ...
@@ -956,7 +961,7 @@ __global__ void lagrange_shared_v2(
 // Created by rhu on 2020-07-05.
 //
 template <typename scalar_t, int nd>
-__device__ int get_global_index(
+__device__   int get_global_index(
                                 int i,
                                 const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
                                 const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> alpha,
@@ -1341,98 +1346,6 @@ __global__ void boolean_separate_interactions_small_var_comp(
                 is_small_field[i]=true;
             }
         }
-    }
-
-
-
-}
-
-
-
-template<typename scalar_t>
-__inline__ __device__ scalar_t warpReduceMax(scalar_t val)
-{
-#pragma unroll
-    for (int mask = warpSize / 2; mask > 0; mask /= 2)
-    {
-        val = max(__shfl_xor_sync(0xFFFFFFFF, val, mask), val);
-    }
-
-    return val;
-}
-template<typename scalar_t>
-__inline__ __device__ scalar_t warpReduceMin(scalar_t val)
-{
-#pragma unroll
-    for (int mask = warpSize / 2; mask > 0; mask /= 2)
-    {
-        val = min(__shfl_xor_sync(0xFFFFFFFF, val, mask), val);
-    }
-
-    return val;
-}
-
-__device__ __forceinline__ float atomicMinFloat (float * addr, float value) {
-    float old;
-    old = (value >= 0) ? __int_as_float(atomicMin((int *)addr, __float_as_int(value))) :
-          __uint_as_float(atomicMax((unsigned int *)addr, __float_as_uint(value)));
-
-    return old;
-}
-__device__ __forceinline__ float atomicMaxFloat (float * addr, float value) {
-    float old;
-    old = (value >= 0) ? __int_as_float(atomicMax((int *)addr, __float_as_int(value))) :
-          __uint_as_float(atomicMin((unsigned int *)addr, __float_as_uint(value)));
-    return old;
-}
-
-template<typename scalar_t,int cols>
-__global__ void reduceMaxMinOptimizedWarpMatrix(
-        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> input,
-        torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> maxOut,
-        torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> minOut
-)
-{
-    __shared__ scalar_t sharedMax;
-    __shared__ scalar_t sharedMin;
-    int size = input.size(0);
-    int increment = gridDim.x*blockDim.x;
-    int tid = threadIdx.x+blockDim.x*blockIdx.x;
-    for(int j=0;j<cols;j++){
-        sharedMax = -NPP_MAXABS_32F;
-        sharedMin = NPP_MAXABS_32F;
-        scalar_t localMax = -NPP_MAXABS_32F;
-        scalar_t localMin = NPP_MAXABS_32F;
-        if (tid<size){
-            for (int i = tid; i < size; i += increment) //iterate through warps...
-            {
-                if (input[i][j] > localMax)
-                {
-                    localMax = input[i][j];
-                }
-                if (input[i][j] < localMin )
-                {
-                    localMin = input[i][j];
-                }
-            }
-        }
-        __syncthreads();
-
-        scalar_t warpMax = warpReduceMax(localMax);
-        scalar_t warpMin = warpReduceMin(localMin);
-        int lane = threadIdx.x % warpSize;
-        if (lane == 0)
-        {
-            atomicMaxFloat(&sharedMax, warpMax);
-            atomicMinFloat(&sharedMin, warpMin);
-        }
-        __syncthreads();
-        if (0 == threadIdx.x)
-        {
-            atomicMaxFloat(&maxOut[j],sharedMax);
-            atomicMinFloat(&minOut[j],sharedMin);
-        }
-        __syncthreads();
     }
 }
 
