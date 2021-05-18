@@ -22,8 +22,9 @@ torch.manual_seed(1)
 # X = MaternClusterData(3,100,100,.05)
 # PlotData(X)
 
-n = 10000
-X = MultiScaleClusterData(3,[10,10,10],.03)
+n = 100000000
+X = FBMData(3,n,.75)
+print(X.shape)
 PlotData(X)
 
 # X = FBMData(3,n,0.25)

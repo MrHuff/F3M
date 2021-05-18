@@ -63,10 +63,19 @@ def MaternClusterData(dim,lam,mu,r):
 
 def FBMData(dim, n, hurst):
     from fbm import FBM
-    f = FBM(n=n-1, hurst=hurst)
+    neff = min(10000000,n)
+    f = FBM(n=neff-1, hurst=hurst)
     X = []
     for k in range(dim):
-        X.append(f.fbm())
+        nrem = n
+        Xk = np.array([])
+        start_val = 0
+        while nrem>0:
+            Xtmp = f.fbm()[:neff]
+            Xk = np.concatenate((Xk,Xtmp-Xtmp[0]+start_val))
+            start_val = 2*Xk[-1]-Xk[-2]
+            nrem -= neff
+        X.append(Xk)
     X = torch.tensor(X).t().contiguous()
     return X  
   
