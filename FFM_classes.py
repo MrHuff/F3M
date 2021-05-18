@@ -117,8 +117,7 @@ class keops_matmul():
         self.device =device
         self.X = X.type(self.type).to(device)
         self.D = X.shape[1]
-
-        formula = "Exp(- g * SqDist(x,y)) * b"
+        formula = 'Exp(IntInv(-2) * SqDist(x / g, y / g)) * b'
         aliases = [
             "x = Vi(" + str(self.D) + ")",  # First arg:  i-variable of size D
             "y = Vj(" + str(self.D) + ")",  # Second arg: j-variable of size D
@@ -130,17 +129,17 @@ class keops_matmul():
                               aliases,  # Fourth arg is indexed by "j", of dim 2
                                reduction_op='Sum',
                                axis=1,
-                               dtype="float64")
+                               dtype="float32")
         if torch.is_tensor(Y):
             self.Y = Y.type(self.type).to(device)
         else:
-            self.Y = Y
+            self.Y = self.X
         self.d = self.X.shape[1]
         try:
             assert self.d > 0 and self.d < 6
         except AssertionError:
             print('Sorry bro, dimensionality of your data is too big; Can only do up to 5')
-        self.ls = torch.tensor([1./(2.*ls)]).type(self.type).to(self.device)
+        self.ls = torch.tensor([ls**0.5]).type(self.type).to(self.device)
         self.device = device
 
     def __matmul__(self, b):

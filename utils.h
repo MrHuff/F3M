@@ -101,7 +101,7 @@ void benchmark_1(int n,float min_points, int threshold,float a,float b,float ls,
 //    torch::Tensor b_train = read_csv<float>("Y_train.csv",11619,1); something wrong with data probably...
     torch::Tensor X_train = torch::empty({n,nd}).uniform_(a, b).toType(dtype<scalar_t>()).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
 //    torch::Tensor X_train = torch::rand({n,nd}).toType(dtype<scalar_t>()).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
-    torch::Tensor b_train = torch::ones({n,1}).toType(dtype<scalar_t>()).to(device_cuda);
+    torch::Tensor b_train = torch::randn({n,1}).toType(dtype<scalar_t>()).to(device_cuda);
 //    torch::Tensor b_train = torch::ones({n,1}).toType(dtype<scalar_t>()).to(device_cuda);
     torch::Tensor res,res_ref;
     FFM_object<scalar_t,nd> ffm_obj = FFM_object<scalar_t,nd>(X_train, X_train, ls_in, device_cuda,min_points,nr_of_interpolation_points,
@@ -121,7 +121,7 @@ void benchmark_1(int n,float min_points, int threshold,float a,float b,float ls,
     std::cout<<"Full matmul time (ms): "<<duration_1.count()<<std::endl;
 
     torch::Tensor res_compare = res.slice(0,0,threshold);
-    torch::Tensor rel_error  = ((res_ref-res_compare)/res_ref).abs_().mean();
+    torch::Tensor rel_error  = ((res_ref-res_compare).norm()/res_ref.norm());
     auto rel_error_float = rel_error.item<scalar_t>();
     std::cout<<res_ref.slice(0,0,10)<<std::endl;
     std::cout<<res.slice(0,0,10)<<std::endl;

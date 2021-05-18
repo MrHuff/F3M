@@ -48,16 +48,16 @@ m.def("rbf_float_3", &rbf_call<float,3>, "rbf xy 3 dim float");
 m.def("rbf_float_2", &rbf_call<float,2>, "rbf xy 2 dim float");
 m.def("rbf_float_1", &rbf_call<float,1>, "rbf xy 1 dim float");
 
-//m.def("rbf_double_10", &rbf_call<double,10>, "rbf xy 10 dim double");
-//m.def("rbf_double_9", &rbf_call<double,9>, "rbf xy 9 dim double");
-//m.def("rbf_double_8", &rbf_call<double,8>, "rbf xy 8 dim double");
-//m.def("rbf_double_7", &rbf_call<double,7>, "rbf xy 7 dim double");
-//m.def("rbf_double_6", &rbf_call<double,6>, "rbf xy 6 dim double");
-//m.def("rbf_double_5", &rbf_call<double,5>, "rbf xy 5 dim double");
-//m.def("rbf_double_4", &rbf_call<double,4>, "rbf xy 4 dim double");
-//m.def("rbf_double_3", &rbf_call<double,3>, "rbf xy 3 dim double");
-//m.def("rbf_double_2", &rbf_call<double,2>, "rbf xy 2 dim double");
-//m.def("rbf_double_1", &rbf_call<double,1>, "rbf xy 1 dim double");
+m.def("rbf_double_10", &rbf_call<double,10>, "rbf xy 10 dim double");
+m.def("rbf_double_9", &rbf_call<double,9>, "rbf xy 9 dim double");
+m.def("rbf_double_8", &rbf_call<double,8>, "rbf xy 8 dim double");
+m.def("rbf_double_7", &rbf_call<double,7>, "rbf xy 7 dim double");
+m.def("rbf_double_6", &rbf_call<double,6>, "rbf xy 6 dim double");
+m.def("rbf_double_5", &rbf_call<double,5>, "rbf xy 5 dim double");
+m.def("rbf_double_4", &rbf_call<double,4>, "rbf xy 4 dim double");
+m.def("rbf_double_3", &rbf_call<double,3>, "rbf xy 3 dim double");
+m.def("rbf_double_2", &rbf_call<double,2>, "rbf xy 2 dim double");
+m.def("rbf_double_1", &rbf_call<double,1>, "rbf xy 1 dim double");
 
 
 }

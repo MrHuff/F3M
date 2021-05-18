@@ -396,7 +396,9 @@ def experiment_7(device="cuda:0"):
             node_list = [256, 512, 1024]
             for nr_of_interpolation in node_list:
                 for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 500000000],
-                                                            [1000, 1000, 5000, 20000], [nr_of_interpolation, nr_of_interpolation, nr_of_interpolation, 5000]):
+                                                            [1000, 5000, 5000, 20000], [nr_of_interpolation, nr_of_interpolation, nr_of_interpolation, 5000]):
+                    if d>4:
+                        nr_of_interpolation = 5000
                     for r2 in [0.1,1,10,100]:
                         torch.manual_seed(seed)
                         X = torch.empty(n, d).normal_(0, r2 ** 0.5)
@@ -514,7 +516,7 @@ def experiment_9(device="cuda:0"):
                 node_list = [3, 4, 5, 6, 7, 8, 9, 10]
                 for node_nr in node_list:
                     nr_of_interpolation = int(node_nr ** d)
-                    small_field_limit = nr_of_interpolation
+                    small_field_limit = nr_of_interpolation if ls < 1 else 2500
                     eff_var_limit = float(evarlimit)
                     if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
                         torch.cuda.synchronize()

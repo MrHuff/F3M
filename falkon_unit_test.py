@@ -3,6 +3,8 @@ import torch
 # plt.style.use('ggplot')
 import falkon
 from conjugate_gradient.custom_falkon import custom_Falkon
+from conjugate_gradient.custom_incore_falkon import InCoreFalkon_custom
+
 from conjugate_gradient.custom_gaussian_kernel import custom_GaussianKernel
 from conjugate_gradient.benchmark_Gaussian_kernel import bench_GaussianKernel
 from FFM_classes import *
@@ -41,7 +43,9 @@ if __name__ == '__main__':
     X = torch.rand(N, d)
     Y = generate_random_problem(X,1000,ls)
     #
-    kernel = custom_GaussianKernel(sigma=ls,min_points=64)
+    # OK PICK YOUR POISON, EITHER ONE IS SLOW OR ONE IS FAST DEPENDING ON TRANSPOSE, MIGHT ALMOST SWITCH TAG IN BETWEEN
+    # WHAT THE FUCK IS GOING ON????
+    kernel = custom_GaussianKernel(sigma=ls,min_points=2500,var_compression=False)
     options = falkon.FalkonOptions(use_cpu=False,debug=True)
     model = custom_Falkon(kernel=kernel, penalty=penalty, M=M, options=options)
     model.fit(X, Y)
@@ -50,11 +54,11 @@ if __name__ == '__main__':
     r2 = calc_R2(Y,preds)
     print(r2)
     kernel = falkon.kernels.GaussianKernel(sigma=ls)
-    kernel = bench_GaussianKernel(sigma=ls)
+    # kernel = bench_GaussianKernel(sigma=ls)
     #Homemade kernel that supposedly does the exact same thing as KeOps is also super slow compared to KeOps
     #This implies that there probably is something wrong with our code
 
-    options = falkon.FalkonOptions(use_cpu=False,debug=True)
+    options = falkon.FalkonOptions(use_cpu=False,debug=True,keops_memory_slack=0.25)
     model = custom_Falkon(kernel=kernel, penalty=penalty, M=M, options=options)
     model.fit(X, Y)
     print(model.conjugate_gradient_time)
