@@ -1,35 +1,47 @@
 import torch
+import matplotlib.pyplot as plt
 
+import numpy as np
 torch.set_printoptions(profile="full")
 
-def divide(old_interactions, depth, p):
-    n = old_interactions.shape[0]
-    arr = torch.arange(p)
-    if depth==0:
-        left = arr.repeat_interleave(p).repeat(n)
-        right = arr.repeat(p*n)
-        add = p * old_interactions.repeat_interleave(p * p, 0)
-        new_interations = torch.stack([left,right],dim=1
-                                      ) + add
-    else:
-        left_old,right_old = old_interactions.unbind(1)
-        output, counts = torch.unique_consecutive(left_old,return_counts=True)
-        right = arr.repeat(p*n)+right_old.repeat_interleave(p)
-        left = arr.repeat_interleave(p).repeat(output.shape[0]).repeat_interleave(counts.repeat_interleave(p*p))+p*left_old.repeat_interleave(p*p,0)
-        new_interations = torch.stack([left,right],dim=1
-                                      )
-    return new_interations
+x = np.array([10**i for i in range(1,10)])
+y = x*np.log10(x)
 
-p=4
-interactions = torch.tensor([[0,0]])
-interactions = divide(interactions,1,p)
-print(interactions)
-interactions = interactions[torch.rand(interactions.shape[0])>0.4]
-print(interactions)
-interactions = divide(interactions,2,p)
-print(interactions)
-interactions = interactions[torch.rand(interactions.shape[0])>0.4]
-print(interactions)
+x_trans  = np.log10(x)
+y_trans  = np.log10(y)
+plt.plot(x_trans,y_trans)
+plt.show()
+
+m, b = np.polyfit(x_trans, y_trans, 1)
+print(m,b)
+# def divide(old_interactions, depth, p):
+#     n = old_interactions.shape[0]
+#     arr = torch.arange(p)
+#     if depth==0:
+#         left = arr.repeat_interleave(p).repeat(n)
+#         right = arr.repeat(p*n)
+#         add = p * old_interactions.repeat_interleave(p * p, 0)
+#         new_interations = torch.stack([left,right],dim=1
+#                                       ) + add
+#     else:
+#         left_old,right_old = old_interactions.unbind(1)
+#         output, counts = torch.unique_consecutive(left_old,return_counts=True)
+#         right = arr.repeat(p*n)+right_old.repeat_interleave(p)
+#         left = arr.repeat_interleave(p).repeat(output.shape[0]).repeat_interleave(counts.repeat_interleave(p*p))+p*left_old.repeat_interleave(p*p,0)
+#         new_interations = torch.stack([left,right],dim=1
+#                                       )
+#     return new_interations
+#
+# p=4
+# interactions = torch.tensor([[0,0]])
+# interactions = divide(interactions,1,p)
+# print(interactions)
+# interactions = interactions[torch.rand(interactions.shape[0])>0.4]
+# print(interactions)
+# interactions = divide(interactions,2,p)
+# print(interactions)
+# interactions = interactions[torch.rand(interactions.shape[0])>0.4]
+# print(interactions)
 
 
 
