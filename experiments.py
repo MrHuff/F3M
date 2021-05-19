@@ -396,9 +396,9 @@ def experiment_7(device="cuda:0"):
             node_list = [256, 512, 1024]
             for nr_of_interpolation in node_list:
                 for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 500000000],
-                                                            [1000, 5000, 5000, 20000], [nr_of_interpolation, nr_of_interpolation, nr_of_interpolation, 5000]):
+                                                            [1000, 5000, 5000, 10000], [nr_of_interpolation, 2500, 5000, 5000]):
                     if d>4:
-                        nr_of_interpolation = 5000
+                        small_field_limit = 5000
                     for r2 in [0.1,1,10,100]:
                         torch.manual_seed(seed)
                         X = torch.empty(n, d).normal_(0, r2 ** 0.5)

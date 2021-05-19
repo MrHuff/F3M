@@ -21,8 +21,10 @@ class Container(torch.nn.Module):
 
 def DoBench(todolist):
 
-    todo_N = ["1e6", "1e7", "1e8","1e9"]                         # number of points
-    Niters = [3, 3,3,3]  # nb of trials for each N
+    # todo_N = ["1e6", "1e7", "1e8","1e9"]                         # number of points
+    # Niters = [3, 3,3,3]  # nb of trials for each N
+    todo_N = ["1e8"]                         # number of points
+    Niters = [3]  # nb of trials for each N
     todo_ls = [float(.01), float(.1), float(1),float(10)]          # lengthscales
     
     # FFM parameters
@@ -54,7 +56,8 @@ def DoBench(todolist):
                     res = bench_X(nr_of_interpolation = nr_of_interpolation,
                             eff_var_limit = eff_var_limit,
                             min_points = min_points,
-                            var_compression = var_compression)
+                            var_compression = var_compression,
+                            small_field_points = [1000])
                             
                     elapsed_rec.append(res["elapsed"])
                     rel_err_rec.append(res["rel_err"])

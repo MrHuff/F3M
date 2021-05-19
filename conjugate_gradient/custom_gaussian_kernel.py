@@ -7,21 +7,22 @@ import functools
 from FFM_classes import *
 import time
 class custom_GaussianKernel(GaussianKernel):
-    def __init__(self, sigma: Union[float, torch.Tensor], opt: Optional[FalkonOptions] = None,min_points: [float]=None,var_compression: [bool]=True):
+    def __init__(self, sigma: Union[float, torch.Tensor], opt: Optional[FalkonOptions] = None,min_points: [float]=None,var_compression: [bool]=True,interpolation_nr: [int]=64):
         super(custom_GaussianKernel, self).__init__(sigma,opt)
         self.ls = sigma**2
         self.min_points = min_points
         self.ffm_initialized = False
         self.device = "cuda:0"
+        self.interpolation_nr = interpolation_nr
         self.var_compression = var_compression
     def _decide_mmv_impl(self, X1, X2, v, opt: FalkonOptions):
         if not self.ffm_initialized:
             d = X1.shape[1]
             if self.min_points is None:
                 self.min_points = 4 ** d
-            self.FFM_obj = FFM(X=X1, Y=X2, ls=self.ls, min_points=self.min_points, nr_of_interpolation=4 ** d,
+            self.FFM_obj = FFM(X=X1, Y=X2, ls=self.ls, min_points=self.min_points, nr_of_interpolation=self.interpolation_nr,
                           eff_var_limit=0.1, var_compression=self.var_compression, device=self.device,
-                          small_field_points=4 ** d)
+                          small_field_points=self.interpolation_nr)
             self.ffm_initialized = True
 
         return self.mmv_
@@ -31,9 +32,9 @@ class custom_GaussianKernel(GaussianKernel):
             d = X1.shape[1]
             if self.min_points is None:
                 self.min_points = 4 ** d
-            self.FFM_obj = FFM(X=X1, Y=X2, ls=self.ls, min_points=self.min_points, nr_of_interpolation=4 ** d,
+            self.FFM_obj = FFM(X=X1, Y=X2, ls=self.ls, min_points=self.min_points, nr_of_interpolation=self.interpolation_nr,
                           eff_var_limit=0.1, var_compression=self.var_compression, device=self.device,
-                          small_field_points=4 ** d)
+                          small_field_points=self.interpolation_nr)
             self.ffm_initialized = True
 
         return self.dmmv_
