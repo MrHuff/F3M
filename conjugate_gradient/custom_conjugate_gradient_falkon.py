@@ -61,6 +61,7 @@ class ConjugateGradient(Optimizer):
         e_train = time.time() - t_start
 
         for i in range(max_iter):
+            start_it = time.time()
             with TicToc("Chol Iter", debug=False):
                 t_start = time.time()
                 AP = mmv(P)
@@ -93,6 +94,8 @@ class ConjugateGradient(Optimizer):
             with TicToc("Chol callback", debug=False):
                 if callback is not None:
                     callback(i + 1, X, e_train)
+            end_it = time.time()
+            print("it time: ",end_it-start_it)
 
         return X
 
