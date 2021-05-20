@@ -115,7 +115,7 @@ class keops_matmul():
                  Y=None,
                  ls=1.0,
                  device = "cuda:0",
-                 type=torch.float64):
+                 type=torch.float32):
         self.type=type
         self.device =device
         self.X = X.type(self.type).to(device)
