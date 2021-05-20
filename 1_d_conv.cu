@@ -66,13 +66,14 @@ std::tuple<dim3,dim3,int,torch::Tensor,torch::Tensor> skip_kernel_launch(int col
 };
 
 template<typename T>
-__device__   T square(T x){
+__device__  __forceinline__  T square(T x){
     return x*x;
 };
 
 template<typename T, int nd>
-__device__   static T square_dist(T x[],T y[]){
+__device__   __forceinline__ static T square_dist(T x[],T y[]){
     T dist=(T)0;
+#pragma unroll
     for (int k=0;k<nd;k++){
         dist += square<T>(x[k]-y[k]);
     };
@@ -80,13 +81,13 @@ __device__   static T square_dist(T x[],T y[]){
 };
 
 template<typename T, int nd>
-__device__   static T rbf(T x[], T y[]) {
+__device__ __forceinline__  static T rbf(T x[], T y[]) {
     T dist=square_dist<T,nd>(x,y);
     return expf(-dist);
 };
 
 template <typename scalar_t,int nd>
-__device__   static void torch_load_y(int index, scalar_t *shared_mem, torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> y){
+__device__ __forceinline__   static void torch_load_y(int index, scalar_t *shared_mem, torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> y){
 #pragma unroll
     for (int k = 0; k < nd; k++) {
         //assert(&((*px)[i * FIRST + k]) != nullptr);
@@ -96,7 +97,7 @@ __device__   static void torch_load_y(int index, scalar_t *shared_mem, torch::Pa
     }
 }
 template <typename scalar_t>
-__device__   static void torch_load_b(
+__device__  __forceinline__ static void torch_load_b(
         int col_index,
         int index,
         scalar_t *shared_mem,
@@ -104,7 +105,7 @@ __device__   static void torch_load_b(
     shared_mem[threadIdx.x] = b[index][col_index];
 }
 template <typename scalar_t,int nd>
-__device__   static void torch_load_y_v2(int reorder_index, scalar_t *shared_mem,
+__device__  __forceinline__ static void torch_load_y_v2(int reorder_index, scalar_t *shared_mem,
         const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> y
         ){
 #pragma unroll
@@ -116,7 +117,7 @@ __device__   static void torch_load_y_v2(int reorder_index, scalar_t *shared_mem
     }
 }
 template <typename scalar_t,int nd>
-__device__   static void torch_load_b_v2(
+__device__  __forceinline__ static void torch_load_b_v2(
         int col_index,
         int reorder_index,
         scalar_t *shared_mem,
