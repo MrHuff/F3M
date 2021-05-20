@@ -70,21 +70,6 @@ __device__   T square(T x){
     return x*x;
 };
 
-template<typename T>
-__device__    T cube(T x){
-    return x*x*x;
-};
-
-template<typename T, int nd>
-__device__ T rbf_simple(T x[],T y[]){
-    T tmp=0;
-#pragma unroll
-    for (int k=0;k<nd;k++){
-        tmp += square<T>(x[k]-y[k]);
-    };
-    return expf(-tmp);
-};
-
 template<typename T, int nd>
 __device__   static T square_dist(T x[],T y[]){
     T dist=(T)0;
@@ -95,26 +80,10 @@ __device__   static T square_dist(T x[],T y[]){
 };
 
 template<typename T, int nd>
-__device__   static T rbf(T x[],T y[],const T *ls){
+__device__   static T rbf(T x[], T y[]) {
     T dist=square_dist<T,nd>(x,y);
-    return expf(-dist/(2* *ls));
+    return expf(-dist);
 };
-template<typename T, int nd>
-__device__  static T rbf_grad_ls(T x[],T y[],const T *ls){
-    T dist=square_dist<T,nd>(x,y);
-    return expf(-dist/(2* *ls))*dist/square<T>(*ls);
-};
-template<typename T, int nd>
-__device__  static T rbf_grad_dist_abs(T x[],T y[],const T *ls){
-    T dist=square_dist<T,nd>(x,y);
-    return expf(-dist/(2* *ls))*sqrt(dist)/(*ls);
-};
-
-//template<typename T, int nd>
-//__device__ rbf_pointer<T> rbf_pointer_func = rbf<T>;
-//template<typename T, int nd>
-//__device__ rbf_pointer<T> rbf_pointer_grad = rbf_grad<T>;
-//
 
 template <typename scalar_t,int nd>
 __device__   static void torch_load_y(int index, scalar_t *shared_mem, torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> y){
@@ -190,7 +159,7 @@ __global__ void rbf_1d_reduce_shared_torch(
             if (i < x_n) { // we compute x1i only if needed
                 scalar_t *yjrel = yj; // Loop on the columns of the current block.
                 for (int jrel = 0; (jrel < blockDim.x) && (jrel < y_n - jstart); jrel++, yjrel += nd) {
-                    acc += rbf<scalar_t,nd>(x_i, yjrel,ls) * bj[jrel]; //sums incorrectly cause pointer is fucked not sure if allocating properly
+                    acc += rbf<scalar_t, nd>(x_i, yjrel) * bj[jrel]; //sums incorrectly cause pointer is fucked not sure if allocating properly
                 }
             }
             __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
@@ -225,7 +194,7 @@ __global__ void rbf_1d_reduce_simple_torch(const torch::PackedTensorAccessor64<s
             for (int k=0;k<nd;k++){
                 y_j[k] = Y_data[p][k];
             };
-            acc+= rbf<scalar_t,nd>(x_i,y_j,ls)*b_data[p][b_ind];
+            acc+= rbf<scalar_t, nd>(x_i, y_j) * b_data[p][b_ind];
         };
         output[i][b_ind]=acc;
     }
@@ -252,27 +221,6 @@ __device__   scalar_t calculate_lagrange( //Try using double precision!
     return res;
 }
 
-template <typename scalar_t,int nd>
-__device__   scalar_t calculate_lagrange_product( //Tends to become really inaccurate for high dims and "too many lagrange nodes"
-        scalar_t *l_p,
-        scalar_t *x_i,
-            int *combs,
-        scalar_t b,
-        int *node_cum_shared){
-    scalar_t tmp;
-#pragma unroll
-
-    for (int i=0; i<nd;i++){
-        tmp = calculate_lagrange(l_p, x_i[i], combs[i], node_cum_shared[i], node_cum_shared[i + 1]);
-        if (tmp==0){
-            b=(scalar_t) 0.;
-            break;
-        } else{
-            b *=tmp;  //Bug might be kronecker delta effect,i.e. sometimes x_i[]
-        }
-    }
-    return b;
-}
 
 template <typename scalar_t,int nd>
 __device__   scalar_t calculate_barycentric_lagrange(//not sure this is such a great idea, when nan how avoid...
@@ -359,47 +307,6 @@ __device__   scalar_t get_2_norm(scalar_t * dist){
 }
 
 
-template <typename scalar_t,int nd>
-__global__ void skip_conv_1d(const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
-                             const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> Y_data,
-                             const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> b_data,
-                             torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> output,
-                             scalar_t * ls,
-                             const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> x_boxes_count,
-                             const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> y_boxes_count,
-                             const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> x_box_idx,
-                             const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions_x_parsed,
-                             const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> interactions_y
-){
-    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
-    unsigned int x_n = X_data.size(0);
-    if (i>x_n-1){return;}
-    scalar_t x_i[nd];
-    scalar_t y_j[nd];
-    scalar_t acc;
-    int box_ind,start,end,int_j;
-    box_ind = calculate_box_ind(i,x_boxes_count,x_box_idx);
-    for (int k=0;k<nd;k++){
-        x_i[k] = X_data[i][k];
-    }
-//    printf("thread %i: %i\n",i,box_ind);
-    for (int b_ind=0; b_ind < b_data.size(1); b_ind++) { //for all dims of b
-        acc=0;
-        for (int j = interactions_x_parsed[box_ind][0]; j < interactions_x_parsed[box_ind][1]; j++) { // iterate through every existing ybox
-            int_j = interactions_y[j];
-            start = y_boxes_count[int_j]; // 0 to something
-            end = y_boxes_count[int_j + 1]; // seomthing
-            for (int j_2 = start; j_2 < end; j_2++) {
-                for (int k = 0; k < nd; k++) {
-                    y_j[k] = Y_data[j_2][k];
-                };
-                acc += rbf<scalar_t,nd>(x_i, y_j, ls) * b_data[j_2][b_ind];
-
-            }
-        }
-        output[i][b_ind] = acc;
-    }
-}
 
 //Crux is getting the launch right presumably or parallelizaiton/stream. using a minblock or 32*n.
 //Refactor, this is calculated last with all near_fields available. Use same logic...
@@ -537,7 +444,7 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor64<scalar_t
                     if (i < b) { // we compute x1i only if needed
                         scalar_t *yjrel = yj; // Loop on the columns of the current block.
                         for (int jrel = 0; (jrel < blockDim.x) && (jrel < end - jstart); jrel++, yjrel += nd) {
-                            acc += rbf<scalar_t, nd>(x_i, yjrel, ls) *
+                            acc += rbf<scalar_t, nd>(x_i, yjrel) *
                                    bj[jrel]; //sums incorrectly cause pointer is fucked not sure if allocating properly
                         }
                     }
@@ -608,7 +515,7 @@ __global__ void skip_conv_1d_shared_transpose(const torch::PackedTensorAccessor6
                     if (i < b) { // we compute x1i only if needed
                         scalar_t *xjrel = xj; // Loop on the columns of the current block.
                         for (int jrel = 0; (jrel < blockDim.x) && (jrel < end - jstart); jrel++, xjrel += nd) {
-                            atomicAdd(&output[x_idx_reordering[jstart+jrel]][b_ind],rbf<scalar_t, nd>(xjrel, y_i, ls) * b_i); //for each p, sum accross x's...
+                            atomicAdd(&output[x_idx_reordering[jstart+jrel]][b_ind], rbf<scalar_t, nd>(xjrel, y_i) * b_i); //for each p, sum accross x's...
                         }
                     }
                     __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
@@ -922,7 +829,7 @@ __global__ void skip_conv_far_boxes_opt(//needs rethinking
                     if (i_calc < cheb_data_size) { // we compute x1i only if needed
                         scalar_t *yjrel = yj; // Loop on the columns of the current block.
                         for (int p = 0; (p < blockDim.x) && (p < cheb_data_size - jstart); p++, yjrel += nd) {
-                            acc += rbf<scalar_t,nd>(x_i, yjrel, ls)* bj[p]; //sums incorrectly cause pointer is fucked not sure if allocating properly
+                            acc += rbf<scalar_t, nd>(x_i, yjrel) * bj[p]; //sums incorrectly cause pointer is fucked not sure if allocating properly
                         }
                     }
                     __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
@@ -1497,8 +1404,6 @@ __global__ void boolean_separate_interactions_small_var_comp(
         const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> unique_og_Y,
         const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> eff_var_X,
         const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> eff_var_Y,
-//        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> distance_to_edge_X,
-//        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> distance_to_edge_Y,
         const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions,
         const scalar_t * edge,
         torch::PackedTensorAccessor64<bool,1,torch::RestrictPtrTraits> is_far_field,
@@ -1514,7 +1419,6 @@ __global__ void boolean_separate_interactions_small_var_comp(
     int by = interactions[i][1];
     int interaction_size;
     scalar_t tot_var;
-//    scalar_t smallest_distance;
     scalar_t distance[nd];
     scalar_t cx[nd];
     scalar_t cy[nd];

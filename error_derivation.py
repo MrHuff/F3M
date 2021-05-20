@@ -110,18 +110,11 @@ def interpolation_xy(x,y,k,ls): #Key is equivariance such that the same "edge" c
     edge_x,factor_x,center_x = get_edge_etc(x)
     edge_y,factor_y,center_y = get_edge_etc(y)
     edge = max(edge_x,edge_y)
-    x_edge_close = get_smallest_distance_from_edge(x,edge)
-
+    print('edge',edge)
     factor = 2./edge
     ls = torch.tensor(ls)
-    ls_sqrt = ls.sqrt()
-    var_x = torch.var(x/ls_sqrt)
-    var_y = torch.var(y/ls_sqrt)
-    print('effective var x',var_x)
-    print('effective var y',var_y)
-
-    print("ls ", ls)
     rbf.lengthscale=ls
+    print(rbf)
     with torch.no_grad():
         res = rbf(torch.from_numpy(x).float(),torch.from_numpy(y).float())@torch.from_numpy(b).float()
     nodes=get_nodes(k)
@@ -129,31 +122,34 @@ def interpolation_xy(x,y,k,ls): #Key is equivariance such that the same "edge" c
     interp_list_y,summed_y = get_interpolation_list(nodes,w,y,center_y,factor,b)
     interp_list_x,summed_x = get_interpolation_list(nodes,w,x,center_x,factor,b)
     cheb_data  =(edge/2)*torch.from_numpy(nodes).float()+edge/2
+    test = rbf(torch.from_numpy(np.array([center_x])),torch.from_numpy(np.array([center_y]))).evaluate()
+
+
     with torch.no_grad():
         y_cheb = cheb_data + center_y - center_x  #cheb_data....
         mid_ker =  rbf(cheb_data,y_cheb).evaluate()
         print('midker ',mid_ker)
         mid_res =mid_ker@torch.from_numpy(summed_y.sum(axis=0)).float()
         approx_res = torch.from_numpy(interp_list_x).float() @ mid_res  #incorrect, not symmetric!
-        # approx_res = torch.zeros_like(res)  #incorrect, not symmetric!
+        approx_res = (torch.ones_like(approx_res)*test*np.sum(b)).sq
         kernel_approx = torch.from_numpy(interp_list_x).float()@(mid_ker@ torch.from_numpy(interp_list_y).float().t())
     print(res[:10])
-    print(approx_res[:10])
+    print(approx_res.squeeze()[:10])
     print('Relative error: ',torch.norm(res-approx_res)/torch.norm(res))
     print(kernel_approx[:10,:])
     with torch.no_grad():
         real_kernel = rbf(torch.from_numpy(x).float(),torch.from_numpy(y).float()).evaluate()
 
     print('rel ERROR kernel: ', torch.norm(kernel_approx-real_kernel)/torch.norm(real_kernel))
-
+    print(real_kernel[:10,:].sum(1))
 if __name__ == '__main__':
     rbf = RBFKernel()
 
     n=1000
     k =100
     x = np.random.rand(n)
-    y = x+1
-    b = np.ones(n)
+    y = x+2
+    b = np.random.randn(n)
 
     #Interpolation does not work relatively well when we are very far away, i.e. the exponent is very small -> close to 0 results.
 
@@ -164,5 +160,5 @@ if __name__ == '__main__':
     #low (effective) variance diagonal entries can be interpolated for faster speed. (only for X times X)
     #Failure mode is when b has a lot of weight specifically where things are in the "far field".
 
-    interpolation_xy(x,y,k,ls=1e-2)
+    interpolation_xy(x,y,k,ls=0.1)
     #hmm interpolation in "far field or large lengthscales generally quite bad...

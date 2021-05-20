@@ -96,7 +96,7 @@ void benchmark_1(int n,float min_points, int threshold,float a,float b,float ls,
     const std::string device_cuda = "cuda:0"; //officially retarded
     const std::string device_cpu = "cpu";
     scalar_t ls_in = (scalar_t) ls;
-//    torch::manual_seed(0);
+    torch::manual_seed(0);
 //    torch::Tensor X_train = read_csv<float>("X_train_PCA.csv",11619,3); something wrong with data probably...
 //    torch::Tensor b_train = read_csv<float>("Y_train.csv",11619,1); something wrong with data probably...
     torch::Tensor X_train = torch::empty({n,nd}).uniform_(a, b).toType(dtype<scalar_t>()).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
@@ -112,6 +112,8 @@ void benchmark_1(int n,float min_points, int threshold,float a,float b,float ls,
     auto duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(end_2-start_2);
     std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
     std::cout<<"------------- "<<"Uniform distribution : "<< "a "<<a<<" b "<<b<<" n: "<<n<<" min_points: "<< min_points <<" nr_interpolation_points: "<<nr_of_interpolation_points <<" -------------"<<std::endl;
+    torch::manual_seed(0);
+    X_train = torch::empty({n,nd}).uniform_(a, b).toType(dtype<scalar_t>()).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
     torch::Tensor subsampled_X = X_train.slice(0,0,threshold);
     exact_MV<scalar_t,nd> exact_ref =exact_MV<scalar_t,nd>(subsampled_X, X_train, ls_in);
     auto start = std::chrono::high_resolution_clock::now();

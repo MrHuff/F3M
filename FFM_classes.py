@@ -16,9 +16,12 @@ class FFM:
                  small_field_points = 1000,
                  device = "cuda:0"
                  ):
+
+        self.X = X.clone()
         self.X = X.float().to(device)
         if torch.is_tensor(Y):
-            self.Y = Y.float().to(device)
+            self.Y = Y.clone()
+            self.Y = self.Y.float().to(device)
         else:
             self.Y = self.X
             print('X==Y assuming kernel covariance matmul')
@@ -163,8 +166,10 @@ class benchmark_matmul():
                  Y=None,
                  ls=1.0,
                  device = "cuda:0"):
+        self.X = X.clone()
         self.X = X.float().to(device)
         if torch.is_tensor(Y):
+            self.Y = Y.clone()
             self.Y = Y.float().to(device)
         else:
             self.Y = self.X
