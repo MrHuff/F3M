@@ -241,10 +241,6 @@ torch::Tensor rbf_call(
         scalar_t & ls,
         bool shared = true
         ){
-    cuda_X_job = cuda_X_job / (sqrt(2) * ls);
-    if (cuda_X_job.data_ptr()!=cuda_Y_job.data_ptr()) {
-        cuda_Y_job = cuda_Y_job / (sqrt(2) * ls);
-    }
     torch::Tensor output_job = torch::zeros({cuda_X_job.size(0), cuda_b_job.size(1)}).toType(dtype<scalar_t>()).to(cuda_X_job.device());
     scalar_t *d_ls;
     cudaMalloc((void **)&d_ls, sizeof(scalar_t));
@@ -1189,7 +1185,6 @@ torch::Tensor FFM_XY(
             ;
     near_field = torch::zeros({1,2}).toType(torch::kInt32).to(gpu_device);
     if (X_data.data_ptr()==Y_data.data_ptr()){
-        X_data = X_data/(sqrt(2)*ls);
         std::tie(edge,xmin,xmax) = calculate_edge_X<scalar_t,nd>(X_data,gpu_device); //actually calculate them
         n_tree_cuda<scalar_t,nd> ntree_X = n_tree_cuda<scalar_t,nd>(edge,X_data,xmin,xmax,gpu_device);
         while (near_field.numel()>0 and ntree_X.avg_nr_points > min_points){
@@ -1214,9 +1209,6 @@ torch::Tensor FFM_XY(
             near_field_run<scalar_t,nd>(ntree_X,ntree_X,near_field,output,b,ls,gpu_device,false);
         }
     }else{
-        X_data = X_data/(sqrt(2)*ls);
-        Y_data = Y_data/(sqrt(2)*ls);
-
         std::tie(edge,xmin,ymin,xmax,ymax,x_edge,y_edge) = calculate_edge<scalar_t,nd>(X_data,Y_data,gpu_device); //actually calculate them
         n_tree_cuda<scalar_t,nd> ntree_X = n_tree_cuda<scalar_t,nd>(edge,X_data,xmin,xmax,gpu_device);
         n_tree_cuda<scalar_t,nd> ntree_Y = n_tree_cuda<scalar_t,nd>(edge,Y_data,ymin,ymax,gpu_device);

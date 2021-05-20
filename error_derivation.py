@@ -24,12 +24,12 @@ def calc_W(x,nodes,w):
     W = W.sum(axis=1)
     indicator = np.sum(bools,axis=1)>0
     W[indicator]=1.0
-
+    W=1./W
     return W,indicator
     # return W
 
 def calc_interpolation(X,k,nodes,w,W,indicator):
-    val = (w[k]/(X-nodes[k]))/W
+    val = (w[k]/(X-nodes[k]))*W
 
     val[indicator]=1.0
 
@@ -131,7 +131,7 @@ def interpolation_xy(x,y,k,ls): #Key is equivariance such that the same "edge" c
         print('midker ',mid_ker)
         mid_res =mid_ker@torch.from_numpy(summed_y.sum(axis=0)).float()
         approx_res = torch.from_numpy(interp_list_x).float() @ mid_res  #incorrect, not symmetric!
-        approx_res = (torch.ones_like(approx_res)*test*np.sum(b)).sq
+        # approx_res = (torch.ones_like(approx_res)*test*np.sum(b)).sq
         kernel_approx = torch.from_numpy(interp_list_x).float()@(mid_ker@ torch.from_numpy(interp_list_y).float().t())
     print(res[:10])
     print(approx_res.squeeze()[:10])
@@ -148,7 +148,7 @@ if __name__ == '__main__':
     n=1000
     k =100
     x = np.random.rand(n)
-    y = x+2
+    y = x
     b = np.random.randn(n)
 
     #Interpolation does not work relatively well when we are very far away, i.e. the exponent is very small -> close to 0 results.
@@ -160,5 +160,5 @@ if __name__ == '__main__':
     #low (effective) variance diagonal entries can be interpolated for faster speed. (only for X times X)
     #Failure mode is when b has a lot of weight specifically where things are in the "far field".
 
-    interpolation_xy(x,y,k,ls=0.1)
+    interpolation_xy(x,y,k,ls=1.0)
     #hmm interpolation in "far field or large lengthscales generally quite bad...

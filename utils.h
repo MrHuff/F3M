@@ -99,7 +99,7 @@ void benchmark_1(int n,float min_points, int threshold,float a,float b,float ls,
     torch::manual_seed(0);
 //    torch::Tensor X_train = read_csv<float>("X_train_PCA.csv",11619,3); something wrong with data probably...
 //    torch::Tensor b_train = read_csv<float>("Y_train.csv",11619,1); something wrong with data probably...
-    torch::Tensor X_train = torch::empty({n,nd}).uniform_(a, b).toType(dtype<scalar_t>()).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
+    torch::Tensor X_train = torch::empty({n,nd}).uniform_(a, b).toType(dtype<scalar_t>()).to(device_cuda)/(sqrt(2)*ls); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
 //    torch::Tensor X_train = torch::rand({n,nd}).toType(dtype<scalar_t>()).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
     torch::Tensor b_train = torch::randn({n,1}).toType(dtype<scalar_t>()).to(device_cuda);
 //    torch::Tensor b_train = torch::ones({n,1}).toType(dtype<scalar_t>()).to(device_cuda);
@@ -112,8 +112,6 @@ void benchmark_1(int n,float min_points, int threshold,float a,float b,float ls,
     auto duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(end_2-start_2);
     std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
     std::cout<<"------------- "<<"Uniform distribution : "<< "a "<<a<<" b "<<b<<" n: "<<n<<" min_points: "<< min_points <<" nr_interpolation_points: "<<nr_of_interpolation_points <<" -------------"<<std::endl;
-    torch::manual_seed(0);
-    X_train = torch::empty({n,nd}).uniform_(a, b).toType(dtype<scalar_t>()).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
     torch::Tensor subsampled_X = X_train.slice(0,0,threshold);
     exact_MV<scalar_t,nd> exact_ref =exact_MV<scalar_t,nd>(subsampled_X, X_train, ls_in);
     auto start = std::chrono::high_resolution_clock::now();
@@ -148,7 +146,7 @@ void benchmark_2(int n,float min_points, int threshold,float mean,float var,floa
 
 //    torch::Tensor X_train = read_csv<float>("X_train_PCA.csv",11619,3); something wrong with data probably...
 //    torch::Tensor b_train = read_csv<float>("Y_train.csv",11619,1); something wrong with data probably...
-    torch::Tensor X_train = torch::empty({n,nd}).normal_(mean, var).toType(dtype<scalar_t>()).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
+    torch::Tensor X_train = torch::empty({n,nd}).normal_(mean, var).toType(dtype<scalar_t>()).to(device_cuda)/(sqrt(2)*ls); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
     torch::Tensor b_train = torch::randn({n,1}).toType(dtype<scalar_t>()).to(device_cuda);
     torch::Tensor res,res_ref;
     FFM_object<scalar_t,nd> ffm_obj = FFM_object<scalar_t,nd>(X_train, X_train, ls_in, device_cuda,min_points,nr_of_interpolation_points,
@@ -195,8 +193,8 @@ void benchmark_3(int n,float min_points, int threshold,float mean,float var,floa
     scalar_t ls_in = (scalar_t) ls;
 
 
-    torch::Tensor Y_train = torch::empty({n,nd}).normal_(mean, sqrt(var)).toType(dtype<scalar_t>()).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
-    torch::Tensor X_train = torch::empty({n,nd}).uniform_(mean, sqrt(var*12.0)).toType(dtype<scalar_t>()).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
+    torch::Tensor Y_train = torch::empty({n,nd}).normal_(mean, sqrt(var)).toType(dtype<scalar_t>()).to(device_cuda)/(sqrt(2)*ls); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
+    torch::Tensor X_train = torch::empty({n,nd}).uniform_(mean, sqrt(var*12.0)).toType(dtype<scalar_t>()).to(device_cuda)/(sqrt(2)*ls); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
     torch::Tensor b_train = torch::randn({n,1}).toType(dtype<scalar_t>()).to(device_cuda);
     torch::Tensor res,res_ref;
     FFM_object<scalar_t,nd> ffm_obj = FFM_object<scalar_t,nd>(X_train, Y_train, ls_in, device_cuda,min_points,nr_of_interpolation_points,
