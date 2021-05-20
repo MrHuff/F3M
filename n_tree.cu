@@ -131,7 +131,7 @@ struct n_tree_cuda{
         unique_counts_cum = torch::zeros(centers.size(0)+1).toType(torch::kInt32).to(device);//matrix -> existing boxes * 2^dim bounded over nr or points... betting on boxing dissapears...
         unique_counts= torch::zeros(centers.size(0)).toType(torch::kInt32).to(device);
         perm = -torch::ones(centers.size(0)).toType(torch::kInt32).to(device);
-//        distance_to_edge = 0.5*torch::ones(centers.size(0)).toType(torch::kFloat32).to(device);
+        distance_to_edge = 0.5*torch::ones(centers.size(0)).toType(torch::kFloat32).to(device);
         depth_perm_idx_adder = torch::cat({depth_perm_idx_adder,torch::tensor({perm.size(0)}).toType(torch::kInt32).to(device)},0);
         depth_perm_idx_adder_cum = depth_perm_idx_adder.cumsum(0).toType(torch::kInt32);
         //when you prune perm, don't remove values i.e. make the list shorter, but the update the values"
@@ -164,9 +164,8 @@ struct n_tree_cuda{
                 old_perms.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
                 depth_perm_idx_adder_cum.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
                 depth_tensor.data_ptr<int>(),
-                dim_fac_tensor.data_ptr<int>()
-//                distance_to_edge.packed_accessor64<float,1,torch::RestrictPtrTraits>()
-
+                dim_fac_tensor.data_ptr<int>(),
+                distance_to_edge.packed_accessor64<float,1,torch::RestrictPtrTraits>()
         );
         cudaDeviceSynchronize();
         unique_counts_cum = unique_counts_cum.cumsum(0).toType(torch::kInt32);
@@ -190,7 +189,7 @@ struct n_tree_cuda{
         box_indices_sorted = box_idxs.index({non_empty_mask});
         unique_counts = unique_counts.index({non_empty_mask});
         centers = centers.index({non_empty_mask});
-//        distance_to_edge = distance_to_edge.index({non_empty_mask});
+        distance_to_edge = distance_to_edge.index({non_empty_mask});
         empty_box_indices = box_idxs.index({torch::logical_not(non_empty_mask)});
         std::tie(empty_box_indices,tmp_1) = empty_box_indices.sort(0);
         avg_nr_points = unique_counts.toType(torch::kFloat32).max().item<float>();
@@ -862,17 +861,17 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> separate_interactions(
         x_var = get_low_variance_pairs<scalar_t,nd>(ntree_X,ntree_X.box_indices_sorted);
         std::tie(max_var_x,tmp) = x_var.max(1);
         max_var_x = max_var_x/ls;
-//        torch::Tensor &distance_to_edge_X  = ntree_X.distance_to_edge;
-//        distance_to_edge_X =0.5*edge * distance_to_edge_X/ls;
+        torch::Tensor &distance_to_edge_X  = ntree_X.distance_to_edge;
+        distance_to_edge_X =0.5*edge * distance_to_edge_X/ls;
         if (ntree_X.data.data_ptr()!=ntree_Y.data.data_ptr()){
             torch::Tensor y_var = get_low_variance_pairs<scalar_t,nd>(ntree_Y,ntree_Y.box_indices_sorted);
             std::tie(max_var_y,tmp) = y_var.max(1);
             max_var_y = max_var_y/ls;
-//            distance_to_edge_Y  = ntree_Y.distance_to_edge;
-//            distance_to_edge_Y =0.5*edge * distance_to_edge_Y/sqrt(ls);
+            distance_to_edge_Y  = ntree_Y.distance_to_edge;
+            distance_to_edge_Y =0.5*edge * distance_to_edge_Y/sqrt(ls);
         }else{
             max_var_y = max_var_x;
-//            distance_to_edge_Y = distance_to_edge_X;
+            distance_to_edge_Y = distance_to_edge_X;
         }
 
         boolean_separate_interactions_small_var_comp<scalar_t,nd><<<gridSize,blockSize>>>(
@@ -882,8 +881,8 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> separate_interactions(
                 unique_Y.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
                 max_var_x.packed_accessor64<scalar_t,1,torch::RestrictPtrTraits>(),
                 max_var_y.packed_accessor64<scalar_t,1,torch::RestrictPtrTraits>(),
-//                distance_to_edge_X.packed_accessor64<float,1,torch::RestrictPtrTraits>(),
-//                distance_to_edge_Y.packed_accessor64<float,1,torch::RestrictPtrTraits>(),
+                distance_to_edge_X.packed_accessor64<float,1,torch::RestrictPtrTraits>(),
+                distance_to_edge_Y.packed_accessor64<float,1,torch::RestrictPtrTraits>(),
                 interactions.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
                 edge.data_ptr<scalar_t>(),
                 far_field_mask.packed_accessor64<bool,1,torch::RestrictPtrTraits>(),
