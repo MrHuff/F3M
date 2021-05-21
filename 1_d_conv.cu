@@ -1233,3 +1233,64 @@ __global__ void repeat_within(
     }
 
 }
+
+
+template <typename scalar_t, int nd>
+__global__ void box_division_cum_old(
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
+        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> alpha,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> multiply,
+        const scalar_t * int_mult,
+        const scalar_t * edge,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> global_vector_counter_cum,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> perm
+){
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    if (i>X_data.size(0)-1){return;}
+    int idx=0;
+    for (int p = 0;p<nd;p++) {
+        idx += multiply[p]*(int)floor( *int_mult * (X_data[i][p] - alpha[p]) / *edge);
+    }
+    atomicAdd(&global_vector_counter_cum[perm[idx]+1],1);
+
+}
+
+template <typename scalar_t, int nd>
+__global__ void center_perm_old(const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> centers_natural,
+                            const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> alpha,
+                            const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> multiply,
+                            const scalar_t * int_mult,
+                            const scalar_t * edge,
+                            torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> perm){
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    if (i>centers_natural.size(0)-1){return;}
+    int idx=0;
+    for (int p = 0;p<nd;p++) {
+        idx += multiply[p]*(int)floor( *int_mult * (centers_natural[i][p] - alpha[p]) / *edge);
+    }
+    perm[idx] = i;
+
+}
+
+
+template <typename scalar_t, int nd>
+__global__ void box_division_assign_old(
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
+        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> alpha,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> multiply,
+        const scalar_t * int_mult,
+        const scalar_t * edge,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> global_vector_counter_cum,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> perm,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> global_unique,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> sorted_index
+){
+
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    if (i>X_data.size(0)-1){return;}
+    int idx=0;
+    for (int p = 0;p<nd;p++) {
+        idx += multiply[p]*(int)floor( *int_mult * (X_data[i][p] - alpha[p]) / *edge);
+    }
+    sorted_index[atomicAdd(&global_unique[perm[idx]],1)+global_vector_counter_cum[perm[idx]]] = i;
+}

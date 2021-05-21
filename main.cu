@@ -58,6 +58,8 @@ int main(int argc, char const *argv[]){
     int small_field_limit = std::stoi(argv[10]);
     int job = std::stoi(argv[11]);
     char * fname = const_cast<char *>(argv[12]);
+    bool old_mode = (bool) std::stoi(argv[13]);
+
 
     if (job==1){
         benchmark_1<float,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,fname); //Can't do a billion points for 3 dim...
@@ -66,7 +68,7 @@ int main(int argc, char const *argv[]){
         benchmark_2<float,5>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
     }
     if(job==3){
-        benchmark_3<float,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
+        benchmark_3<float,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,old_mode,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
     }
     if(job==4){
         benchmark_4<float,2>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
