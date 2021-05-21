@@ -43,7 +43,7 @@ def experiment_1(device="cuda:0"):
     counter = 0
     if not os.path.exists(dirname):
         os.makedirs(dirname)
-    for seed in [1, 2, 3]:
+    for seed in [1]:
         for d in [3]:
             if d == 1:
                 node_list = [4, 8, 16]
@@ -100,7 +100,7 @@ def experiment_2(device="cuda:0"):
     dirname = 'experiment_2'
     if not os.path.exists(dirname):
         os.makedirs(dirname)
-    for seed in [1, 1337, 3]:
+    for seed in [1]:
         for d in [3]:
             if d == 1:
                 node_list = [4, 8, 16]
@@ -162,7 +162,7 @@ def experiment_3(device="cuda:0"):
     dirname = 'experiment_3'
     if not os.path.exists(dirname):
         os.makedirs(dirname)
-    for seed in [1, 1000, 3]:
+    for seed in [1]:
         for d in [3]:
             if d == 1:
                 node_list = [4, 8, 16]
@@ -222,7 +222,7 @@ def experiment_4(device="cuda:0"):
     dirname = 'experiment_4'
     if not os.path.exists(dirname):
         os.makedirs(dirname)
-    for seed in [1, 1000, 3]:
+    for seed in [1]:
         for d in [3]:
             if d == 1:
                 node_list = [4, 8, 16]
@@ -341,7 +341,7 @@ def experiment_6(device="cuda:0"):
     node_list = [256,512,1024]
     if not os.path.exists(dirname):
         os.makedirs(dirname)
-    for seed in [1337,9001,69]:
+    for seed in [1]:
         for d in [4,5]:
             for node_nr in node_list:
                 nr_of_interpolation = node_nr  # nr of interpolation nodes
@@ -391,12 +391,14 @@ def experiment_7(device="cuda:0"):
     counter = 0
     if not os.path.exists(dirname):
         os.makedirs(dirname)
-    for seed in [1337,9001,69]:
+    for seed in [1]:
         for d in [4,5]:
             node_list = [256, 512, 1024]
             for nr_of_interpolation in node_list:
                 for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 500000000],
-                                                            [1000, 5000, 5000, 10000], [nr_of_interpolation, 2500, 5000, 5000]):
+                                                            [2500, 2500, 5000, 20000],
+                                                            [nr_of_interpolation, nr_of_interpolation,
+                                                             nr_of_interpolation, nr_of_interpolation]):
                     if d>4:
                         small_field_limit = 5000
                     for r2 in [0.1,1,10,100]:
@@ -445,7 +447,7 @@ def experiment_8(device="cuda:0"):
     if not os.path.exists(dirname):
         os.makedirs(dirname)
     node_list = [256,512,1024]
-    for seed in [1, 1000, 3]:
+    for seed in [1]:
         for d in [4,5]:
             for node_nr in node_list:
                 nr_of_interpolation =node_nr  # nr of interpo
@@ -506,7 +508,7 @@ def experiment_9(device="cuda:0"):
         os.makedirs(dirname)
     min_points = 5000
     for d in [2]:
-        for ls in [1000,100,10,1,0.1,1e-2,1e-3]:
+        for ls in [100,10,1,0.1,1e-2]:
 
             if ls <0.1:
                 evarlimit_list= [0.1]

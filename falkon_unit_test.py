@@ -9,7 +9,7 @@ from conjugate_gradient.custom_gaussian_kernel import custom_GaussianKernel
 from conjugate_gradient.benchmark_Gaussian_kernel import bench_GaussianKernel
 from FFM_classes import *
 import pykeops
-# pykeops.clean_pykeops()
+pykeops.clean_pykeops()
 # pykeops.test_torch_bindings()
 
 def calc_R2(true,pred):
@@ -41,16 +41,13 @@ if __name__ == '__main__':
     ls = 1
     penalty = 1e-4
     M = 10000
-    X = torch.rand(N, d)
+    X = torch.randn(N, d)
     Y = generate_random_problem(X,1000,ls)
     #
     # OK PICK YOUR POISON, EITHER ONE IS SLOW OR ONE IS FAST DEPENDING ON TRANSPOSE, MIGHT ALMOST SWITCH TAG IN BETWEEN
     # WHAT THE FUCK IS GOING ON????
     nr_of_interpolation_nodes = 64
-    kernel = custom_GaussianKernel(sigma=ls,min_points=2500,var_compression=True,interpolation_nr=nr_of_interpolation_nodes)
-    # kernel = falkon.kernels.GaussianKernel(sigma=ls)
-    # kernel = bench_GaussianKernel(sigma=ls)
-    #0.85 - keops
+    kernel = custom_GaussianKernel(sigma=ls,min_points=7500,var_compression=True,interpolation_nr=nr_of_interpolation_nodes)
     options = falkon.FalkonOptions(use_cpu=False,debug=True)
     model = custom_Falkon(kernel=kernel, penalty=penalty, M=M, options=options)
     model.fit(X, Y)
