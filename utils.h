@@ -103,8 +103,9 @@ void benchmark_1(int n,float min_points, int threshold,float a,float b,float ls,
     torch::Tensor b_train = torch::randn({n,1}).toType(dtype<scalar_t>()).to(device_cuda);
 //    torch::Tensor b_train = torch::ones({n,1}).toType(dtype<scalar_t>()).to(device_cuda);
     torch::Tensor res,res_ref;
-    FFM_object<scalar_t,nd> ffm_obj = FFM_object<scalar_t,nd>(X_train, X_train, ls_in, device_cuda,min_points,nr_of_interpolation_points,
-            var_comp,var_eff,small_field_limit); //FMM object
+    FFM_object<scalar_t,nd> ffm_obj = FFM_object<scalar_t, nd>(X_train, X_train, ls_in, device_cuda, min_points,
+                                                               nr_of_interpolation_points,
+                                                               var_comp, var_eff, small_field_limit, false); //FMM object
     auto start_2 = std::chrono::high_resolution_clock::now();
     res = ffm_obj * b_train; //Fast math creates problems... fast math does a lot!!!
     auto end_2 = std::chrono::high_resolution_clock::now();
@@ -147,8 +148,9 @@ void benchmark_2(int n,float min_points, int threshold,float mean,float var,floa
     torch::Tensor X_train = torch::empty({n,nd}).normal_(mean, var).toType(dtype<scalar_t>()).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
     torch::Tensor b_train = torch::randn({n,1}).toType(dtype<scalar_t>()).to(device_cuda);
     torch::Tensor res,res_ref;
-    FFM_object<scalar_t,nd> ffm_obj = FFM_object<scalar_t,nd>(X_train, X_train, ls_in, device_cuda,min_points,nr_of_interpolation_points,
-                                                                      var_comp,var_eff,small_field_limit); //FMM object
+    FFM_object<scalar_t,nd> ffm_obj = FFM_object<scalar_t, nd>(X_train, X_train, ls_in, device_cuda, min_points,
+                                                               nr_of_interpolation_points,
+                                                               var_comp, var_eff, small_field_limit, false); //FMM object
     auto start_2 = std::chrono::high_resolution_clock::now();
     res = ffm_obj * b_train; //Fast math creates problems... fast math does a lot!!!
     auto end_2 = std::chrono::high_resolution_clock::now();
@@ -183,6 +185,7 @@ void benchmark_3(int n,float min_points, int threshold,float mean,float var,floa
                  bool var_comp,
                  scalar_t var_eff,
                  int small_field_limit,
+                 bool old_mode,
                  char* fname
                  ){
     const std::string device_cuda = "cuda:0"; //officially retarded
@@ -195,8 +198,9 @@ void benchmark_3(int n,float min_points, int threshold,float mean,float var,floa
     torch::Tensor X_train = torch::empty({n,nd}).uniform_(mean, sqrt(var*12.0)).toType(dtype<scalar_t>()).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
     torch::Tensor b_train = torch::randn({n,1}).toType(dtype<scalar_t>()).to(device_cuda);
     torch::Tensor res,res_ref;
-    FFM_object<scalar_t,nd> ffm_obj = FFM_object<scalar_t,nd>(X_train, Y_train, ls_in, device_cuda,min_points,nr_of_interpolation_points,
-                                                              var_comp,var_eff,small_field_limit); //FMM object
+    FFM_object<scalar_t,nd> ffm_obj = FFM_object<scalar_t, nd>(X_train, Y_train, ls_in, device_cuda, min_points,
+                                                               nr_of_interpolation_points,
+                                                               var_comp, var_eff, small_field_limit, old_mode); //FMM object
 //    FFM_object<float> ffm_obj_grad = FFM_object<float>(X,X,ls,op_grad,lambda,device_cuda);
 //    exact_MV<float> ffm_obj_grad_exact = exact_MV<float>(X,X,ls,op_grad,lambda,device_cuda);
     std::cout<<"------------- "<<"Normal distribution: "<< "mean "<<mean<<" box_variance "<<var<<" n: "<<n<<" min_points: "<< min_points <<" nr_interpolation_points: "<<nr_of_interpolation_points <<" -------------"<<std::endl;
@@ -240,8 +244,9 @@ void benchmark_4(int n,float min_points, int threshold,float mean,float var,floa
 
     torch::Tensor b_train = torch::ones({n,1}).toType(dtype<scalar_t>()).to(device_cuda);
     torch::Tensor res,res_ref;
-    FFM_object<scalar_t,nd> ffm_obj = FFM_object<scalar_t,nd>(X_train, X_train, ls_in, device_cuda,min_points,nr_of_interpolation_points,
-                                                              var_comp,var_eff,small_field_limit); //FMM object
+    FFM_object<scalar_t,nd> ffm_obj = FFM_object<scalar_t, nd>(X_train, X_train, ls_in, device_cuda, min_points,
+                                                               nr_of_interpolation_points,
+                                                               var_comp, var_eff, small_field_limit, false); //FMM object
     auto start_2 = std::chrono::high_resolution_clock::now();
     res = ffm_obj * b_train; //Fast math creates problems... fast math does a lot!!!
     auto end_2 = std::chrono::high_resolution_clock::now();
