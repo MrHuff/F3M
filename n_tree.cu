@@ -163,7 +163,11 @@ struct n_tree_cuda{
                 empty_box_indices.packed_accessor64<int,1,torch::RestrictPtrTraits>()
         );
         std::tie(unique_counts_cum_reindexed,tmp_1,tmp_2) = torch::unique_consecutive(unique_counts_cum);
-
+        std::cout<<depth<<std::endl;
+        std::cout<<"---------------------------------------------"<<std::endl;
+        std::cout<<centers.slice(0,0,10)<<std::endl;
+        std::cout<<"---------------------------------------------"<<std::endl;
+        std::cout<<unique_counts.slice(0,0,10)<<std::endl;
     };
 
 };
