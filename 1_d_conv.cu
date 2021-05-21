@@ -190,7 +190,7 @@ __global__ void rbf_1d_reduce_simple_torch(const torch::PackedTensorAccessor64<s
 
 
 template <typename scalar_t,int nd>
-__device__   scalar_t calculate_barycentric_lagrange(//not sure this is such a great idea, when nan how avoid...
+__device__  __forceinline__  scalar_t calculate_barycentric_lagrange(//not sure this is such a great idea, when nan how avoid...
         scalar_t *l_p,
         scalar_t *w_shared,
         scalar_t *x_i,
@@ -251,7 +251,7 @@ __device__   scalar_t calculate_barycentric_lagrange_one_pass(//not sure this is
 
 
 template <typename scalar_t,int nd>
-__device__   scalar_t get_2_norm(scalar_t * dist){
+__device__  __forceinline__ scalar_t get_2_norm(scalar_t * dist){
     scalar_t acc=0;
 #pragma unroll
     for (int k = 0; k < nd; k++) {

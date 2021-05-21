@@ -9,7 +9,7 @@ from conjugate_gradient.custom_gaussian_kernel import custom_GaussianKernel
 from conjugate_gradient.benchmark_Gaussian_kernel import bench_GaussianKernel
 from FFM_classes import *
 import pykeops
-pykeops.clean_pykeops()
+# pykeops.clean_pykeops()
 # pykeops.test_torch_bindings()
 
 def calc_R2(true,pred):
@@ -36,10 +36,10 @@ def generate_random_problem(X,prob_size,ls):
 #Fix the slack variable for keops, probably best to do custom solution for reproducibility.
 if __name__ == '__main__':
     torch.manual_seed(2) #Dude seems to be a seed issue wtf
-    N=10000000
+    N=100000000
     d=3
-    ls = 10**0.5
-    penalty = 1e-3
+    ls = 1
+    penalty = 1e-4
     M = 10000
     X = torch.rand(N, d)
     Y = generate_random_problem(X,1000,ls)
@@ -47,9 +47,9 @@ if __name__ == '__main__':
     # OK PICK YOUR POISON, EITHER ONE IS SLOW OR ONE IS FAST DEPENDING ON TRANSPOSE, MIGHT ALMOST SWITCH TAG IN BETWEEN
     # WHAT THE FUCK IS GOING ON????
     nr_of_interpolation_nodes = 64
-    # kernel = custom_GaussianKernel(sigma=ls,min_points=10000,var_compression=True,interpolation_nr=nr_of_interpolation_nodes)
+    kernel = custom_GaussianKernel(sigma=ls,min_points=2500,var_compression=True,interpolation_nr=nr_of_interpolation_nodes)
     # kernel = falkon.kernels.GaussianKernel(sigma=ls)
-    kernel = bench_GaussianKernel(sigma=ls)
+    # kernel = bench_GaussianKernel(sigma=ls)
     #0.85 - keops
     options = falkon.FalkonOptions(use_cpu=False,debug=True)
     model = custom_Falkon(kernel=kernel, penalty=penalty, M=M, options=options)
@@ -58,12 +58,12 @@ if __name__ == '__main__':
     preds = model.predict(X)
     r2 = calc_R2(Y,preds)
     print(r2)
-    # kernel = falkon.kernels.GaussianKernel(sigma=ls)
-    # options = falkon.FalkonOptions(use_cpu=False,debug=True)
-    # model = custom_Falkon(kernel=kernel, penalty=penalty, M=M, options=options)
-    # model.fit(X, Y)
-    # print(model.conjugate_gradient_time)
-    # preds = model.predict(X)
-    # r2 = calc_R2(Y,preds)
-    # print(r2)
+    kernel = falkon.kernels.GaussianKernel(sigma=ls)
+    options = falkon.FalkonOptions(use_cpu=False,debug=True)
+    model = custom_Falkon(kernel=kernel, penalty=penalty, M=M, options=options)
+    model.fit(X, Y)
+    print(model.conjugate_gradient_time)
+    preds = model.predict(X)
+    r2 = calc_R2(Y,preds)
+    print(r2)
 
