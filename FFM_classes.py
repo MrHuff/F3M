@@ -16,9 +16,10 @@ class FFM:
                  small_field_points = 1000,
                  device = "cuda:0"
                  ):
-        self.X = X.float().to(device)
+
+        self.X = X.float().to(device)/(ls*2**0.5)
         if torch.is_tensor(Y):
-            self.Y = Y.float().to(device)
+            self.Y = Y.float().to(device)/(ls*2**0.5)
         else:
             self.Y = self.X
             print('X==Y assuming kernel covariance matmul')
@@ -112,7 +113,7 @@ class keops_matmul():
                  Y=None,
                  ls=1.0,
                  device = "cuda:0",
-                 type=torch.float64):
+                 type=torch.float32):
         self.type=type
         self.device =device
         self.X = X.type(self.type).to(device)
@@ -163,9 +164,9 @@ class benchmark_matmul():
                  Y=None,
                  ls=1.0,
                  device = "cuda:0"):
-        self.X = X.float().to(device)
+        self.X = X.float().to(device)/(ls*2**0.5)
         if torch.is_tensor(Y):
-            self.Y = Y.float().to(device)
+            self.Y = Y.float().to(device)/(ls*2**0.5)
         else:
             self.Y = self.X
         self.d = self.X.shape[1]
@@ -224,9 +225,9 @@ class benchmark_matmul_double():
                  Y=None,
                  ls=1.0,
                  device = "cuda:0"):
-        self.X = X.double().to(device)
+        self.X = X.double().to(device)/(ls*2**0.5)
         if torch.is_tensor(Y):
-            self.Y = Y.double().to(device)
+            self.Y = Y.double().to(device)/(ls*2**0.5)
         else:
             self.Y = self.X
         self.d = self.X.shape[1]

@@ -241,8 +241,6 @@ torch::Tensor rbf_call(
         scalar_t & ls,
         bool shared = true
         ){
-
-
     torch::Tensor output_job = torch::zeros({cuda_X_job.size(0), cuda_b_job.size(1)}).toType(dtype<scalar_t>()).to(cuda_X_job.device());
     scalar_t *d_ls;
     cudaMalloc((void **)&d_ls, sizeof(scalar_t));
@@ -861,18 +859,13 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> separate_interactions(
         auto *d_eff_var_limit = allocate_scalar_to_cuda<scalar_t>(eff_var_limit);
         x_var = get_low_variance_pairs<scalar_t,nd>(ntree_X,ntree_X.box_indices_sorted);
         std::tie(max_var_x,tmp) = x_var.max(1);
-        max_var_x = max_var_x/ls;
-//        torch::Tensor &distance_to_edge_X  = ntree_X.distance_to_edge;
-//        distance_to_edge_X =0.5*edge * distance_to_edge_X/ls;
+//        max_var_x = max_var_x/ls;
         if (ntree_X.data.data_ptr()!=ntree_Y.data.data_ptr()){
             torch::Tensor y_var = get_low_variance_pairs<scalar_t,nd>(ntree_Y,ntree_Y.box_indices_sorted);
             std::tie(max_var_y,tmp) = y_var.max(1);
-            max_var_y = max_var_y/ls;
-//            distance_to_edge_Y  = ntree_Y.distance_to_edge;
-//            distance_to_edge_Y =0.5*edge * distance_to_edge_Y/sqrt(ls);
+//            max_var_y = max_var_y/ls;
         }else{
             max_var_y = max_var_x;
-//            distance_to_edge_Y = distance_to_edge_X;
         }
 
         boolean_separate_interactions_small_var_comp<scalar_t,nd><<<gridSize,blockSize>>>(
@@ -882,8 +875,6 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> separate_interactions(
                 unique_Y.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
                 max_var_x.packed_accessor64<scalar_t,1,torch::RestrictPtrTraits>(),
                 max_var_y.packed_accessor64<scalar_t,1,torch::RestrictPtrTraits>(),
-//                distance_to_edge_X.packed_accessor64<float,1,torch::RestrictPtrTraits>(),
-//                distance_to_edge_Y.packed_accessor64<float,1,torch::RestrictPtrTraits>(),
                 interactions.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
                 edge.data_ptr<scalar_t>(),
                 far_field_mask.packed_accessor64<bool,1,torch::RestrictPtrTraits>(),
@@ -916,31 +907,6 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> separate_interactions(
     );
 }
 
-template<typename scalar_t>
-torch::Tensor bool_index_sorted(
-        torch::Tensor & interactions,
-        torch::Tensor & mask
-        ){
-
-    int start = 0;
-    auto length_pointer = allocate_scalar_to_cuda<int>(start);
-
-
-    int length = mask.sum().item<int>();
-    torch::Tensor interactions_filtered = torch::zeros({length,2}).toType(torch::kInt32).to(interactions.device());
-    torch::Tensor middle_index = torch::zeros({length,2}).toType(torch::kInt32).to(interactions.device());
-    dim3 blockSize,gridSize;
-    int memory;
-    std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(interactions_filtered.size(1), interactions_filtered.size(0));
-//    bool_indexing_preserved<scalar_t><<<gridSize,blockSize>>>(
-//            interactions.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
-//            interactions_filtered.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
-//            mask.packed_accessor64<bool,1,torch::RestrictPtrTraits>(),
-//            length_pointer
-//    );
-    return interactions_filtered;
-
-}
 
 template <typename scalar_t, int nd>
 torch::Tensor filter_out_interactions(torch::Tensor & interactions,
@@ -1007,9 +973,7 @@ void near_field_run(
         dim3 blockSize,gridSize;
         int memory,blkSize;
 
-//        x_box.unique_counts,
-//                y_box.unique_counts,
-//                x_box.box_indices_sorted_reindexed,
+
         torch::Tensor & y_boxes_count = ntree_Y.unique_counts;
         torch::Tensor & y_box_idx = ntree_Y.box_indices_sorted_reindexed;
         torch::Tensor & cuda_X_job = ntree_X.data;
@@ -1127,8 +1091,17 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> get_field(
     return std::make_tuple(far_field,small_field,near_field);
 
 }
+template <typename scalar_t,int nd>
+int get_interpolation_rule(scalar_t & effective_edge,int & nr_of_interpolation){
+    if (effective_edge<0.1){
+        return min((int)pow(3,nd),nr_of_interpolation);
+    }
+    if (effective_edge>2.5){
+        return 0;
+    }
+    return nr_of_interpolation;
 
-
+}
 
 template <typename scalar_t, int nd>
 torch::Tensor far_field_run(
@@ -1171,26 +1144,30 @@ torch::Tensor far_field_run(
     }
     if (far_field.numel()>0) {
 //        std::cout<<output.slice(0,0,10)<<std::endl;
-        std::tie(cheb_data,laplace_combinations,node_list_cum,chebnodes_1D,cheb_w) = smolyak_grid<scalar_t,nd>(nr_of_interpolation_points,gpu_device);
+        torch::Tensor effective_far_field_distance_tensor =  ntree_X.edge*ntree_X.edge;
+        scalar_t effective_far_field_distance = effective_far_field_distance_tensor.item<scalar_t>();
+        int num_nodes = get_interpolation_rule<scalar_t,nd>(effective_far_field_distance,nr_of_interpolation_points);
+        if (num_nodes>0){
+            std::tie(cheb_data,laplace_combinations,node_list_cum,chebnodes_1D,cheb_w) = smolyak_grid<scalar_t,nd>(num_nodes,gpu_device);
 //        torch::Tensor cheb_data_X = cheb_data*ntree_X.edge/2.+ntree_X.edge/2.; //scaling lagrange nodes to edge scale
-        std::tie(interactions_x,interactions_y) = unbind_sort(far_field,false);
-        interactions_x_parsed = process_interactions<nd>(interactions_x,ntree_X.centers.size(0),gpu_device);
-        far_field_compute_v2<scalar_t,nd>( //Very many far field interactions quite fast...
-                interactions_x_parsed,
-                interactions_y,
-                ntree_X,
-                ntree_Y,
-                output,
-                b,
-                gpu_device,
-                ls,
-                chebnodes_1D,
-                laplace_combinations,
-                cheb_data,
-                node_list_cum,
-                cheb_w
-        ); //far field compute
-//        std::cout<<output.slice(0,0,10)<<std::endl;
+            std::tie(interactions_x,interactions_y) = unbind_sort(far_field,false);
+            interactions_x_parsed = process_interactions<nd>(interactions_x,ntree_X.centers.size(0),gpu_device);
+            far_field_compute_v2<scalar_t,nd>( //Very many far field interactions quite fast...
+                    interactions_x_parsed,
+                    interactions_y,
+                    ntree_X,
+                    ntree_Y,
+                    output,
+                    b,
+                    gpu_device,
+                    ls,
+                    chebnodes_1D,
+                    laplace_combinations,
+                    cheb_data,
+                    node_list_cum,
+                    cheb_w
+            );
+        }
     }
     return near_field;
 }
@@ -1209,7 +1186,6 @@ torch::Tensor FFM_XY(
         scalar_t  & eff_var_limit,
         int & small_field_limit
 ) {
-
     torch::Tensor output = torch::zeros({X_data.size(0),b.size(1)}).to(gpu_device); //initialize empty output
     torch::Tensor edge,
             xmin,
