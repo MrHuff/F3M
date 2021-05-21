@@ -44,7 +44,6 @@ template <typename scalar_t,int dim>
 struct n_tree_cuda{
     torch::Tensor &data;
     torch::Tensor edge,
-    box_max_var,
     edge_og,
     xmin,
     xmax,
@@ -92,20 +91,6 @@ struct n_tree_cuda{
         depth = 0;
         side_base = torch::tensor(2.0).toType(dtype<scalar_t>()).to(device);
 
-        /*
-         * 0 init
-         * */
-        box_idxs = torch::arange(centers.size(0)).toType(torch::kInt32).to(device);
-        unique_counts = torch::tensor({(int)data.size(0)}).toType(torch::kInt32).to(device);
-        unique_counts_cum  = torch::tensor({(int)0,(int)data.size(0)}).toType(torch::kInt32).to(device);
-        unique_counts_cum_reindexed = unique_counts_cum;
-        non_empty_mask = unique_counts != 0;
-        box_indices_sorted = box_idxs;
-        empty_box_indices_current = box_idxs.index({torch::logical_not(non_empty_mask)});
-        empty_box_indices = empty_box_indices_current;
-        avg_nr_points = unique_counts.toType(torch::kFloat32).max().item<float>();
-        box_indices_sorted_reindexed = box_indices_sorted;
-        old_new_map = box_idxs;
 
     }
     void natural_center_divide(){
@@ -118,7 +103,6 @@ struct n_tree_cuda{
     void divide(){
         natural_center_divide();
         edge = edge*0.5;
-        box_max_var = edge*edge/12;
         depth += 1;
         side = side_base.pow(depth);
         box_idxs = torch::arange(centers.size(0)).toType(torch::kInt32).to(device);
@@ -169,8 +153,6 @@ struct n_tree_cuda{
         unique_counts = unique_counts.index({non_empty_mask});
         centers = centers.index({non_empty_mask});
         empty_box_indices = box_idxs.index({torch::logical_not(non_empty_mask)});
-//        empty_box_indices = arrange_empty.repeat(empty_box_indices.size(0))+dim_fac*empty_box_indices.repeat_interleave(dim_fac,0);
-//        empty_box_indices = torch::cat({empty_box_indices,empty_box_indices_current},0);
         std::tie(empty_box_indices,tmp_1) = empty_box_indices.sort(0);
         avg_nr_points = unique_counts.toType(torch::kFloat32).max().item<float>();
         multiply_gpu = multiply_gpu*multiply_gpu_base;
@@ -181,8 +163,6 @@ struct n_tree_cuda{
                 empty_box_indices.packed_accessor64<int,1,torch::RestrictPtrTraits>()
         );
         std::tie(unique_counts_cum_reindexed,tmp_1,tmp_2) = torch::unique_consecutive(unique_counts_cum);
-
-//        std::cout<<"size of removed indices: "<<empty_box_indices.size(0)<<std::endl;
 
     };
 
