@@ -83,7 +83,7 @@ def interpolation_experiment(X,Y,b,ls,nr_of_nodes):
         abs_error = torch.norm(res-approx_res)
         if torch.isnan(rel_error):
             rel_error=abs_error
-        return rel_error
+        return rel_error,abs_error
     else:
         d = X.shape[1]
         edge_x,_,center_x = get_edge_etc(X)
@@ -97,7 +97,11 @@ def interpolation_experiment(X,Y,b,ls,nr_of_nodes):
         node_idx = list(itertools.product(*cart_prod_list))
         nodes = get_nodes(nr_of_nodes)
         w = get_w(nr_of_nodes)
-        gathered = torch.cartesian_prod(*[w for i in range(d)])
+        gathered = []
+
+        for el in node_idx:
+            gathered.append([nodes[j] for j in el])
+        gathered = torch.tensor(gathered)
         cheb_data  =(edge/2)*gathered +edge/2
         interp_X,interp_b_X = get_interpolation_list(nodes,w,X,center_x,factor,b,node_idx)
         interp_Y,interp_b_Y = get_interpolation_list(nodes,w,Y,center_y,factor,b,node_idx)
@@ -121,32 +125,33 @@ def interpolation_experiment(X,Y,b,ls,nr_of_nodes):
         print('rel ERROR kernel: ', torch.norm(kernel_approx-real_kernel)/torch.norm(real_kernel))
         if torch.isnan(rel_error):
             rel_error=abs_error
-        return rel_error
+        return rel_error,abs_error
 
-def run_experiment(d,ls,nr_intpol):
+def run_experiment(d,eff_far_field,nr_intpol):
     n = 5000
     X = torch.rand(n,d)
     Y = X+2
     b = torch.randn(n,1)
-    rel_err = interpolation_experiment(X,Y,b,ls,nr_intpol)
-    eff_far_field = 1/(2*ls**2)
-    return rel_err,eff_far_field,nr_intpol**d
+    ls = (0.5/eff_far_field)**0.5
+    rel_err,abs_error = interpolation_experiment(X,Y,b,ls,nr_intpol)
+    return rel_err,abs_error,eff_far_field,nr_intpol**d
 
 if __name__ == '__main__':
     # d = 3
     # ls = 1.0
     # nr_intpol = 4
     d_list = [3,4,5]
-    ls_list = [1e3,1e2,1e1,1,1e-1,1e-2,1e-3]
+    ls_list = [1e-3,1e-2,1e-1,1,2,3,4,5,6,7,8,9,10,100,1000]
     node_list = [0,1,2,3,4,5]
-    columns = ['d','eff_far_field','nodes','rel_error']
+    columns = ['d','eff_far_field','nodes','rel_error','abs_error']
     data_list = []
     for el in itertools.product(d_list,ls_list,node_list):
-        rel_err,eff_far_field,nodes = run_experiment(*el)
-        data_list.append([el[0],eff_far_field,nodes,rel_err])
-
+        rel_err,abs_error,eff_far_field,nodes = run_experiment(*el)
+        data_list.append([el[0],eff_far_field,nodes,rel_err.item(),abs_error.item()])
     df = pd.DataFrame(data_list,columns=columns)
     df.to_csv("rbf_experiment_error.csv")
+
+
 
 
 

@@ -1091,8 +1091,17 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> get_field(
     return std::make_tuple(far_field,small_field,near_field);
 
 }
+template <typename scalar_t,int nd>
+int get_interpolation_rule(scalar_t & effective_edge,int & nr_of_interpolation){
+    if (effective_edge<0.1){
+        return min((int)pow(3,nd),nr_of_interpolation);
+    }
+    if (effective_edge>2.5){
+        return 0;
+    }
+    return nr_of_interpolation;
 
-
+}
 
 template <typename scalar_t, int nd>
 torch::Tensor far_field_run(
@@ -1135,26 +1144,30 @@ torch::Tensor far_field_run(
     }
     if (far_field.numel()>0) {
 //        std::cout<<output.slice(0,0,10)<<std::endl;
-        std::tie(cheb_data,laplace_combinations,node_list_cum,chebnodes_1D,cheb_w) = smolyak_grid<scalar_t,nd>(nr_of_interpolation_points,gpu_device);
+        torch::Tensor effective_far_field_distance_tensor =  ntree_X.edge*ntree_X.edge;
+        scalar_t effective_far_field_distance = effective_far_field_distance_tensor.item<scalar_t>();
+        int num_nodes = get_interpolation_rule<scalar_t,nd>(effective_far_field_distance,nr_of_interpolation_points);
+        if (num_nodes>0){
+            std::tie(cheb_data,laplace_combinations,node_list_cum,chebnodes_1D,cheb_w) = smolyak_grid<scalar_t,nd>(num_nodes,gpu_device);
 //        torch::Tensor cheb_data_X = cheb_data*ntree_X.edge/2.+ntree_X.edge/2.; //scaling lagrange nodes to edge scale
-        std::tie(interactions_x,interactions_y) = unbind_sort(far_field,false);
-        interactions_x_parsed = process_interactions<nd>(interactions_x,ntree_X.centers.size(0),gpu_device);
-        far_field_compute_v2<scalar_t,nd>( //Very many far field interactions quite fast...
-                interactions_x_parsed,
-                interactions_y,
-                ntree_X,
-                ntree_Y,
-                output,
-                b,
-                gpu_device,
-                ls,
-                chebnodes_1D,
-                laplace_combinations,
-                cheb_data,
-                node_list_cum,
-                cheb_w
-        ); //far field compute
-//        std::cout<<output.slice(0,0,10)<<std::endl;
+            std::tie(interactions_x,interactions_y) = unbind_sort(far_field,false);
+            interactions_x_parsed = process_interactions<nd>(interactions_x,ntree_X.centers.size(0),gpu_device);
+            far_field_compute_v2<scalar_t,nd>( //Very many far field interactions quite fast...
+                    interactions_x_parsed,
+                    interactions_y,
+                    ntree_X,
+                    ntree_Y,
+                    output,
+                    b,
+                    gpu_device,
+                    ls,
+                    chebnodes_1D,
+                    laplace_combinations,
+                    cheb_data,
+                    node_list_cum,
+                    cheb_w
+            );
+        }
     }
     return near_field;
 }
