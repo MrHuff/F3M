@@ -352,32 +352,6 @@ torch::Tensor chebyshev_nodes_1D(const int & nodes){
     return chebyshev_nodes;
 }
 
-template <typename scalar_t>
-torch::Tensor chebyshev_nodes_1D_second_kind(const int & nodes){
-    float PI = atan(1.)*4.;
-    torch::Tensor chebyshev_nodes = torch::arange(0, nodes).toType(dtype<scalar_t>());
-    chebyshev_nodes = torch::cos(chebyshev_nodes*PI/(nodes-1));
-    return chebyshev_nodes;
-}
-
-template <typename scalar_t>
-torch::Tensor get_w_j(torch::Tensor & nodes){
-    int n=nodes.size(0);
-    torch::Tensor output = torch::zeros({n}).toType(dtype<scalar_t>());
-    auto node_accessor = nodes.accessor<scalar_t,1>();
-    auto output_accessor = output.accessor<scalar_t,1>();
-    scalar_t tmp;
-    for (int i=0; i<n;i++){
-        tmp=1.0;
-        for (int j=0; j<n;j++){
-            if (i!=j){
-                tmp*=node_accessor[i]-node_accessor[j];
-            }
-        }
-        output_accessor[i]=1/tmp;
-    }
-    return output;
-}
 
 template <typename scalar_t>
 torch::Tensor get_w_j_first_kind(int & nr_of_nodes){
@@ -404,47 +378,17 @@ torch::Tensor interactions_readapt_indices(torch::Tensor & interactions,
     torch::Tensor &removed_idx_X = ntree_X.old_new_map;
     torch::Tensor &removed_idx_Y = ntree_Y.old_new_map;
 
-    if(ntree_X.depth==ntree_Y.depth){
-        transpose_to_existing_only<<<gridSize,blockSize>>>(
-                interactions.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
-                removed_idx_X.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
-                removed_idx_Y.packed_accessor64<int,1,torch::RestrictPtrTraits>()
-        );
-    }
-    if(ntree_X.depth<ntree_Y.depth){
-        transpose_to_existing_only_Y<<<gridSize,blockSize>>>(
-                interactions.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
-                removed_idx_Y.packed_accessor64<int,1,torch::RestrictPtrTraits>()
-        );
-    }
-    if(ntree_X.depth>ntree_Y.depth){
-        transpose_to_existing_only_X<<<gridSize,blockSize>>>(
-                interactions.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
-                removed_idx_X.packed_accessor64<int,1,torch::RestrictPtrTraits>()
-        );
-    }
+    transpose_to_existing_only<<<gridSize,blockSize>>>(
+            interactions.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
+            removed_idx_X.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+            removed_idx_Y.packed_accessor64<int,1,torch::RestrictPtrTraits>()
+    );
+
 
     return interactions;
 
 }
 
-template <typename scalar_t>
-torch::Tensor get_w_j_second_kind(int & nr_of_nodes){
-    torch::Tensor output = torch::zeros({nr_of_nodes}).toType(dtype<scalar_t>());
-    auto output_accessor = output.accessor<scalar_t,1>();
-    scalar_t base = -1.;
-    scalar_t delta;
-    for (int i=0;i<nr_of_nodes;i++){
-        if (i==0 or i==(nr_of_nodes-1)){
-            delta = 0.5;
-        }else{
-            delta = 1.0;
-        }
-        output_accessor[i] = pow(base,i)*delta;
-    }
-
-    return output;
-}
 
 template <typename scalar_t>
 std::tuple<torch::Tensor,torch::Tensor> concat_many_nodes(torch::Tensor & node_list){
@@ -615,7 +559,6 @@ void far_field_compute_v2(
 ){
     torch::Tensor low_rank_y;
     torch::Tensor cheb_data_X = cheb_data*x_box.edge/2.+x_box.edge/2.; //scaling lagrange nodes to edge scale
-    torch::Tensor cheb_data_Y = cheb_data*y_box.edge/2.+y_box.edge/2.; //scaling lagrange nodes to edge scale
     low_rank_y = torch::zeros({cheb_data.size(0)*y_box.centers.size(0),b.size(1)}).toType(dtype<scalar_t>()).to(device_gpu);
     //Found the buggie, the low_rank_y is proportioned towards x, but when Y has more non empty boxes things implode!!!
     apply_laplace_interpolation_v2<scalar_t,nd>(y_box,
@@ -632,7 +575,7 @@ void far_field_compute_v2(
 
     low_rank_y =  setup_skip_conv<scalar_t,nd>( //error happens here
             cheb_data_X,
-            cheb_data_Y,
+            cheb_data_X,
             low_rank_y,
             x_box.centers,
             y_box.centers,
@@ -741,31 +684,6 @@ std::tuple<torch::Tensor,torch::Tensor> parse_cheb_data_smolyak(
 
 }
 
-template<typename scalar_t,int d>
-std::tuple<torch::Tensor,torch::Tensor> parse_cheb_data(
-        torch::Tensor & cheb_nodes,
-        const std::string & gpu_device,
-        int & nr_of_samples
-        ){
-    int n = (int) pow(cheb_nodes.size(0),d);
-    torch::Tensor tmp = torch::randperm(n).slice(0,0,nr_of_samples);
-    torch::Tensor sampled_indices = tmp.toType(torch::kInt32).to(gpu_device);
-    torch::Tensor cheb_idx = torch::zeros({nr_of_samples,d}).toType(torch::kInt32).to(gpu_device);
-    torch::Tensor cheb_data = torch::zeros({nr_of_samples,d}).toType(dtype<scalar_t>()).to(gpu_device);
-    dim3 block,grid;
-    int shared;
-    std::tie(block,grid,shared) =  get_kernel_launch_params<scalar_t>(d,n);
-    get_cheb_idx_data<scalar_t,d><<<grid,block,shared>>>(
-            cheb_nodes.packed_accessor64<scalar_t,1,torch::RestrictPtrTraits>(),
-            cheb_data.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
-            cheb_idx.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
-            sampled_indices.packed_accessor64<int,1,torch::RestrictPtrTraits>()
-            );
-    cudaDeviceSynchronize();
-    return std::make_tuple(cheb_idx,cheb_data);
-    return std::make_tuple(cheb_idx,cheb_data);
-
-}
 
 std::tuple<torch::Tensor,torch::Tensor> unbind_sort(torch::Tensor & interactions){
     if (interactions.dim()<2){

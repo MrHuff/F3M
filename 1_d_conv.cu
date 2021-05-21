@@ -213,26 +213,6 @@ __device__ scalar_t calculate_lagrange( //Try using double precision!
 }
 
 template <typename scalar_t,int nd>
-__device__ scalar_t calculate_lagrange_product( //Tends to become really inaccurate for high dims and "too many lagrange nodes"
-        scalar_t *l_p,
-        scalar_t *x_i,
-            int *combs,
-        scalar_t b,
-        int *node_cum_shared){
-    scalar_t tmp;
-    for (int i=0; i<nd;i++){
-        tmp = calculate_lagrange(l_p, x_i[i], combs[i], node_cum_shared[i], node_cum_shared[i + 1]);
-        if (tmp==0){
-            b=(scalar_t) 0.;
-            break;
-        } else{
-            b *=tmp;  //Bug might be kronecker delta effect,i.e. sometimes x_i[]
-        }
-    }
-    return b;
-}
-
-template <typename scalar_t,int nd>
 __device__ scalar_t calculate_barycentric_lagrange(//not sure this is such a great idea, when nan how avoid...
         scalar_t *l_p,
         scalar_t *W,
@@ -992,94 +972,6 @@ __global__ void boolean_separate_interactions_small_var_comp(
 }
 
 
-
-template<typename scalar_t>
-__inline__ __device__ scalar_t warpReduceMax(scalar_t val)
-{
-#pragma unroll
-    for (int mask = warpSize / 2; mask > 0; mask /= 2)
-    {
-        val = max(__shfl_xor_sync(0xFFFFFFFF, val, mask), val);
-    }
-
-    return val;
-}
-template<typename scalar_t>
-__inline__ __device__ scalar_t warpReduceMin(scalar_t val)
-{
-#pragma unroll
-    for (int mask = warpSize / 2; mask > 0; mask /= 2)
-    {
-        val = min(__shfl_xor_sync(0xFFFFFFFF, val, mask), val);
-    }
-
-    return val;
-}
-
-__device__ __forceinline__ float atomicMinFloat (float * addr, float value) {
-    float old;
-    old = (value >= 0) ? __int_as_float(atomicMin((int *)addr, __float_as_int(value))) :
-          __uint_as_float(atomicMax((unsigned int *)addr, __float_as_uint(value)));
-
-    return old;
-}
-__device__ __forceinline__ float atomicMaxFloat (float * addr, float value) {
-    float old;
-    old = (value >= 0) ? __int_as_float(atomicMax((int *)addr, __float_as_int(value))) :
-          __uint_as_float(atomicMin((unsigned int *)addr, __float_as_uint(value)));
-    return old;
-}
-
-template<typename scalar_t,int cols>
-__global__ void reduceMaxMinOptimizedWarpMatrix(
-        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> input,
-        torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> maxOut,
-        torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> minOut
-)
-{
-    __shared__ scalar_t sharedMax;
-    __shared__ scalar_t sharedMin;
-    int size = input.size(0);
-    int increment = gridDim.x*blockDim.x;
-    int tid = threadIdx.x+blockDim.x*blockIdx.x;
-    for(int j=0;j<cols;j++){
-        sharedMax = -NPP_MAXABS_32F;
-        sharedMin = NPP_MAXABS_32F;
-        scalar_t localMax = -NPP_MAXABS_32F;
-        scalar_t localMin = NPP_MAXABS_32F;
-        if (tid<size){
-            for (int i = tid; i < size; i += increment) //iterate through warps...
-            {
-                if (input[i][j] > localMax)
-                {
-                    localMax = input[i][j];
-                }
-                if (input[i][j] < localMin )
-                {
-                    localMin = input[i][j];
-                }
-            }
-        }
-        __syncthreads();
-
-        scalar_t warpMax = warpReduceMax(localMax);
-        scalar_t warpMin = warpReduceMin(localMin);
-        int lane = threadIdx.x % warpSize;
-        if (lane == 0)
-        {
-            atomicMaxFloat(&sharedMax, warpMax);
-            atomicMinFloat(&sharedMin, warpMin);
-        }
-        __syncthreads();
-        if (0 == threadIdx.x)
-        {
-            atomicMaxFloat(&maxOut[j],sharedMax);
-            atomicMinFloat(&minOut[j],sharedMin);
-        }
-        __syncthreads();
-    }
-}
-
 __global__ void get_keep_mask(
         const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions,
         torch::PackedTensorAccessor64<bool,1,torch::RestrictPtrTraits> keep_x_box,
@@ -1121,26 +1013,6 @@ __global__ void transpose_to_existing_only_tree(
     }
 
 }
-__global__ void transpose_to_existing_only_X(
-        torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions,
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> old_new_map_X
-){
-    int tid = threadIdx.x+blockDim.x*blockIdx.x;
-    if (tid>interactions.size(0)-1){return;}
-    int interaction_x = interactions[tid][0];
-    interactions[tid][0] = old_new_map_X[interaction_x];
-}
-
-__global__ void transpose_to_existing_only_Y(
-        torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions,
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> old_new_map_Y
-){
-    int tid = threadIdx.x+blockDim.x*blockIdx.x;
-    if (tid>interactions.size(0)-1){return;}
-    int interaction_y = interactions[tid][1];
-    interactions[tid][1] = old_new_map_Y[interaction_y];
-}
-
 
 
 template<typename scalar_t,int cols>
