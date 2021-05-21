@@ -657,29 +657,43 @@ torch::Tensor get_new_interactions(
         int & x_div_num,int & y_div_num,
         torch::Tensor & old_near_interactions, int & p,const std::string & gpu_device){//fix tmrw
     int n = old_near_interactions.size(0);
-    if(x_div_num==y_div_num){
-        torch::Tensor arr = torch::arange(p).toType(torch::kInt32).to(gpu_device);
-        torch::Tensor new_interactions_vec = torch::stack({arr.repeat_interleave(p).repeat(n),arr.repeat(p*n)},1)+p*old_near_interactions.repeat_interleave(p*p,0);
-        return new_interactions_vec;
-    }
-    if(x_div_num<y_div_num){
-        std::vector<torch::Tensor>  tmp = old_near_interactions.repeat_interleave(p,0).unbind(1);
-        torch::Tensor & keep = tmp[0];
-        torch::Tensor & expand = tmp[1];
-        torch::Tensor arr = torch::arange(p).repeat(n).toType(torch::kInt32).to(gpu_device);
-        torch::Tensor new_interactions_vec = torch::stack({keep,arr+p*expand},1);
-        return new_interactions_vec;
-    }
-    if(x_div_num>y_div_num){
-        std::vector<torch::Tensor>  tmp = old_near_interactions.repeat_interleave(p,0).unbind(1);
-        torch::Tensor  & keep = tmp[1];
-        torch::Tensor & expand = tmp[0];
-        torch::Tensor arr = torch::arange(p).repeat(n).toType(torch::kInt32).to(gpu_device);
-        torch::Tensor new_interactions_vec = torch::stack({arr+p*expand,keep},1);
-        return new_interactions_vec;
-    }
+    torch::Tensor left;
+    torch::Tensor right;
+    torch::Tensor new_interactions_vec;
+    torch::Tensor arr=torch::arange(p).toType(torch::kInt32).to(gpu_device);
 
-
+    if (x_div_num==1){
+        left = arr.repeat_interleave(p).repeat(n);
+        right = arr.repeat(p*n);
+        torch::Tensor add = p*old_near_interactions.repeat_interleave(p*p,0);
+        new_interactions_vec = torch::stack({left,right},1)+add;
+    }else{
+        torch::Tensor output,tmp,counts;
+        std::vector<torch::Tensor> ubind = old_near_interactions.unbind(1);
+        torch::Tensor & old_left = ubind[0];
+        torch::Tensor & old_right = ubind[1];
+        std::tie(output,tmp,counts)=torch::unique_consecutive(old_left,false,true);
+        torch::Tensor right_arr  = arr.repeat(p*n);
+        torch::Tensor right_interleaved = old_right.repeat_interleave(p);
+        auto p_pointer = allocate_scalar_to_cuda<int>( p);
+        torch::Tensor short_cumsum = torch::cumsum(counts*p,0).toType(torch::kInt32);
+        left = arr.repeat_interleave(p).repeat(output.size(0)).repeat_interleave(counts.repeat_interleave(p*p))+p*old_left.repeat_interleave(p*p,0);
+        torch::Tensor right = torch::zeros_like(left);
+        counts = counts.toType(torch::kInt32);
+        dim3 blockSize,gridSize;
+        int memory;
+        std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<int>(1, counts.size(0));
+        repeat_within<<<gridSize,blockSize>>>(
+                short_cumsum.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                right_interleaved.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                counts.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                right.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                p_pointer
+        );
+//            std::cout<<"left size: "<<left.size(0)<<std::endl;
+        new_interactions_vec = torch::stack({left,right*p+right_arr},1);
+    }
+    return new_interactions_vec;
 }
 
 template <int nd>
@@ -749,6 +763,7 @@ std::tuple<torch::Tensor,torch::Tensor> parse_cheb_data(
             );
     cudaDeviceSynchronize();
     return std::make_tuple(cheb_idx,cheb_data);
+    return std::make_tuple(cheb_idx,cheb_data);
 
 }
 
@@ -817,11 +832,11 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> separate_interactions(
         auto *d_eff_var_limit = allocate_scalar_to_cuda<scalar_t>(eff_var_limit);
         x_var = get_low_variance_pairs<scalar_t,nd>(ntree_X,ntree_X.box_indices_sorted);
         std::tie(max_var_x,tmp) = x_var.max(1);
-        max_var_x = max_var_x/ls;
+        max_var_x = max_var_x*ls;
         if (ntree_X.data.data_ptr()!=ntree_Y.data.data_ptr()){
             torch::Tensor y_var = get_low_variance_pairs<scalar_t,nd>(ntree_Y,ntree_Y.box_indices_sorted);
             std::tie(max_var_y,tmp) = y_var.max(1);
-            max_var_y = max_var_y/ls;
+            max_var_y = max_var_y*ls;
         }else{
             max_var_y = max_var_x;
         }
@@ -882,7 +897,6 @@ torch::Tensor filter_out_interactions(torch::Tensor & interactions,
             );
     interactions = interactions.index({mask});
     interactions = interactions_readapt_indices<scalar_t, nd>(interactions, ntree_X, ntree_Y);
-    interactions = interactions.index({torch::argsort(interactions.slice(1,0,1).squeeze()),torch::indexing::Slice()});
     if (interactions.dim()<2){
         interactions = interactions.unsqueeze(0);
     }

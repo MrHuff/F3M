@@ -1191,6 +1191,33 @@ __global__ void box_variance(
 }
 
 
+__global__ void repeat_within(
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> short_cumsum,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> repeat_interleaved,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> unique,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> new_right,
+        int * p
+)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    if (i<unique.size(0)){
+        int start;
+        int end;
+        if (i==0){
+            start=0;
+            end = short_cumsum[0];
+        }else{
+            start = short_cumsum[i-1];
+            end = short_cumsum[i];
+        }
+        int distance = end-start;
+        int mover = start*(*p);
+        for (int r=0;r<*p;r++){
+            for(int j=start;j<end;j++){
+                new_right[j-start+mover+r*distance]=repeat_interleaved[j];
+            }
+        }
 
+    }
 
-
+}
