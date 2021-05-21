@@ -189,7 +189,7 @@ void benchmark_3(int n,float min_points, int threshold,float mean,float var,floa
     const std::string device_cpu = "cpu";
     scalar_t ls_in = (scalar_t) ls;
 
-    torch::manual_seed(1);
+//    torch::manual_seed(1);
 
     torch::Tensor Y_train = torch::empty({n,nd}).normal_(mean, sqrt(var)).toType(dtype<scalar_t>()).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
     torch::Tensor X_train = torch::empty({n,nd}).uniform_(mean, sqrt(var*12.0)).toType(dtype<scalar_t>()).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!

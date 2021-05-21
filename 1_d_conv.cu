@@ -54,19 +54,7 @@ __device__ inline T square(T x){
     return x*x;
 };
 
-template<typename T>
-__device__ inline  T cube(T x){
-    return x*x*x;
-};
 
-template<typename T, int nd>
-__device__ T rbf_simple(T x[],T y[]){
-    T tmp=0;
-    for (int k=0;k<nd;k++){
-        tmp += square<T>(x[k]-y[k]);
-    };
-    return expf(-tmp);
-};
 
 template<typename T, int nd>
 __device__ inline static T square_dist(T x[],T y[]){
@@ -80,18 +68,9 @@ __device__ inline static T square_dist(T x[],T y[]){
 template<typename T, int nd>
 __device__ inline static T rbf(T x[],T y[],const T *ls){
     T dist=square_dist<T,nd>(x,y);
-    return expf(-dist/(2* *ls));
+    return expf(-dist*(*ls));
 };
-template<typename T, int nd>
-__device__ inline static T rbf_grad_ls(T x[],T y[],const T *ls){
-    T dist=square_dist<T,nd>(x,y);
-    return expf(-dist/(2* *ls))*dist/square<T>(*ls);
-};
-template<typename T, int nd>
-__device__ inline static T rbf_grad_dist_abs(T x[],T y[],const T *ls){
-    T dist=square_dist<T,nd>(x,y);
-    return expf(-dist/(2* *ls))*sqrt(dist)/(*ls);
-};
+
 
 //template<typename T, int nd>
 //__device__ rbf_pointer<T> rbf_pointer_func = rbf<T>;
