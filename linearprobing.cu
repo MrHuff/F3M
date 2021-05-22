@@ -22,7 +22,7 @@ __device__ uint32_t hash_2(uint32_t k,const int * input_kHashTableCapacity)
     k ^= k >> 13;
     k *= 0xc2b2ae35;
     k ^= k >> 16;
-    return k & (*input_kHashTableCapacity-1);
+    return k % (*input_kHashTableCapacity-1);
 }
 
 // Create a hash table. For linear probing, this is just an array of KeyValues
@@ -64,7 +64,7 @@ __device__ void device_insert(KeyValue* hashtable,int key, int value,int * table
                 return;
             }
 
-            slot = (slot + 1) & (kHashTableCapacity-1);
+            slot = (slot + 1) % (kHashTableCapacity-1);
         }
     }
 
@@ -82,7 +82,7 @@ __device__ int device_lookup(KeyValue* hashtable,int & key,int * table_size){
         {
             return kEmpty;
         }
-        slot = (slot + 1) & (kHashTableCapacity - 1);
+        slot = (slot + 1) % (kHashTableCapacity - 1);
     }
 }
 
