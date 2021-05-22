@@ -110,12 +110,13 @@ struct n_tree_cuda{
         box_idxs = torch::arange(centers.size(0)).toType(torch::kInt32).to(device);
         unique_counts_cum = torch::zeros(centers.size(0)+1).toType(torch::kInt32).to(device);//matrix -> existing boxes * 2^dim bounded over nr or points... betting on boxing dissapears...
         unique_counts= torch::zeros(centers.size(0)).toType(torch::kInt32).to(device);
-        hash_table_size=1024;
+        hash_table_size=1024*1024;
         while(hash_table_size<(int)(2*centers.size(0))){
             hash_table_size*=2;
         }
         auto hash_table_size_pointer= allocate_scalar_to_cuda<int>(hash_table_size);
         KeyValue* perm_hash = create_hashtable_size(hash_table_size);
+        std::cout<<"allocated memory: "<< sizeof(KeyValue) * hash_table_size<<std::endl;
         dim3 blockSize,gridSize;
         int memory;
         std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(dim, centers.size(0));
@@ -646,26 +647,27 @@ torch::Tensor get_new_interactions(
     int n = old_near_interactions.size(0);
     torch::Tensor left;
     torch::Tensor right;
-    torch::Tensor new_interactions_vec;
     torch::Tensor arr=torch::arange(p).toType(torch::kInt32).to(gpu_device);
 
     if (x_div_num==1){
+        torch::Tensor new_interactions_vec;
         left = arr.repeat_interleave(p).repeat(n);
         right = arr.repeat(p*n);
         torch::Tensor add = p*old_near_interactions.repeat_interleave(p*p,0);
         new_interactions_vec = torch::stack({left,right},1)+add;
+        return new_interactions_vec;
+
     }else{
         torch::Tensor output,tmp,counts;
         std::vector<torch::Tensor> ubind = old_near_interactions.unbind(1);
         torch::Tensor & old_left = ubind[0];
         torch::Tensor & old_right = ubind[1];
         std::tie(output,tmp,counts)=torch::unique_consecutive(old_left,false,true);
-        torch::Tensor right_arr  = arr.repeat(p*n);
         torch::Tensor right_interleaved = old_right.repeat_interleave(p);
+        torch::Tensor new_interactions_vec = arr.repeat_interleave(p).repeat(output.size(0)).repeat_interleave(counts.repeat_interleave(p*p))+p*old_left.repeat_interleave(p*p,0);
+        new_interactions_vec  = new_interactions_vec.unsqueeze(1).repeat({1,2});
         auto p_pointer = allocate_scalar_to_cuda<int>( p);
         torch::Tensor short_cumsum = torch::cumsum(counts*p,0).toType(torch::kInt32);
-        left = arr.repeat_interleave(p).repeat(output.size(0)).repeat_interleave(counts.repeat_interleave(p*p))+p*old_left.repeat_interleave(p*p,0);
-        torch::Tensor right = torch::zeros_like(left);
         counts = counts.toType(torch::kInt32);
         dim3 blockSize,gridSize;
         int memory;
@@ -674,13 +676,18 @@ torch::Tensor get_new_interactions(
                 short_cumsum.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
                 right_interleaved.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
                 counts.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
-                right.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                new_interactions_vec.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
                 p_pointer
         );
-//            std::cout<<"left size: "<<left.size(0)<<std::endl;
-        new_interactions_vec = torch::stack({left,right*p+right_arr},1);
+        std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<int>(1, new_interactions_vec.size(0));
+        repeat_add<<<gridSize,blockSize>>>(
+                arr.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                new_interactions_vec.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
+                p_pointer
+        );
+        return new_interactions_vec;
+
     }
-    return new_interactions_vec;
 }
 
 template <int nd>
@@ -1039,6 +1046,7 @@ FFM_XY(torch::Tensor &X_data, torch::Tensor &Y_data, torch::Tensor &b, const std
         while (near_field.numel()>0 and ntree_X.avg_nr_points > min_points){
             if (old_mode){
                 ntree_X.divide_old();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
+                std::cout<<"-------divide X"<<std::endl;
 
             }else{
                 std::cout<<"-------divide X"<<std::endl;

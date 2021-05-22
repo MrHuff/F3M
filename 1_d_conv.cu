@@ -976,8 +976,8 @@ __global__ void repeat_within(
         const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> short_cumsum,
         const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> repeat_interleaved,
         const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> unique,
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> new_right,
-        int * p
+        torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> new_right,
+        const int * p
 )
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
@@ -995,7 +995,7 @@ __global__ void repeat_within(
         int mover = start*(*p);
         for (int r=0;r<*p;r++){
             for(int j=start;j<end;j++){
-                new_right[j-start+mover+r*distance]=repeat_interleaved[j];
+                new_right[j-start+mover+r*distance][1]=repeat_interleaved[j];
             }
         }
 
@@ -1003,6 +1003,21 @@ __global__ void repeat_within(
 
 }
 
+
+__global__ void repeat_add(
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> arr,
+        torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> new_interactions,
+        const int * p
+)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    if (i<new_interactions.size(0)){
+        int j = i%(*p); //modulo index
+        int right = new_interactions[i][1];
+        new_interactions[i][1] = (*p)*right+arr[j];
+    }
+
+}
 
 template <typename scalar_t, int nd>
 __global__ void box_division_cum_old(
