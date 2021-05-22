@@ -124,8 +124,8 @@ void benchmark_1(int n,float min_points, int threshold,float a,float b,float ls,
     torch::Tensor res_compare = res.slice(0,0,threshold);
     torch::Tensor rel_error  = ((res_ref-res_compare)/res_ref).abs_().mean();
     auto rel_error_float = rel_error.item<scalar_t>();
-    std::cout<<res_ref.slice(0,0,10)<<std::endl;
-    std::cout<<res.slice(0,0,10)<<std::endl;
+    std::cout<<res_ref.slice(0,0,25)<<std::endl;
+    std::cout<<res.slice(0,0,25)<<std::endl;
     std::cout<<"Relative error: "<<rel_error_float<<std::endl;
     writeOnfile_exp_1(fname,a,b,n,nd,min_points,nr_of_interpolation_points,duration_2.count(),rel_error_float);
 
@@ -219,8 +219,8 @@ void benchmark_3(int n,float min_points, int threshold,float mean,float var,floa
     torch::Tensor rel_error  = (res_ref-res_compare).abs().sum()/res_ref.abs().sum();
     torch::Tensor abs_error  = (res_ref-res_compare).abs_().mean();
     auto rel_error_float = rel_error.item<scalar_t>();
-    std::cout<<res_ref.slice(0,0,10)<<std::endl;
-    std::cout<<res.slice(0,0,10)<<std::endl;
+    std::cout<<res_ref.slice(0,0,21)<<std::endl;
+    std::cout<<res.slice(0,0,21)<<std::endl;
     std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
     std::cout<<"Relative error: "<<rel_error_float<<std::endl;
     std::cout<<"Abs error: "<<abs_error<<std::endl;

@@ -713,7 +713,7 @@ __device__ int get_global_index(
         const int * dim_fac
 ){
     int global_idx=0;
-    scalar_t cur_edge;
+    scalar_t cur_edge=*edge;
     scalar_t cur_alpha[nd];
     int bin;
     int idx;
@@ -721,17 +721,20 @@ __device__ int get_global_index(
         cur_alpha[p]=alpha[p];
     }
     for (int d=0;d<*current_depth;d++){
-        cur_edge = *edge/(float)pow(2.0,d);
+        if(d>0){
+            cur_edge/=2;
+        }
         idx=0;
         for (int p = 0;p<nd;p++) {
             bin = (int)floor( 2 * (X_data[i][p] - cur_alpha[p])/cur_edge);
             cur_alpha[p] = cur_alpha[p]+bin*cur_edge/2;
             idx += multiply[p]*bin;
         }
-//        if (i<100){
-//            printf("inside index %i : depth perm adder %i  idx %i  \n",d,depth_perm_idx_adder[d],idx);
-//            printf("global_index in depth %i = %i \n",d,old_perm[depth_perm_idx_adder[d]+idx+global_idx*(*dim_fac)]);
-//        }
+        if (i<100){
+            printf("inside depth %i : depth perm adder %i  idx %i  \n",d,depth_perm_idx_adder[d],idx);
+            printf("accessing index %i  \n",depth_perm_idx_adder[d]+idx+global_idx*(*dim_fac));
+            printf("global_index in depth %i = %i \n",d,old_perm[depth_perm_idx_adder[d]+idx+global_idx*(*dim_fac)]);
+        }
 
 
         global_idx = old_perm[depth_perm_idx_adder[d]+idx+global_idx*(*dim_fac)];
@@ -742,10 +745,10 @@ __device__ int get_global_index(
         bin = (int)floor( 2 * (X_data[i][p] - cur_alpha[p])/cur_edge);
         idx += multiply[p]*bin;
     }
-//    if (i<100) {
-//        printf("global_index = %i \n", global_idx * (*dim_fac) + idx);
-//        printf("idx bottom line = %i \n", idx);
-//    }
+    if (i<100) {
+        printf("global_index = %i \n", global_idx * (*dim_fac) + idx);
+        printf("idx bottom line = %i \n", idx);
+    }
     return global_idx*(*dim_fac)+idx;
 }
 
@@ -888,7 +891,7 @@ __global__ void transpose_to_existing_only_tree_perm(
     int box_idx = perm[tid];
     for (int i=0;i<nx;i++){
         if(box_idx == removed_indices_x[i]){
-            perm[tid] = -1;
+            perm[tid] = -9999;
         }
         if(box_idx > removed_indices_x[i]){
             perm[tid] -=1;

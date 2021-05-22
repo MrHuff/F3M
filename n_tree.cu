@@ -49,9 +49,10 @@ struct n_tree_cuda{
             xmax,
             side,
             side_base,
-            old_perms,
-            depth_perm_idx_adder,
-            depth_perm_idx_adder_cum,
+            old_geometric_indices,
+            geometric_indices,
+            depth_geometric_idx_adder,
+            depth_geometric_idx_adder_cum,
             sorted_index,
             unique_counts,
             multiply_gpu_base,
@@ -94,8 +95,9 @@ struct n_tree_cuda{
         centers = centers.unsqueeze(0);
         depth = 0;
         side_base = torch::tensor(2.0).toType(dtype<scalar_t>()).to(device);
-        depth_perm_idx_adder = torch::tensor({0}).toType(torch::kInt32).to(device);
-        old_perms = torch::empty({}).toType(torch::kInt32).to(device).unsqueeze(-1);
+        depth_geometric_idx_adder = torch::tensor({0}).toType(torch::kInt32).to(device);
+        old_geometric_indices = torch::tensor({0}).toType(torch::kInt32).to(device);
+        depth_geometric_idx_adder_cum = depth_geometric_idx_adder.cumsum(0).toType(torch::kInt32);
 
     }
     void natural_center_divide(){
@@ -112,14 +114,14 @@ struct n_tree_cuda{
 //        depth += 1;
 //        side = side_base.pow(depth);
         box_idxs = torch::arange(centers.size(0)).toType(torch::kInt32).to(device);
+        geometric_indices = box_idxs.clone();
         unique_counts_cum = torch::zeros(centers.size(0)+1).toType(torch::kInt32).to(device);//matrix -> existing boxes * 2^dim bounded over nr or points... betting on boxing dissapears...
         unique_counts= torch::zeros(centers.size(0)).toType(torch::kInt32).to(device);
-        perm = -torch::ones(centers.size(0)).toType(torch::kInt32).to(device);
-        depth_perm_idx_adder = torch::cat({depth_perm_idx_adder,torch::tensor({perm.size(0)}).toType(torch::kInt32).to(device)},0);
-        depth_perm_idx_adder_cum = depth_perm_idx_adder.cumsum(0).toType(torch::kInt32);
+        perm = -999999999*torch::ones(centers.size(0)).toType(torch::kInt32).to(device);
         //when you prune perm, don't remove values i.e. make the list shorter, but the update the values"
         depth_tensor = torch::tensor({depth}).toType(torch::kInt32).to(device);
-
+        //geometric index -> geometric index -> geometric index -> canonical index (correct)
+        //geometric index -> canonical index -> canonical index -> canonical index (current wrong)
 
         dim3 blockSize,gridSize;
         int memory;
@@ -130,8 +132,8 @@ struct n_tree_cuda{
                 multiply_gpu_base.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
                 edge_og.data_ptr<scalar_t>(),
                 perm.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
-                old_perms.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
-                depth_perm_idx_adder_cum.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                old_geometric_indices.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                depth_geometric_idx_adder_cum.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
                 depth_tensor.data_ptr<int>(),
                 dim_fac_tensor.data_ptr<int>()
         ); //Apply same hack but to centers to get perm
@@ -144,8 +146,8 @@ struct n_tree_cuda{
                 edge_og.data_ptr<scalar_t>(),
                 unique_counts_cum.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
                 perm.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
-                old_perms.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
-                depth_perm_idx_adder_cum.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                old_geometric_indices.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                depth_geometric_idx_adder_cum.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
                 depth_tensor.data_ptr<int>(),
                 dim_fac_tensor.data_ptr<int>()
         );
@@ -160,8 +162,8 @@ struct n_tree_cuda{
                 unique_counts.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
                 sorted_index.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
                 perm.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
-                old_perms.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
-                depth_perm_idx_adder_cum.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                old_geometric_indices.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                depth_geometric_idx_adder_cum.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
                 depth_tensor.data_ptr<int>(),
                 dim_fac_tensor.data_ptr<int>()
         );
@@ -183,18 +185,34 @@ struct n_tree_cuda{
 
         std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<int>(1, perm.size(0));
         transpose_to_existing_only_tree_perm<<<gridSize,blockSize>>>(
-                perm.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                geometric_indices.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
                 empty_box_indices.packed_accessor64<int,1,torch::RestrictPtrTraits>()
         );
+        torch::Tensor bool_indexer = geometric_indices>-1;
+        geometric_indices = geometric_indices.index({bool_indexer});
+
         if (depth==0){
-            old_perms = perm;
+            old_geometric_indices = geometric_indices;
 
         }else{
-            old_perms = torch::cat({old_perms,perm},0); //For normal we have a negative index wtf...
+            old_geometric_indices = torch::cat({old_geometric_indices, geometric_indices}, 0); //For normal we have a negative index wtf...
         }
+
+
+        depth_geometric_idx_adder = torch::cat({depth_geometric_idx_adder, torch::tensor({geometric_indices.size(0)}).toType(torch::kInt32).to(device)}, 0);
+        depth_geometric_idx_adder_cum = depth_geometric_idx_adder.cumsum(0).toType(torch::kInt32);
         std::tie(unique_counts_cum_reindexed,tmp_1,tmp_2) = torch::unique_consecutive(unique_counts_cum);
         edge = edge*0.5;
         depth += 1;
+
+//        std::tie(tmp_1,tmp_2)=torch::_unique(sorted_index,false);
+//        std::cout<<tmp_1.size(0)<<std::endl;
+//        if(depth<4){
+//            std::cout<<centers<<std::endl;
+//            std::cout<<unique_counts<<std::endl;
+//            std::cout<<unique_counts_cum<<std::endl;
+//
+//        }
 //        std::cout<<depth<<std::endl;
 //        std::cout<<"---------------------------------------------"<<std::endl;
 //        std::cout<<centers.slice(0,0,10)<<std::endl;
@@ -265,7 +283,14 @@ struct n_tree_cuda{
                 empty_box_indices.packed_accessor64<int,1,torch::RestrictPtrTraits>()
         );
         std::tie(unique_counts_cum_reindexed,tmp_1,tmp_2) = torch::unique_consecutive(unique_counts_cum);
+//        std::tie(tmp_1,tmp_2)=torch::_unique(sorted_index,false);
+//        std::cout<<tmp_1.size(0)<<std::endl;
+        if(depth<4){
+            std::cout<<centers<<std::endl;
+            std::cout<<unique_counts<<std::endl;
+            std::cout<<unique_counts_cum<<std::endl;
 
+        }
 
     }
 
@@ -1105,9 +1130,13 @@ FFM_XY(torch::Tensor &X_data, torch::Tensor &Y_data, torch::Tensor &b, const std
                 ntree_Y.divide_old();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
 
             }else{
+                std::cout<<"-------divide X"<<std::endl;
                 ntree_X.divide();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
+                std::cout<<"-------divide Y"<<std::endl;
                 ntree_Y.divide();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
             }
+//            std::cout<<"-------start"<<std::endl;
+//            std::cout<<output.slice(0,0,21)<<std::endl;
             near_field = far_field_run<scalar_t, nd>(
                     ntree_X,
                     ntree_Y,
@@ -1121,10 +1150,17 @@ FFM_XY(torch::Tensor &X_data, torch::Tensor &Y_data, torch::Tensor &b, const std
                     eff_var_limit,
                     small_field_limit
             );
+//            std::cout<<output.slice(0,0,21)<<std::endl;
+            std::cout<<"-------end"<<std::endl;
+
         }
         if (near_field.numel()>0){
             near_field_run<scalar_t,nd>(ntree_X,ntree_Y,near_field,output,b,lcs,gpu_device);
         }
+//        std::cout<<"-------final"<<std::endl;
+//        std::cout<<output.slice(0,0,21)<<std::endl;
+
+
     }
 
     return output;
