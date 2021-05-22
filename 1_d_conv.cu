@@ -1,5 +1,6 @@
 
 #pragma once
+#include "linearprobing.cu"
 #include <iostream>
 #include <ostream>
 #include <cublas_v2.h>
@@ -54,6 +55,7 @@ __device__  __forceinline__  T square(T x){
     return x*x;
 };
 
+
 template<typename T, int nd>
 __device__   __forceinline__ static T square_dist(T x[],T y[]){
     T dist=(T)0;
@@ -65,10 +67,18 @@ __device__   __forceinline__ static T square_dist(T x[],T y[]){
 };
 
 template<typename T, int nd>
-__device__ __forceinline__  static T rbf(T x[], T y[]) {
+__device__ inline static T rbf(T x[],T y[],const T *ls){
     T dist=square_dist<T,nd>(x,y);
-    return expf(-dist);
+    return expf(-dist*(*ls));
 };
+
+
+//template<typename T, int nd>
+//__device__ rbf_pointer<T> rbf_pointer_func = rbf<T>;
+//template<typename T, int nd>
+//__device__ rbf_pointer<T> rbf_pointer_grad = rbf_grad<T>;
+//
+
 
 template <typename scalar_t,int nd>
 __device__ __forceinline__   static void torch_load_y(int index, scalar_t *shared_mem, torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> y){
@@ -186,6 +196,7 @@ __global__ void rbf_1d_reduce_simple_torch(const torch::PackedTensorAccessor64<s
     __syncthreads();
 
 };
+
 
 
 
@@ -845,206 +856,6 @@ __global__ void lagrange_shared_v2(
 // Created by rhu on 2020-07-05.
 //
 
-template <typename scalar_t, int nd>
-__device__   int get_global_index(
-                                int i,
-                                const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
-                                const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> alpha,
-                                const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> multiply,
-                                const scalar_t * edge,
-                                torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> old_perm,
-                                torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> depth_perm_idx_adder,
-                                const int * current_depth,
-                                const int * dim_fac
-                                ){
-    int global_idx=0;
-    scalar_t cur_edge;
-    scalar_t cur_alpha[nd];
-    int bin;
-    int idx;
-    for (int p = 0;p<nd;p++) {
-        cur_alpha[p]=alpha[p];
-    }
-    for (int d=0;d<*current_depth;d++){
-        cur_edge = *edge/(float)pow(2.0,d);
-        idx=0;
-#pragma unroll
-        for (int p = 0;p<nd;p++) {
-            bin = (int)floor( 2 * (X_data[i][p] - cur_alpha[p])/cur_edge);
-            cur_alpha[p] = cur_alpha[p]+bin*cur_edge/2;
-            idx += multiply[p]*bin;
-        }
-//        if (i<100){
-//            printf("inside index %i : depth perm adder %i  idx %i  \n",d,depth_perm_idx_adder[d],idx);
-//            printf("global_index in depth %i = %i \n",d,old_perm[depth_perm_idx_adder[d]+idx+global_idx*(*dim_fac)]);
-//        }
-
-
-        global_idx = old_perm[depth_perm_idx_adder[d]+idx+global_idx*(*dim_fac)];
-    }
-    cur_edge = cur_edge/2;
-    idx=0;
-#pragma unroll
-    for (int p = 0;p<nd;p++) {
-        bin = (int)floor( 2 * (X_data[i][p] - cur_alpha[p])/cur_edge);
-        idx += multiply[p]*bin;
-    }
-//    if (i<100) {
-//        printf("global_index = %i \n", global_idx * (*dim_fac) + idx);
-//        printf("idx bottom line = %i \n", idx);
-//    }
-    return global_idx*(*dim_fac)+idx;
-}
-
-
-template <typename scalar_t, int nd>
-__global__ void box_division_cum(
-        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
-        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> alpha,
-        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> multiply,
-        const scalar_t * edge,
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> global_vector_counter_cum,
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> perm,
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> old_perm,
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> depth_perm_idx_adder,
-        const int * current_depth,
-        const int * dim_fac
-){
-    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
-    if (i>X_data.size(0)-1){return;}
-    if (*current_depth==0){
-        float dist_from_edge=0.5;
-        float tmp_dist,dist_tmp;
-        int idx=0;
-        for (int p = 0;p<nd;p++) {
-            tmp_dist = (float)((X_data[i][p] - alpha[p])/ *edge);
-            dist_tmp = (float)0.5-abs(tmp_dist-0.5);
-            if (dist_tmp < dist_from_edge){
-                dist_from_edge= dist_tmp;
-            }
-            idx += multiply[p]*(int)floor( 2 * tmp_dist);
-        }
-        atomicAdd(&global_vector_counter_cum[perm[idx]+1],1);
-        return;
-    }else{
-        int global_index;
-        global_index = get_global_index<scalar_t,nd>(
-                i,
-                X_data,
-                alpha,
-                multiply,
-                edge,
-                old_perm,
-                depth_perm_idx_adder,
-                current_depth,
-                dim_fac
-        );
-        atomicAdd(&global_vector_counter_cum[perm[global_index]+1],1);
-        return;
-    }
-
-}
-
-
-template <typename scalar_t, int nd>
-__global__ void center_perm(const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> centers_natural,
-                            const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> alpha,
-                            const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> multiply,
-                            const scalar_t * edge,
-                            torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> perm,
-                            torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> old_perm,
-                            torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> depth_perm_idx_adder,
-                            const int * current_depth,
-                            const int * dim_fac
-                            ){
-
-    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
-    if (i>centers_natural.size(0)-1){return;}
-
-    if (*current_depth==0){
-        int idx=0;
-        for (int p = 0;p<nd;p++) {
-            idx += multiply[p]*(int)floor( 2 * (centers_natural[i][p] - alpha[p]) / *edge);
-        }
-        perm[idx] = i;
-        return;
-    }else{
-        int global_index;
-        global_index = get_global_index<scalar_t,nd>(
-                i,
-                centers_natural,
-                alpha,
-                multiply,
-                edge,
-                old_perm,
-                depth_perm_idx_adder,
-                current_depth,
-                dim_fac
-        );
-
-        perm[global_index]=i;
-        return;
-    }
-
-}
-
-
-template <typename scalar_t, int nd>
-__global__ void box_division_assign(
-        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
-        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> alpha,
-        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> multiply,
-        const scalar_t * edge,
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> global_vector_counter_cum,
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> global_unique,
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> sorted_index,
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> perm,
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> old_perm,
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> depth_perm_idx_adder,
-        const int * current_depth,
-        const int * dim_fac
-){
-
-    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
-    if (i>X_data.size(0)-1){return;}
-    int idx;
-    if (*current_depth==0){
-        idx=0;
-        for (int p = 0;p<nd;p++) {
-            idx += multiply[p]*(int)floor( 2 * (X_data[i][p] - alpha[p]) / *edge);
-        }
-        sorted_index[atomicAdd(&global_unique[perm[idx]],1)+global_vector_counter_cum[perm[idx]]] = i;
-        return;
-    }else{
-        int global_index;
-        global_index = get_global_index<scalar_t,nd>(
-                i,
-                X_data,
-                alpha,
-                multiply,
-                edge,
-                old_perm,
-                depth_perm_idx_adder,
-                current_depth,
-                dim_fac
-        );
-
-        sorted_index[atomicAdd(&global_unique[perm[global_index]],1)+global_vector_counter_cum[perm[global_index]]] = i;
-        return;
-    }
-}
-
-
-
-
-//
-
-//box_idx , data_point_idx.
-//0 : [- 1- 1- 1- 1-]
-//1 : [- 1- -1- -1- -1- 1]
-//global_vector_counter: [32 50 ... 64] cumsum [0 32 82 ... n]
-//n [0 0 0 0 0 0 0 0 ] indices in the sorted box order
-// new global vector counter... + cumsum[box_indx] + value of col.
 
 __global__ void parse_x_boxes(
         const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> box_cumsum,
@@ -1065,34 +876,6 @@ __global__ void parse_x_boxes(
     __syncthreads();
 }
 
-template <typename scalar_t, int nd>
-__global__ void get_cheb_idx_data(
-        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> cheb_nodes,
-        torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> cheb_data,
-        torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> cheb_idx,
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> indices
-){
-    int n = cheb_data.size(0);
-    int i = threadIdx.x+blockIdx.x*blockDim.x; // Thread nr
-    if (i>n-1){return;}
-    int sampled_i = indices[i];
-    int lap_nodes = cheb_nodes.size(0);
-    int idx;
-    int tmp;
-    extern __shared__ __align__(sizeof(scalar_t)) unsigned char my_smem[];
-    scalar_t *buffer = reinterpret_cast<scalar_t *>(my_smem);
-    if (threadIdx.x<lap_nodes){
-        buffer[threadIdx.x] = cheb_nodes[threadIdx.x];
-    }
-    __syncthreads();
-#pragma unroll
-    for (int j=0;j<nd;j++){
-        tmp = sampled_i % (int)round(pow(lap_nodes,j+1));
-        idx = (int) floor((float)tmp/(float)pow(lap_nodes,j));
-        cheb_idx[i][j] = idx;
-        cheb_data[i][j] = buffer[idx];
-    }
-}
 
 template <typename scalar_t, int nd>
 __global__ void get_smolyak_indices(
@@ -1159,7 +942,8 @@ __global__ void boolean_separate_interactions_small(
         torch::PackedTensorAccessor64<bool,1,torch::RestrictPtrTraits> is_far_field,
         torch::PackedTensorAccessor64<bool,1,torch::RestrictPtrTraits> is_small_field,
         const int * nr_interpolation_points,
-        const int * small_field_limit
+        const int * small_field_limit,
+        const bool * do_init_check
 ){
     int i = threadIdx.x+blockIdx.x*blockDim.x; // Thread nr
     int n = interactions.size(0);
@@ -1171,9 +955,12 @@ __global__ void boolean_separate_interactions_small(
     scalar_t cx[nd];
     scalar_t cy[nd];
     interaction_size = unique_og_X[bx]+unique_og_Y[by];
-    if (interaction_size<(2* *nr_interpolation_points)){
-        is_small_field[i]=true;
-        return;
+    if (*do_init_check){
+        if (interaction_size<(2* *nr_interpolation_points)){
+            is_small_field[i]=true;
+            return;
+        }
+
     }
 #pragma unroll
     for (int k=0;k<nd;k++){
@@ -1183,6 +970,7 @@ __global__ void boolean_separate_interactions_small(
     }
     if (get_2_norm<scalar_t,nd>(distance)>=(*edge*2)){
         is_far_field[i]=true;
+        return;
     }
     if (interaction_size<(2* *small_field_limit)){
         is_small_field[i]=true;
@@ -1204,7 +992,8 @@ __global__ void boolean_separate_interactions_small_var_comp(
         torch::PackedTensorAccessor64<bool,1,torch::RestrictPtrTraits> is_small_field,
         const int * nr_interpolation_points,
         const int * small_field_limit,
-        const scalar_t * eff_var_limit
+        const scalar_t * eff_var_limit,
+        const bool * do_init_check
 ){
     int i = threadIdx.x+blockIdx.x*blockDim.x; // Thread nr
     int n = interactions.size(0);
@@ -1216,11 +1005,13 @@ __global__ void boolean_separate_interactions_small_var_comp(
     scalar_t distance[nd];
     scalar_t cx[nd];
     scalar_t cy[nd];
-
     interaction_size = unique_og_X[bx]+unique_og_Y[by];
-    if (interaction_size<(2* *nr_interpolation_points)){
-        is_small_field[i]=true;
-        return;
+    if (*do_init_check){
+        if (interaction_size<(2* *nr_interpolation_points)){
+            is_small_field[i]=true;
+            return;
+        }
+
     }
     tot_var = eff_var_X[bx] + eff_var_Y[by];
     if (tot_var<= *eff_var_limit){
@@ -1237,12 +1028,16 @@ __global__ void boolean_separate_interactions_small_var_comp(
     }
     if (get_2_norm<scalar_t,nd>(distance)>=(*edge*2)){
         is_far_field[i]=true;
+        return;
     }
     if (interaction_size<(2* *small_field_limit)){
         is_small_field[i]=true;
         return;
     }
+
+
 }
+
 
 __global__ void get_keep_mask(
         const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions,
@@ -1273,25 +1068,6 @@ __global__ void transpose_to_existing_only(
 __global__ void transpose_to_existing_only_tree_perm(
         torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> perm,
         torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> removed_indices_x
-){//Bottle neck perhaps, switch to binary search
-    int tid = threadIdx.x+blockDim.x*blockIdx.x;
-    if (tid > perm.size(0) - 1){return;}
-    unsigned int nx = removed_indices_x.size(0);
-    int box_idx = perm[tid];
-    for (int i=0;i<nx;i++){
-        if(box_idx == removed_indices_x[i]){
-            perm[tid] = -1;
-        }
-        if(box_idx > removed_indices_x[i]){
-            perm[tid] -=1;
-        }
-
-    }
-}
-
-__global__ void transpose_to_existing_only_tree(
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> all_boxes,
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> removed_indices_x
 ){
     int tid = threadIdx.x+blockDim.x*blockIdx.x;
     if (tid>all_boxes.size(0)-1){return;}
@@ -1313,28 +1089,6 @@ __global__ void transpose_to_existing_only_tree(
 }
 
 
-__global__ void transpose_to_existing_only_X(
-        torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions,
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> old_new_map_X
-){
-    int tid = threadIdx.x+blockDim.x*blockIdx.x;
-    if (tid>interactions.size(0)-1){return;}
-    int interaction_x = interactions[tid][0];
-    interactions[tid][0] = old_new_map_X[interaction_x];
-}
-
-__global__ void transpose_to_existing_only_Y(
-        torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions,
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> old_new_map_Y
-){
-    int tid = threadIdx.x+blockDim.x*blockIdx.x;
-    if (tid>interactions.size(0)-1){return;}
-    int interaction_y = interactions[tid][1];
-    interactions[tid][1] = old_new_map_Y[interaction_y];
-}
-
-
-
 template<typename scalar_t,int cols>
 __global__ void box_variance(
         const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
@@ -1354,7 +1108,7 @@ __global__ void box_variance(
     scalar_t x_i_square[cols];
     scalar_t tmp_xval;
     int box_ind;
-    int limit=100;
+    int limit=1000;
     int start,end,end_num;
     box_ind = big_enough_boxes[i];
 #pragma unroll
@@ -1416,7 +1170,115 @@ __global__ void repeat_within(
 
     }
 
+__global__ void repeat_within(
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> short_cumsum,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> repeat_interleaved,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> unique,
+        torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> new_right,
+        const int * p
+)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    if (i<unique.size(0)){
+        int start;
+        int end;
+        if (i==0){
+            start=0;
+            end = short_cumsum[0];
+        }else{
+            start = short_cumsum[i-1];
+            end = short_cumsum[i];
+        }
+        int distance = end-start;
+        int mover = start*(*p);
+        for (int r=0;r<*p;r++){
+            for(int j=start;j<end;j++){
+                new_right[j-start+mover+r*distance][1]=repeat_interleaved[j];
+            }
+        }
+
+    }
 }
 
 
 
+__global__ void repeat_add(
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> arr,
+        torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> new_interactions,
+        const int * p
+)
+{
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    if (i<new_interactions.size(0)){
+        int j = i%(*p); //modulo index
+        int right = new_interactions[i][1];
+        new_interactions[i][1] = (*p)*right+arr[j];
+    }
+
+}
+
+template <typename scalar_t, int nd>
+__global__ void box_division_cum_hash(
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
+        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> alpha,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> multiply,
+        const scalar_t * int_mult,
+        const scalar_t * edge,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> global_vector_counter_cum,
+        KeyValue* perm,
+        int * hash_size
+
+){
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    if (i>X_data.size(0)-1){return;}
+    int idx=0;
+    for (int p = 0;p<nd;p++) {
+        idx += multiply[p]*(int)floor( *int_mult * (X_data[i][p] - alpha[p]) / *edge);
+    }
+    int perm_val = device_lookup(perm,idx,hash_size);
+    atomicAdd(&global_vector_counter_cum[perm_val+1],1);
+
+}
+
+template <typename scalar_t, int nd>
+__global__ void center_perm_hash(const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> centers_natural,
+                                const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> alpha,
+                                const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> multiply,
+                                const scalar_t * int_mult,
+                                const scalar_t * edge,
+                                KeyValue* perm,
+                                int * hash_size
+                                ){
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    if (i>centers_natural.size(0)-1){return;}
+    int idx=0;
+    for (int p = 0;p<nd;p++) {
+        idx += multiply[p]*(int)floor( *int_mult * (centers_natural[i][p] - alpha[p]) / *edge);
+    }
+    device_insert(perm,idx,i,hash_size);
+}
+
+
+template <typename scalar_t, int nd>
+__global__ void box_division_assign_hash(
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
+        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> alpha,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> multiply,
+        const scalar_t * int_mult,
+        const scalar_t * edge,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> global_vector_counter_cum,
+        KeyValue* perm,
+        int * hash_size,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> global_unique,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> sorted_index
+){
+
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    if (i>X_data.size(0)-1){return;}
+    int idx=0;
+    for (int p = 0;p<nd;p++) {
+        idx += multiply[p]*(int)floor( *int_mult * (X_data[i][p] - alpha[p]) / *edge);
+    }
+    int perm_val = device_lookup(perm,idx,hash_size);
+    sorted_index[atomicAdd(&global_unique[perm_val],1)+global_vector_counter_cum[perm_val]] = i;
+}
