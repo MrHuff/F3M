@@ -1,49 +1,130 @@
-from FFM_classes import *
-import time
-from run_obj import *
-if __name__ == '__main__':
-    n=1000000 #Nr of observations
-    device = 'cuda:0' #device
-    d=2 #dims, stick to <5
-    r2=100
-    min_points = float(2500)  # stop when dividing when the largest box has 1000 points, for 5 dim uniform min points=2500 and minimal small field worked.
+import torch
+import matplotlib.pyplot as plt
 
-    ref_points = 5000  # calculate error on 5000 points
-    # X = torch.empty(n, d).normal_(0, (r2 * 12) ** 0.5).to(device)
-    X = torch.empty(n, d).normal_(0, (r2) ** 0.5).to(device)
-    # Y = torch.empty(2500, d).normal_(0, r2 ** 0.5).to(device)
-    b = torch.empty(n, 1).normal_(0, 1).float().to(device)  # weights
-    x_ref = X[0:ref_points, :]  # reference X
-    torch.cuda.synchronize()
-    ls = float(1.0) #lengthscale
-    # ls = float(10.0) #lengthscale
-    nr_of_interpolation = int(64) #nr of interpolation nodes
-    eff_var_limit=float(0.1) # Effective variance threshold
-    small_field_limit = nr_of_interpolation
-    # keops_benchmark_0 = benchmark_matmul(x_ref,X,ls=ls,device=device) #get some references
-    keops_benchmark_1 = benchmark_matmul(x_ref,X,ls=ls,device=device) #get some references
-    # true_0 = keops_benchmark_0@b #calculate reference
-    true_1 = keops_benchmark_1@b #calculate reference
+import numpy as np
+torch.set_printoptions(profile="full")
 
-    #Initialize different FFM objects
-    # FFM_X_0 = FFM(X=X,ls=ls,min_points=min_points,nr_of_interpolation=nr_of_interpolation,eff_var_limit=eff_var_limit,var_compression=False,smooth_interpolation=True,device=device,small_field_points=small_field_limit)
-    FFM_X_1 = FFM(X=X,ls=ls,min_points=min_points,nr_of_interpolation=nr_of_interpolation,eff_var_limit=eff_var_limit,var_compression=True,smooth_interpolation=False,device=device,small_field_points=small_field_limit)
+x = np.array([10**i for i in range(1,10)])
+y = x*np.log10(x)
 
-    #Time computations
-    # start = time.time()
-    # res_0 = FFM_X_0@b
-    # end= time.time()
-    # print(f'time exp 0: {end-start}')
-    # rel_err_0 = calc_rel_error(true_res=true_0,approx_res=res_0[:ref_points])
-    # print(f'err exp 0: {rel_err_0}')
+x_trans  = np.log10(x)
+y_trans  = np.log10(y)
+plt.plot(x_trans,y_trans)
+plt.show()
 
-    start = time.time()
-    res_1 = FFM_X_1@b
-    end= time.time()
-    print(f'time exp 1: {end-start}')
-    rel_err_0 = calc_rel_error_norm(true_res=true_1,approx_res=res_1[:ref_points])
-    print(f'err exp 1: {rel_err_0}')
-    print(true_1[:10])
-    print(res_1[:10])
-    print(res_1.shape)
+m, b = np.polyfit(x_trans, y_trans, 1)
+print(m,b)
+# def divide(old_interactions, depth, p):
+#     n = old_interactions.shape[0]
+#     arr = torch.arange(p)
+#     if depth==0:
+#         left = arr.repeat_interleave(p).repeat(n)
+#         right = arr.repeat(p*n)
+#         add = p * old_interactions.repeat_interleave(p * p, 0)
+#         new_interations = torch.stack([left,right],dim=1
+#                                       ) + add
+#     else:
+#         left_old,right_old = old_interactions.unbind(1)
+#         output, counts = torch.unique_consecutive(left_old,return_counts=True)
+#         right = arr.repeat(p*n)+right_old.repeat_interleave(p)
+#         left = arr.repeat_interleave(p).repeat(output.shape[0]).repeat_interleave(counts.repeat_interleave(p*p))+p*left_old.repeat_interleave(p*p,0)
+#         new_interations = torch.stack([left,right],dim=1
+#                                       )
+#     return new_interations
+#
+# p=4
+# interactions = torch.tensor([[0,0]])
+# interactions = divide(interactions,1,p)
+# print(interactions)
+# interactions = interactions[torch.rand(interactions.shape[0])>0.4]
+# print(interactions)
+# interactions = divide(interactions,2,p)
+# print(interactions)
+# interactions = interactions[torch.rand(interactions.shape[0])>0.4]
+# print(interactions)
 
+
+
+# import torch
+#
+# from FFM_classes import *
+# import time
+# from run_obj import *
+
+
+# import pykeops
+# # pykeops.clean_pykeops()
+#
+# if __name__ == '__main__':
+#     N = 1000000000
+#     d=3
+#     m = 100000
+#     X = torch.rand(N, d).float()
+#     b = torch.randn(N, 1).float()
+#     x_ref =  torch.rand(m,d).float()
+#     ls = 9
+#     min_points = 2500
+#     small_field = 64
+#     # obj_test = FFM(X=X,ls=ls,min_points=min_points,eff_var_limit=0.1,var_compression=True,small_field_points=64)
+#     # start= time.time()
+#     # obj_test@b
+#     # end = time.time()
+#     # sq_time =end-start
+#     # print(sq_time)
+#     # feels very much like a cache/loading issue??!?!?!?!?!
+#     # timing doesn't work either...
+#     obj_test = FFM(X=x_ref,Y=X,ls=ls,min_points=min_points,eff_var_limit=0.1,var_compression=True,small_field_points=small_field)
+#     start= time.time()
+#     f_1 = obj_test@b
+#     end = time.time()
+#     asymetric_time =end-start
+#     print(asymetric_time)
+#
+#     # obj_test_2 = FFM(X=X,Y=x_ref,ls=ls,min_points=min_points,eff_var_limit=0.1,var_compression=True,small_field_points=small_field)
+#     # # start= time.time()
+#     # f_2 = obj_test_2@f_1
+#     # end = time.time()
+#     # transpose =end-start
+#     # print(transpose)
+#
+#     bmark_1 = keops_matmul(X=x_ref,Y=X,ls=ls,type=torch.float32)
+#     # bmark_2 = keops_matmul(X=x_ref,Y=X,ls=ls,type=torch.float32)
+#     #
+#     #
+#     # start= time.time()
+#     # res = bmark_2@b
+#     # end = time.time()
+#     # keops_full =end-start
+#     #
+#     start= time.time()
+#     bmark_1@b
+#     end = time.time()
+#     keops_assym =end-start
+#     # # print('sq_time: ',sq_time)
+#     # print('transpose_time: ',transpose)
+#     # # print('keops_full: ',keops_full)
+#     print('keops_assym: ',keops_assym)
+#
+#
+# # torch.multiprocessing.set_start_method('spawn')# good solution !!!!
+#     # N = 100000000
+#     # d = 3
+#     # ls = 3.0
+#     # penalty = 1e-5
+#     # M = 10000
+#     # X = torch.rand(M, d)
+#     # b = torch.randn(N, 1)
+#     # Y = torch.randn(N,d)
+#     # min_points = 64
+#     # obj_test = par_FFM(X=X,Y=Y,ls=ls,min_points=min_points,eff_var_limit=0.1,var_compression=False,small_field_points=64,par_factor=2)
+#     # # obj_test = FFM(X=X,Y=Y,ls=ls,min_points=min_points,eff_var_limit=0.1,var_compression=False,small_field_points=64)
+#     # start = time.time()
+#     # obj_test@b
+#     # end = time.time()
+#     # print(end-start)
+#
+#
+#
+#
+#
+#

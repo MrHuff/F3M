@@ -6,17 +6,17 @@ if __name__ == '__main__':
     device = "cuda:0" #device
     dim=3 #dims, stick to <5
     X = torch.randn(n,dim).float().to(device) #generate some data
-    min_points = float(1000) # stop when dividing when the largest box has 1000 points
+    min_points = float(2500) # stop when dividing when the largest box has 1000 points
     ref_points = 5000 #calculate error on 5000 points
     x_ref = X[0:ref_points,:] #reference X
     Y = torch.rand(n,dim).float().to(device) #Generate Y if you want to do X Y interactions
     b = torch.randn(n,1).float().to(device) #weights
     Y_2 = torch.rand(n//2,dim).float().to(device)
     b_2 = torch.randn(n//2,1).float().to(device) #weights
-    ls = float(1.0) #lengthscale
+    ls = float(1e-1) #lengthscale
     nr_of_interpolation = int(64) #nr of interpolation nodes
     eff_var_limit=float(0.1) # Effective variance threshold
-    small_field_limit = 1000
+    small_field_limit = nr_of_interpolation
 
 
     keops_benchmark_0 = benchmark_matmul_double(x_ref,X,ls=ls,device=device) #get some references

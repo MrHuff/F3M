@@ -84,7 +84,7 @@ class custom_Falkon(FalkonBase):
     Running Falkon on a random dataset
     >>> X = torch.randn(1000, 10)
     >>> Y = torch.randn(1000, 1)
-    >>> kernel = falkon.kernels.GaussianKernel(3.0)
+    >>> kernel = falkon.kernels.GaussianKernelV100(3.0)
     >>> options = FalkonOptions(use_cpu=True)
     >>> model = Falkon(kernel=kernel, penalty=1e-6, M=500, options=options)
     >>> model.fit(X, Y)
@@ -228,6 +228,7 @@ class custom_Falkon(FalkonBase):
                       ("CPU" if o_opt.use_cpu else ("%d GPUs" % self.num_gpus)), flush=True)
             optim = FalkonConjugateGradient_custom(self.kernel, precond, o_opt,
                                                          weight_fn=self.weight_fn)
+            start = time.time()
             if Knm is not None:
                 beta = optim.solve(
                     Knm, None, Y, self.penalty, initial_solution=None,
@@ -236,9 +237,10 @@ class custom_Falkon(FalkonBase):
                 beta = optim.solve(
                     X, ny_points, Y, self.penalty, initial_solution=None,
                     max_iter=self.maxiter, callback=validation_cback)
-
+            end = time.time()
             self.alpha_ = precond.apply(beta)
             self.ny_points_ = ny_points
+        self.conjugate_gradient_time = end-start
         return self
 
     def _predict(self, X, ny_points, alpha: torch.Tensor) -> torch.Tensor:

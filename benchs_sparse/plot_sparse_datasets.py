@@ -9,7 +9,7 @@ elif platform.system()=='Darwin':
 
 import matplotlib.pyplot as plt
 
-from sparse_datasets import PlotData, MaternClusterData, FBMData
+from sparse_datasets import *
 import random
 import numpy as np
 import torch
@@ -22,8 +22,9 @@ torch.manual_seed(1)
 # X = MaternClusterData(3,100,100,.05)
 # PlotData(X)
 
-n = 10000
-X = FBMData(2,n,0.25)
+n = 100000000
+X = FBMData(3,n,.75)
+print(X.shape)
 PlotData(X)
 
 # X = FBMData(3,n,0.25)

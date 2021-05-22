@@ -7,7 +7,11 @@ def hover_scatter(x,y,names,plotfun=plt.plot):
     cmap = plt.cm.RdYlGn
 
     fig,ax = plt.subplots()
-    line, = plotfun(x,y, ".")
+    line, = plotfun(x.flatten(),y.flatten(), ".")
+    clr = "rgbcky"
+    for k in range(x.shape[0]):
+        plotfun(x[k,:,:],y[k,:,:],clr[k])
+        plotfun(x[k,:,:].T,y[k,:,:].T,clr[k])
     
     annot = ax.annotate("", xy=(0,0), xytext=(-20,20),textcoords="offset points",
                         bbox=dict(boxstyle="round", fc="w"),
