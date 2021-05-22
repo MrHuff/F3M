@@ -90,6 +90,7 @@ void benchmark_1(int n,float min_points, int threshold,float a,float b,float ls,
         bool var_comp,
         scalar_t var_eff,
         int small_field_limit,
+        bool old_mode,
         char* fname
         ){
     const std::string device_cuda = "cuda:0"; //officially retarded
@@ -105,7 +106,7 @@ void benchmark_1(int n,float min_points, int threshold,float a,float b,float ls,
     torch::Tensor res,res_ref;
     FFM_object<scalar_t,nd> ffm_obj = FFM_object<scalar_t, nd>(X_train, X_train, ls_in, device_cuda, min_points,
                                                                nr_of_interpolation_points,
-                                                               var_comp, var_eff, small_field_limit, false); //FMM object
+                                                               var_comp, var_eff, small_field_limit, old_mode); //FMM object
     auto start_2 = std::chrono::high_resolution_clock::now();
     res = ffm_obj * b_train; //Fast math creates problems... fast math does a lot!!!
     auto end_2 = std::chrono::high_resolution_clock::now();
@@ -136,6 +137,7 @@ void benchmark_2(int n,float min_points, int threshold,float mean,float var,floa
                  bool var_comp,
                  scalar_t var_eff,
                 int small_field_limit,
+                 bool old_mode,
                  char* fname){
     const std::string device_cuda = "cuda:0"; //officially retarded
     const std::string device_cpu = "cpu";
@@ -150,7 +152,7 @@ void benchmark_2(int n,float min_points, int threshold,float mean,float var,floa
     torch::Tensor res,res_ref;
     FFM_object<scalar_t,nd> ffm_obj = FFM_object<scalar_t, nd>(X_train, X_train, ls_in, device_cuda, min_points,
                                                                nr_of_interpolation_points,
-                                                               var_comp, var_eff, small_field_limit, false); //FMM object
+                                                               var_comp, var_eff, small_field_limit, old_mode); //FMM object
     auto start_2 = std::chrono::high_resolution_clock::now();
     res = ffm_obj * b_train; //Fast math creates problems... fast math does a lot!!!
     auto end_2 = std::chrono::high_resolution_clock::now();
