@@ -453,7 +453,7 @@ void far_field_compute_v2(
     torch::Tensor low_rank_y;
     torch::Tensor cheb_data_X = cheb_data*x_box.edge/2.+x_box.edge/2.; //scaling lagrange nodes to edge scale
     low_rank_y = torch::zeros({cheb_data.size(0)*y_box.centers.size(0),b.size(1)}).toType(dtype<scalar_t>()).to(device_gpu);
-    //Found the buggie, the low_rank_y is proportioned towards x, but when Y has more non empty boxes things implode!!!
+    //ok might want to adapt things a bit so they don't explode at the end!
     apply_laplace_interpolation_v2<scalar_t,nd>(y_box,
                                                 b,
                                                 device_gpu,
@@ -911,6 +911,7 @@ torch::Tensor FFM_XY(torch::Tensor &X_data, torch::Tensor &Y_data, torch::Tensor
         n_tree_cuda<scalar_t,nd> ntree_X = n_tree_cuda<scalar_t,nd>(edge,X_data,xmin,xmax,gpu_device);
         while (near_field.numel()>0 and ntree_X.avg_nr_points > min_points){
             ntree_X.divide();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
+            std::cout<<"depth: "<<ntree_X.depth<<std::endl;
             near_field = far_field_run<scalar_t, nd>(
                     ntree_X,
                     ntree_X,

@@ -39,7 +39,7 @@ def experiment_1(device="cuda:0"):
     """
     dirname = 'experiment_1'
     ref_points = 5000
-    ls = float(1.0) #lengthscale
+    ls = float(1.0)/2**0.5 #lengthscale
     counter = 0
     if not os.path.exists(dirname):
         os.makedirs(dirname)
@@ -54,7 +54,7 @@ def experiment_1(device="cuda:0"):
                 for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 1000000000],
                                                             [1000, 1000, 5000, 5000],
                                                             [nr_of_interpolation, nr_of_interpolation, nr_of_interpolation,
-                                                             2500]):
+                                                             nr_of_interpolation]):
                     for r2 in [0.1, 1, 10, 100]:
                         torch.manual_seed(seed)
                         X = torch.empty(n, d).uniform_(0, (r2 * 12) ** 0.5)
@@ -95,7 +95,7 @@ def experiment_2(device="cuda:0"):
     """
     recorded_data = []
     ref_points = 5000
-    ls = float(1.0)  # lengthscale
+    ls = float(1.0)/2**0.5 #lengthscale
     counter = 0
     dirname = 'experiment_2'
     if not os.path.exists(dirname):
@@ -109,7 +109,7 @@ def experiment_2(device="cuda:0"):
             for node_nr in node_list:
                 nr_of_interpolation = int(node_nr ** d)  # nr of interpolation nodes
                 for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 1000000000],
-                                                            [2500, 2500, 5000, 5000],
+                                                            [2500, 2500, 5000, 10000],
                                                             [nr_of_interpolation, nr_of_interpolation, nr_of_interpolation,
                                                              2500]):
                     for r2 in [0.1, 1, 10, 100]:
@@ -157,7 +157,7 @@ def experiment_3(device="cuda:0"):
     """
     recorded_data = []
     ref_points = 5000
-    ls = float(1.0)  # lengthscale
+    ls = float(1.0)/2**0.5 #lengthscale
     counter = 0
     dirname = 'experiment_3'
     if not os.path.exists(dirname):
@@ -171,10 +171,10 @@ def experiment_3(device="cuda:0"):
             for node_nr in node_list:
                 nr_of_interpolation = int(node_nr ** d)  # nr of interpo
                 for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 500000000],
-                                                            [2500, 2500, 5000, 5000],
+                                                            [2500, 2500, 2500, 2500],
                                                             [nr_of_interpolation, nr_of_interpolation, nr_of_interpolation,
-                                                             2500]):
-                    for r2 in [0.1,1,10,100]:
+                                                             nr_of_interpolation]):
+                    for r2 in [0.1, 1, 10, 100]:
                         torch.manual_seed(seed)
                         X = torch.empty(n, d).uniform_(0, (r2 * 12) ** 0.5)
                         Y = torch.empty(n, d).normal_(0, r2 ** 0.5)
@@ -217,7 +217,7 @@ def experiment_4(device="cuda:0"):
     """
     recorded_data = []
     ref_points = 5000
-    ls = float(1.0)  # lengthscale
+    ls = float(1.0)/2**0.5 #lengthscale
     counter = 0
     dirname = 'experiment_4'
     if not os.path.exists(dirname):
@@ -277,7 +277,7 @@ def experiment_5(device="cuda:0"):
     """
     recorded_data = []
     ref_points = 5000
-    ls = float(1.0)  # lengthscale
+    ls = float(1.0)/2**0.5 #lengthscale
     counter = 0
     dirname = 'experiment_5'
     if not os.path.exists(dirname):
@@ -336,7 +336,7 @@ def experiment_6(device="cuda:0"):
     """
     dirname = 'experiment_6'
     ref_points = 5000
-    ls = float(1.0) #lengthscale
+    ls = float(1.0)/2**0.5 #lengthscale
     counter = 0
     node_list = [256,512,1024]
     if not os.path.exists(dirname):
@@ -387,35 +387,42 @@ def experiment_7(device="cuda:0"):
     """
     dirname = 'experiment_7'
     ref_points = 5000
-    ls = float(1.0) #lengthscale
+    ls = float(1.0)/2**0.5 #lengthscale
     counter = 0
     if not os.path.exists(dirname):
         os.makedirs(dirname)
-    for seed in [1]:
+    for seed in [0]:
         for d in [4,5]:
             node_list = [256, 512, 1024]
             for nr_of_interpolation in node_list:
                 for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 500000000],
                                                             [2500, 2500, 5000, 20000],
                                                             [nr_of_interpolation, nr_of_interpolation,
-                                                             nr_of_interpolation, nr_of_interpolation]):
+                                                             nr_of_interpolation, 5000]):
                     if d>4:
                         small_field_limit = 5000
                     for r2 in [0.1,1,10,100]:
                         torch.manual_seed(seed)
-                        X = torch.empty(n, d).normal_(0, r2 ** 0.5)
-                        b = torch.empty(n, 1).normal_(0, 1)  # weights
-                        x_ref = X[0:ref_points, :]  # reference X
-                        keops_benchmark_0 = benchmark_matmul_double(x_ref, X, ls=ls,
-                                                                    device=device)  # get some references
-                        true_0 = keops_benchmark_0 @ b  # calculate reference
-                        torch.cuda.synchronize()
-                        del keops_benchmark_0, x_ref
-                        torch.cuda.empty_cache()
-                        print("benchmarks done\n")
+                        X=0
+                        b=0
+                        true_0 = 0
+                        if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
+                            X = torch.empty(n, d).normal_(0, r2 ** 0.5)
+                            b = torch.empty(n, 1).normal_(0, 1)  # weights
+                            x_ref = X[0:ref_points, :]
+                            keops_benchmark_0 = benchmark_matmul_double(x_ref, X, ls=ls,
+                                                                        device=device)  # get some references
+                            true_0 = keops_benchmark_0 @ b  # calculate reference
+                            torch.cuda.synchronize()
+                            del keops_benchmark_0, x_ref
+                            torch.cuda.empty_cache()
+                            print("benchmarks done\n")
                         for evarlimit in [0.1, 0.3, 0.5]:
                             eff_var_limit = float(evarlimit)
                             if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
+                                X = torch.empty(n, d).normal_(0, r2 ** 0.5)
+                                b = torch.empty(n, 1).normal_(0, 1)  # weights
+                                print(seed,ls,min_points)
                                 FFM_obj= FFM(X=X, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
                                               eff_var_limit=eff_var_limit, var_compression=True,
                                               device=device, small_field_points=small_field_limit)
@@ -441,7 +448,7 @@ def experiment_8(device="cuda:0"):
     """
     recorded_data = []
     ref_points = 5000
-    ls = float(1.0)  # lengthscale
+    ls = float(1.0)/2**0.5 #lengthscale
     counter = 0
     dirname = 'experiment_8'
     if not os.path.exists(dirname):
@@ -509,16 +516,13 @@ def experiment_9(device="cuda:0"):
     min_points = 5000
     for d in [2]:
         for ls in [100,10,1,0.1,1e-2]:
-
-            if ls <0.1:
-                evarlimit_list= [0.1]
-            else:
-                evarlimit_list= [0.1,0.3,0.5]
+            ls=ls**0.5/2**0.5
+            evarlimit_list= [0.1,0.3,0.5]
             for evarlimit in evarlimit_list:
                 node_list = [3, 4, 5, 6, 7, 8, 9, 10]
                 for node_nr in node_list:
                     nr_of_interpolation = int(node_nr ** d)
-                    small_field_limit = nr_of_interpolation if ls < 1 else 2500
+                    small_field_limit = nr_of_interpolation
                     eff_var_limit = float(evarlimit)
                     if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
                         torch.cuda.synchronize()

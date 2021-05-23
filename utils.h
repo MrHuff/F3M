@@ -142,13 +142,13 @@ void benchmark_2(int n,float min_points, int threshold,float mean,float var,floa
                  char* fname){
     const std::string device_cuda = "cuda:0"; //officially retarded
     const std::string device_cpu = "cpu";
-    scalar_t ls_in = (scalar_t) ls;
+    scalar_t ls_in = (scalar_t) ls/sqrt(2);
 
-//    torch::manual_seed(0);
+    torch::manual_seed(0);
 
 //    torch::Tensor X_train = read_csv<float>("X_train_PCA.csv",11619,3); something wrong with data probably...
 //    torch::Tensor b_train = read_csv<float>("Y_train.csv",11619,1); something wrong with data probably...
-    torch::Tensor X_train = torch::empty({n,nd}).normal_(mean, var).toType(dtype<scalar_t>()).to(device_cuda)/(sqrt(2)*ls); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
+    torch::Tensor X_train = torch::empty({n,nd}).normal_(mean, sqrt(var)).toType(dtype<scalar_t>()).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
     torch::Tensor b_train = torch::randn({n,1}).toType(dtype<scalar_t>()).to(device_cuda);
     torch::Tensor res,res_ref;
     FFM_object<scalar_t,nd> ffm_obj = FFM_object<scalar_t, nd>(X_train, X_train, ls_in, device_cuda, min_points,

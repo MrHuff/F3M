@@ -21,10 +21,10 @@ class Container(torch.nn.Module):
 
 def DoBench(todolist):
 
-    # todo_N = ["1e6", "1e7", "1e8","1e9"]                         # number of points
-    # Niters = [3, 3,3,3]  # nb of trials for each N
-    todo_N = ["1e8"]                         # number of points
-    Niters = [3]  # nb of trials for each N
+    todo_N = ["1e6", "1e7", "1e8","1e9"]                         # number of points
+    Niters = [1, 1,1,1]  # nb of trials for each N
+    # todo_N = ["1e9"]                         # number of points
+    # Niters = [1]  # nb of trials for each N
     todo_ls = [float(.01), float(.1), float(1),float(10)]          # lengthscales
     
     # FFM parameters
@@ -33,7 +33,7 @@ def DoBench(todolist):
     # Effective variance threshold
     eff_var_limit = [float(0.1), float(0.3),  float(0.5)]
     # stop when dividing when the largest box has 1000 points
-    min_points = [float(5000)]              
+    min_points = [float(5000)]
     # variance compression 
     var_compression = [True]
                 
@@ -45,8 +45,7 @@ def DoBench(todolist):
                 for it in range(Niter):
                     X, title = eval(dataset_fun+Nstr)()
                     title += "_ls" + str(ls)
-                
-                    sqls = ls**2                              # square of lengthscale
+                    sqls = (ls/2)**0.5                           # square of lengthscale
                     X = X.float()
                     n, dim = X.shape
                     b = torch.randn(n,1).float()   # weights

@@ -1,19 +1,4 @@
-import torch
-import matplotlib.pyplot as plt
 
-import numpy as np
-torch.set_printoptions(profile="full")
-
-x = np.array([10**i for i in range(1,10)])
-y = x*np.log10(x)
-
-x_trans  = np.log10(x)
-y_trans  = np.log10(y)
-plt.plot(x_trans,y_trans)
-plt.show()
-
-m, b = np.polyfit(x_trans, y_trans, 1)
-print(m,b)
 # def divide(old_interactions, depth, p):
 #     n = old_interactions.shape[0]
 #     arr = torch.arange(p)
@@ -45,67 +30,70 @@ print(m,b)
 
 
 
-# import torch
+import torch
 #
-# from FFM_classes import *
-# import time
-# from run_obj import *
+from FFM_classes import *
+import time
+from run_obj import *
 
 
 # import pykeops
-# # pykeops.clean_pykeops()
-#
-# if __name__ == '__main__':
-#     N = 1000000000
-#     d=3
-#     m = 100000
-#     X = torch.rand(N, d).float()
-#     b = torch.randn(N, 1).float()
-#     x_ref =  torch.rand(m,d).float()
-#     ls = 9
-#     min_points = 2500
-#     small_field = 64
-#     # obj_test = FFM(X=X,ls=ls,min_points=min_points,eff_var_limit=0.1,var_compression=True,small_field_points=64)
-#     # start= time.time()
-#     # obj_test@b
-#     # end = time.time()
-#     # sq_time =end-start
-#     # print(sq_time)
-#     # feels very much like a cache/loading issue??!?!?!?!?!
-#     # timing doesn't work either...
-#     obj_test = FFM(X=x_ref,Y=X,ls=ls,min_points=min_points,eff_var_limit=0.1,var_compression=True,small_field_points=small_field)
-#     start= time.time()
-#     f_1 = obj_test@b
-#     end = time.time()
-#     asymetric_time =end-start
-#     print(asymetric_time)
-#
-#     # obj_test_2 = FFM(X=X,Y=x_ref,ls=ls,min_points=min_points,eff_var_limit=0.1,var_compression=True,small_field_points=small_field)
-#     # # start= time.time()
-#     # f_2 = obj_test_2@f_1
-#     # end = time.time()
-#     # transpose =end-start
-#     # print(transpose)
-#
-#     bmark_1 = keops_matmul(X=x_ref,Y=X,ls=ls,type=torch.float32)
-#     # bmark_2 = keops_matmul(X=x_ref,Y=X,ls=ls,type=torch.float32)
-#     #
-#     #
-#     # start= time.time()
-#     # res = bmark_2@b
-#     # end = time.time()
-#     # keops_full =end-start
-#     #
-#     start= time.time()
-#     bmark_1@b
-#     end = time.time()
-#     keops_assym =end-start
-#     # # print('sq_time: ',sq_time)
-#     # print('transpose_time: ',transpose)
-#     # # print('keops_full: ',keops_full)
-#     print('keops_assym: ',keops_assym)
-#
-#
+# pykeops.clean_pykeops()
+
+if __name__ == '__main__':
+    N = 1000000000
+    d=3
+    m = 100000
+    X = torch.rand(N, d).float()
+    b = torch.randn(N, 1).float()
+    x_ref = X[:m].float()
+    ls = 1
+    min_points = 5000
+    small_field = 64
+    # obj_test = FFM(X=X,ls=ls,min_points=min_points,eff_var_limit=0.1,var_compression=True,small_field_points=64)
+    # start= time.time()
+    # obj_test@b
+    # end = time.time()
+    # sq_time =end-start
+    # print(sq_time)
+    # feels very much like a cache/loading issue??!?!?!?!?!
+    # timing doesn't work either...
+    obj_test = FFM(X=x_ref,Y=X,ls=ls,min_points=min_points,eff_var_limit=0.1,var_compression=True,small_field_points=small_field)
+    start= time.time()
+    f_1 = obj_test@b
+    end = time.time()
+    asymetric_time =end-start
+    print(asymetric_time)
+
+    # obj_test_2 = FFM(X=X,Y=x_ref,ls=ls,min_points=min_points,eff_var_limit=0.1,var_compression=True,small_field_points=small_field)
+    # # start= time.time()
+    # f_2 = obj_test_2@f_1
+    # end = time.time()
+    # transpose =end-start
+    # print(transpose)
+
+    # bmark_1 = keops_matmul(X=x_ref,Y=X,ls=ls,type=torch.float32)
+    bmark_2 = benchmark_matmul(X=x_ref,Y=X,ls=ls)
+    #
+    #
+    start= time.time()
+    res = bmark_2@b
+    end = time.time()
+    keops_full =end-start
+    print(keops_full)
+    print(torch.norm(res-f_1)/torch.norm(res))
+
+    #
+    # start= time.time()
+    # bmark_1@b
+    # end = time.time()
+    # keops_assym =end-start
+    # # print('sq_time: ',sq_time)
+    # print('transpose_time: ',transpose)
+    # # print('keops_full: ',keops_full)
+    # print('keops_assym: ',keops_assym)
+
+
 # # torch.multiprocessing.set_start_method('spawn')# good solution !!!!
 #     # N = 100000000
 #     # d = 3

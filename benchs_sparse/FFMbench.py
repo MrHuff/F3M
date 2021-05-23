@@ -14,7 +14,7 @@ def FFMbench(X, Y, b, sqls, title, Niter):
     os.chdir(source_dir)
 
     from FFM_classes import FFM
-    from run_obj import benchmark_matmul, calc_rel_error_norm,benchmark_matmul_double
+    from run_obj import benchmark_matmul, calc_rel_error_norm,benchmark_matmul_double,calc_abs_error
     import itertools
     import torch
     
@@ -46,6 +46,7 @@ def FFMbench(X, Y, b, sqls, title, Niter):
     def call(**kwargs_list):
         elapsed = np.array([])
         rel_err = np.array([])
+        abs_err = np.array([])
         kwargs_rec = []
         for k,params in enumerate(itertools.product(*kwargs_list.values())):
             kwargs = dict()
@@ -55,23 +56,26 @@ def FFMbench(X, Y, b, sqls, title, Niter):
             print("\ntesting with parameters :", dict2str(kwargs))
             print("\n datasize: ", X.shape[0])
             myFFM = FFM(X=X, ls=sqls, device=device, **kwargs)
-            elapsed_k = rel_err_k = 0
+            elapsed_k = rel_err_k = abs_err_k= 0
             for it in range(Niter):
                 start = time.time()
                 res = myFFM @ b
                 end = time.time()
                 elapsed_k += end-start
                 rel_err_k += calc_rel_error_norm(true_res=res_ref, approx_res=res[:ref_points]).item()
+                abs_err_k += calc_abs_error(true_res=res_ref, approx_res=res[:ref_points]).item()
             elapsed_k /= Niter
             rel_err_k /= Niter
+            abs_err_k /= Niter
             print(f'elapsed: {elapsed_k} s (averaged over {Niter} iteration(s))')
             print(f'error: {rel_err_k} (averaged over {Niter} iteration(s))')
+            print(f'abs error: {abs_err_k} (averaged over {Niter} iteration(s))')
             elapsed = np.append(elapsed, elapsed_k)
             rel_err = np.append(rel_err, rel_err_k)
+            abs_err = np.append(abs_err,abs_err_k)
             del myFFM
             torch.cuda.empty_cache()
-        Xcpu, Ycpu, bcpu = X.cpu(), (Y.cpu() if Y is not None else None), b.cpu()
-        return dict(X=Xcpu, Y=Ycpu, b=bcpu, sqls=sqls, elapsed=elapsed, rel_err=rel_err, kwargs_list=kwargs_list, kwargs_rec=kwargs_rec, title=title)
+        return dict(sqls=sqls, elapsed=elapsed,abs_err=abs_err, rel_err=rel_err, kwargs_list=kwargs_list, kwargs_rec=kwargs_rec, title=title)
     
     return call
 

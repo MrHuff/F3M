@@ -66,7 +66,6 @@ def uniform_X():
                 for ls in [10,1,0.1]:
                     ls = ls ** 0.5
                     Y = generate_random_problem(X, 1000, ls)
-
                     for nr_of_interpolation in [27, 40, 64, 100]:
                         if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
                             torch.cuda.synchronize()
@@ -74,7 +73,7 @@ def uniform_X():
                                                            var_compression=True,
                                                            interpolation_nr=nr_of_interpolation)
 
-                            options = falkon.FalkonOptions(use_cpu=False, debug=False)
+                            options = falkon.FalkonOptions(use_cpu=False, debug=True)
                             model = custom_Falkon(kernel=kernel, penalty=penalty, M=M, options=options)
 
                             start = time.time()
@@ -167,7 +166,7 @@ def normal_X():
                     for nr_of_interpolation in [27, 40, 64, 100]:
                         if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
                             torch.cuda.synchronize()
-                            kernel = custom_GaussianKernel(sigma=ls, min_points=nr_of_interpolation,
+                            kernel = custom_GaussianKernel(sigma=ls, min_points=int(M*0.95),
                                                            var_compression=True,
                                                            interpolation_nr=nr_of_interpolation)
 
@@ -191,8 +190,6 @@ def normal_X():
                                               INFERENCE_TIME)
                             df.to_csv(f'{dirname}/{dirname}_{counter}.csv')
                             print('Wrote experiments: ', counter)
-                            counter += 1
-                            print('counter: ', counter)
                             del kernel, preds, model
                             torch.cuda.empty_cache()
                         counter += 1

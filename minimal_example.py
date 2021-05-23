@@ -13,7 +13,7 @@ if __name__ == '__main__':
     b = torch.randn(n,1).float().to(device) #weights
     Y_2 = torch.rand(n//2,dim).float().to(device)
     b_2 = torch.randn(n//2,1).float().to(device) #weights
-    ls = float(1e-1) #lengthscale
+    ls = float(1) #lengthscale
     nr_of_interpolation = int(64) #nr of interpolation nodes
     eff_var_limit=float(0.1) # Effective variance threshold
     small_field_limit = nr_of_interpolation

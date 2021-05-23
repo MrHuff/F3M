@@ -64,7 +64,7 @@ __device__ void device_insert(KeyValue* hashtable,int key, int value,int * table
                 return;
             }
 
-            slot = (slot + 1) % (kHashTableCapacity-1);
+            slot = (slot + 1) % (*table_size-1);
         }
     }
 
@@ -82,7 +82,7 @@ __device__ int device_lookup(KeyValue* hashtable,int & key,int * table_size){
         {
             return kEmpty;
         }
-        slot = (slot + 1) % (kHashTableCapacity - 1);
+        slot = (slot + 1) % (*table_size - 1);
     }
 }
 

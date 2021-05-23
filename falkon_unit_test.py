@@ -47,7 +47,7 @@ if __name__ == '__main__':
     # OK PICK YOUR POISON, EITHER ONE IS SLOW OR ONE IS FAST DEPENDING ON TRANSPOSE, MIGHT ALMOST SWITCH TAG IN BETWEEN
     # WHAT THE FUCK IS GOING ON????
     nr_of_interpolation_nodes = 64
-    kernel = custom_GaussianKernel(sigma=ls,min_points=7500,var_compression=True,interpolation_nr=nr_of_interpolation_nodes)
+    kernel = custom_GaussianKernel(sigma=ls,min_points=9500,var_compression=True,interpolation_nr=nr_of_interpolation_nodes)
     options = falkon.FalkonOptions(use_cpu=False,debug=True)
     model = custom_Falkon(kernel=kernel, penalty=penalty, M=M, options=options)
     model.fit(X, Y)

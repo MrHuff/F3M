@@ -9,7 +9,7 @@ import time
 class custom_GaussianKernel(GaussianKernel):
     def __init__(self, sigma: Union[float, torch.Tensor], opt: Optional[FalkonOptions] = None,min_points: [float]=None,var_compression: [bool]=True,interpolation_nr: [int]=64):
         super(custom_GaussianKernel, self).__init__(sigma,opt)
-        self.ls = sigma**2
+        self.ls = sigma
         self.min_points = min_points
         self.ffm_initialized = False
         self.device = "cuda:0"
