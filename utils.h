@@ -90,12 +90,13 @@ void benchmark_1(int n,float min_points, int threshold,float a,float b,float ls,
         bool var_comp,
         scalar_t var_eff,
         int small_field_limit,
-        char* fname
+        char* fname,
+        int seed
         ){
     const std::string device_cuda = "cuda:0"; //officially retarded
     const std::string device_cpu = "cpu";
     scalar_t ls_in = (scalar_t) ls;
-    torch::manual_seed(0);
+    torch::manual_seed(seed);
 //    torch::Tensor X_train = read_csv<float>("X_train_PCA.csv",11619,3); something wrong with data probably...
 //    torch::Tensor b_train = read_csv<float>("Y_train.csv",11619,1); something wrong with data probably...
     torch::Tensor X_train = torch::empty({n,nd}).uniform_(a, b).toType(dtype<scalar_t>()).to(device_cuda)/(sqrt(2)*ls); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
@@ -139,12 +140,15 @@ void benchmark_2(int n,float min_points, int threshold,float mean,float var,floa
                  bool var_comp,
                  scalar_t var_eff,
                 int small_field_limit,
-                 char* fname){
+                 char* fname,
+                 int seed
+
+){
     const std::string device_cuda = "cuda:0"; //officially retarded
     const std::string device_cpu = "cpu";
     scalar_t ls_in = (scalar_t) ls/sqrt(2);
 
-    torch::manual_seed(0);
+    torch::manual_seed(seed);
 
 //    torch::Tensor X_train = read_csv<float>("X_train_PCA.csv",11619,3); something wrong with data probably...
 //    torch::Tensor b_train = read_csv<float>("Y_train.csv",11619,1); something wrong with data probably...
@@ -191,15 +195,17 @@ void benchmark_3(int n,float min_points, int threshold,float mean,float var,floa
                  bool var_comp,
                  scalar_t var_eff,
                  int small_field_limit,
-                 char* fname
-                 ){
+                 char* fname,
+                 int seed
+
+){
     const std::string device_cuda = "cuda:0"; //officially retarded
     const std::string device_cpu = "cpu";
     scalar_t ls_in = (scalar_t) ls;
 
-
-    torch::Tensor Y_train = torch::empty({n,nd}).normal_(mean, sqrt(var)).toType(dtype<scalar_t>()).to(device_cuda)/(sqrt(2)*ls); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
-    torch::Tensor X_train = torch::empty({n,nd}).uniform_(mean, sqrt(var*12.0)).toType(dtype<scalar_t>()).to(device_cuda)/(sqrt(2)*ls); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
+    torch::manual_seed(seed);
+    torch::Tensor Y_train = torch::empty({n,nd}).normal_(mean, sqrt(var)).toType(dtype<scalar_t>()).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
+    torch::Tensor X_train = torch::empty({n,nd}).uniform_(mean, sqrt(var*12.0)).toType(dtype<scalar_t>()).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
     torch::Tensor b_train = torch::randn({n,1}).toType(dtype<scalar_t>()).to(device_cuda);
     torch::Tensor res,res_ref;
     FFM_object<scalar_t,nd> ffm_obj = FFM_object<scalar_t, nd>(X_train, Y_train, ls_in, device_cuda, min_points,
