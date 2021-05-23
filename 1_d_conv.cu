@@ -247,20 +247,26 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor64<scalar_t
                                     const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> x_idx_reordering,
                                     const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> y_idx_reordering,
                                     const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions_x_parsed,
-                                    const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> interactions_y
+                                    const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> interactions_y,
+                                    KeyValue* hash_list,
+                                    int * hash_list_size
 
 ){
     int i,box_ind,start,end,a,b,int_m,x_idx_reorder,b_size,interactions_a,interactions_b;
     box_ind = block_box_indicator[blockIdx.x];
     a = x_boxes_count[box_ind];
     b = x_boxes_count[box_ind+1];
+//    printf("box ind 1 %i\n",box_ind);
+
     i = a + threadIdx.x+box_block_indicator[blockIdx.x]*blockDim.x; // Use within box, block index i.e. same size as indicator...
     scalar_t x_i[nd];
     scalar_t acc;
+    extern __shared__ int int_buffer[];
     extern __shared__ __align__(sizeof(scalar_t)) unsigned char my_smem[];
     scalar_t *buffer = reinterpret_cast<scalar_t *>(my_smem);
-    scalar_t *yj = &buffer[0];
-    scalar_t *bj = &buffer[blockDim.x*nd];
+    int *map_back = &int_buffer[0];
+    scalar_t *yj = &buffer[1];
+    scalar_t *bj = &buffer[blockDim.x*nd+1];
     //Load these points only... the rest gets no points... threadIdx.x +a to b. ...
     b_size = b_data.size(1);
     if (i<b) {
@@ -269,42 +275,45 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor64<scalar_t
             x_i[k] = X_data[x_idx_reorder][k];
         }
     }
-
-    interactions_a = interactions_x_parsed[box_ind][0];
-    interactions_b= interactions_x_parsed[box_ind][1];
-    if (interactions_a>-1) {
-        for (int b_ind = 0; b_ind < b_size; b_ind++) { //for all dims of b
-            acc = 0;
-
-            for (int m = interactions_a; m < interactions_b; m++) {
-                //Pass near field interactions...
-                int_m = interactions_y[m];
-                start = y_boxes_count[int_m]; // 0 to something
-                end = y_boxes_count[int_m + 1]; // seomthing
-                for (int jstart = start, tile = 0; jstart < end; jstart += blockDim.x, tile++) {
-                    int j = start + tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
-                    if (j < end) { // we load yj from device global memory only if j<ny
-                        torch_load_y_v2<scalar_t, nd>(y_idx_reordering[j], yj, Y_data);
-                        torch_load_b_v2<scalar_t, nd>(b_ind, y_idx_reordering[j], bj, b_data);
-                    }
-                    __syncthreads();
-                    if (i < b) { // we compute x1i only if needed
-                        scalar_t *yjrel = yj; // Loop on the columns of the current block.
-                        for (int jrel = 0; (jrel < blockDim.x) && (jrel < end - jstart); jrel++, yjrel += nd) {
-                            acc += rbf<scalar_t, nd>(x_i, yjrel, ls) *
-                                   bj[jrel]; //sums incorrectly cause pointer is fucked not sure if allocating properly
-                        }
-                    }
-                    __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
-                };
-
-            }
-            if (i < b) {
-                output[x_idx_reorder][b_ind] += acc;
-            }
-        }
-        __syncthreads();
+    if(threadIdx.x==0){
+        map_back[0] = device_lookup(hash_list,box_ind,hash_list_size);
     }
+    __syncthreads();
+//    printf("box ind %i, map back %i\n",box_ind,map_back[0]);
+    interactions_a = interactions_x_parsed[map_back[0]][0]; //get your hashlist...
+    interactions_b= interactions_x_parsed[map_back[0]][1]; //
+//    if (interactions_a>-1) {
+    for (int b_ind = 0; b_ind < b_size; b_ind++) { //for all dims of b
+        acc = 0;
+        for (int m = interactions_a; m < interactions_b; m++) {
+            //Pass near field interactions...
+            int_m = interactions_y[m];
+            start = y_boxes_count[int_m]; // 0 to something
+            end = y_boxes_count[int_m + 1]; // seomthing
+            for (int jstart = start, tile = 0; jstart < end; jstart += blockDim.x, tile++) {
+                int j = start + tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
+                if (j < end) { // we load yj from device global memory only if j<ny
+                    torch_load_y_v2<scalar_t, nd>(y_idx_reordering[j], yj, Y_data);
+                    torch_load_b_v2<scalar_t, nd>(b_ind, y_idx_reordering[j], bj, b_data);
+                }
+                __syncthreads();
+                if (i < b) { // we compute x1i only if needed
+                    scalar_t *yjrel = yj; // Loop on the columns of the current block.
+                    for (int jrel = 0; (jrel < blockDim.x) && (jrel < end - jstart); jrel++, yjrel += nd) {
+                        acc += rbf<scalar_t, nd>(x_i, yjrel, ls) *
+                               bj[jrel]; //sums incorrectly cause pointer is fucked not sure if allocating properly
+                    }
+                }
+                __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
+            };
+
+        }
+        if (i < b) {
+            output[x_idx_reorder][b_ind] += acc;
+        }
+    }
+    __syncthreads();
+//    }
 }
 template <typename scalar_t,int nd>
 __device__ __forceinline__ void lagrange_data_load(scalar_t w[],
@@ -353,8 +362,9 @@ __global__ void lagrange_shared(
         const scalar_t * edge,
         const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> idx_reordering,
         const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> node_list_cum,
-        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> W
-
+        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> W,
+        KeyValue* hash_list,
+        int * hash_list_size
 ){
     int i,a,b,cheb_data_size,idx_reorder,laplace_n,b_size,box_ind;
     box_ind = indicator[blockIdx.x];
@@ -372,11 +382,14 @@ __global__ void lagrange_shared(
     extern __shared__ int int_buffer[];
     extern __shared__ __align__(sizeof(scalar_t)) unsigned char my_smem[];
     scalar_t *buffer = reinterpret_cast<scalar_t *>(my_smem);
-    int *node_cum_shared = &int_buffer[0];
-    int *yj = &int_buffer[1+nd];
-    scalar_t *l_p = &buffer[blockDim.x*nd+1+nd];
-    scalar_t *w_shared = &buffer[blockDim.x*nd+1+nd+laplace_n];
-
+    int *box_ind_hash = &int_buffer[0];
+    int *node_cum_shared = &int_buffer[1];
+    int *yj = &int_buffer[2+nd];
+    scalar_t *l_p = &buffer[blockDim.x*nd+2+nd];
+    scalar_t *w_shared = &buffer[blockDim.x*nd+2+nd+laplace_n];
+    if (threadIdx.x==0){
+        box_ind_hash[0]= device_lookup(hash_list,box_ind,hash_list_size);
+    }
     if (threadIdx.x<nd+1){
         if (threadIdx.x==0){
             node_cum_shared[threadIdx.x]=0;
@@ -427,7 +440,7 @@ __global__ void lagrange_shared(
                 int *yjrel = yj; // Loop on the columns of the current block.
                 for (int jrel = 0; (jrel < blockDim.x) && (jrel < cheb_data_size - jstart); jrel++, yjrel += nd) {
 //                    atomicAdd(&output[jstart+jrel+box_ind*cheb_data_size][b_ind],calculate_lagrange_product<scalar_t, nd>(l_p, x_i, yjrel, b_i, node_cum_shared)); //for each p, sum accross x's...
-                    atomicAdd(&output[jstart+jrel+box_ind*cheb_data_size][b_ind],calculate_barycentric_lagrange<scalar_t,nd>(l_p,w_shared,x_i,l_x,pBoolean,yjrel,b_i)); //for each p, sum accross x's...
+                    atomicAdd(&output[jstart+jrel+box_ind_hash[0]*cheb_data_size][b_ind],calculate_barycentric_lagrange<scalar_t,nd>(l_p,w_shared,x_i,l_x,pBoolean,yjrel,b_i)); //for each p, sum accross x's...
                 }
             }
             __syncthreads();
@@ -452,7 +465,9 @@ __global__ void laplace_shared_transpose(
         const scalar_t * edge,
         const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> idx_reordering,
         const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> node_list_cum,
-        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> W
+        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> W,
+        KeyValue* hash_list,
+        int * hash_list_size
 ) {
 
     int laplace_n,i, box_ind, a, b,cheb_data_size,idx_reorder,b_size;
@@ -471,11 +486,15 @@ __global__ void laplace_shared_transpose(
     extern __shared__ int int_buffer[];
     extern __shared__ __align__(sizeof(scalar_t)) unsigned char my_smem[];
     scalar_t *buffer = reinterpret_cast<scalar_t *>(my_smem);
-    int *node_cum_shared = &int_buffer[0];
-    int *yj = &int_buffer[1+nd];
-    scalar_t *bj = &buffer[(blockDim.x+1) * nd+1];
-    scalar_t *l_p = &buffer[(blockDim.x+1) * nd+blockDim.x+1];
-    scalar_t *w_shared = &buffer[(blockDim.x+1) * nd+blockDim.x+1+laplace_n];
+    int *box_ind_hash = &int_buffer[0];
+    int *node_cum_shared = &int_buffer[1];
+    int *yj = &int_buffer[2+nd];
+    scalar_t *bj = &buffer[(blockDim.x+1) * nd+2];
+    scalar_t *l_p = &buffer[(blockDim.x+1) * nd+blockDim.x+2];
+    scalar_t *w_shared = &buffer[(blockDim.x+1) * nd+blockDim.x+2+laplace_n];
+    if (threadIdx.x==0){
+        box_ind_hash[0]= device_lookup(hash_list,box_ind,hash_list_size);
+    }
     if (threadIdx.x<nd+1){
         if (threadIdx.x==0){
             node_cum_shared[0] = (int) 0;
@@ -518,7 +537,7 @@ __global__ void laplace_shared_transpose(
             int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
             if (j < cheb_data_size) { // we load yj from device global memory only if j<ny
                 torch_load_y<int,nd>(j, yj, combinations);
-                torch_load_b<scalar_t>(b_ind, j + box_ind * cheb_data_size, bj, b_data); //b's are incorrectly loaded
+                torch_load_b<scalar_t>(b_ind, j + box_ind_hash[0] * cheb_data_size, bj, b_data); //b's are incorrectly loaded
             }
             __syncthreads();
             if (i < b) { // we compute x1i only if needed
@@ -554,23 +573,25 @@ __global__ void skip_conv_far_boxes_opt(//needs rethinking
         const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> indicator,
         const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> box_block_indicator,
         const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions_x_parsed,
-        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> interactions_y
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> interactions_y,
+        KeyValue* hash_list_x,
+        int * hash_list_size_x,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> interactions_y_hash
 
 ){
-    int box_ind,a,cheb_data_size,int_m,interactions_a,interactions_b,b_size;
+    int box_ind,a,cheb_data_size,int_m,interactions_a,interactions_b,b_size,box_ind_hash;
     cheb_data_size = cheb_data_X.size(0);
     box_ind = indicator[blockIdx.x];
-    a = box_ind* cheb_data_size;
+    box_ind_hash  = device_lookup(hash_list_x,box_ind,hash_list_size_x);
+    a = box_ind_hash* cheb_data_size;
     int i = a + threadIdx.x+box_block_indicator[blockIdx.x]*blockDim.x; // Use within box, block index i.e. same size as indicator...
     int i_calc = threadIdx.x+box_block_indicator[blockIdx.x]*blockDim.x;
     scalar_t x_i[nd];
-//    scalar_t y_j[nd];
     scalar_t acc;
     extern __shared__ __align__(sizeof(scalar_t)) unsigned char my_smem[];
     scalar_t *buffer = reinterpret_cast<scalar_t *>(my_smem);
     scalar_t *yj = &buffer[0];
     scalar_t *bj = &buffer[blockDim.x*nd];
-//    scalar_t *distance = &buffer[cheb_data_size*(nd+1)];
     scalar_t *cX_i = &buffer[blockDim.x*(nd+1)]; //Get another shared memory pointer.
 
     if (threadIdx.x<nd){
@@ -582,43 +603,44 @@ __global__ void skip_conv_far_boxes_opt(//needs rethinking
             x_i[k] = cheb_data_X[i_calc][k];
         }
     }
+    __syncthreads();
+    interactions_a = interactions_x_parsed[box_ind_hash][0];//first hashing... for x
+    interactions_b= interactions_x_parsed[box_ind_hash][1];
 
-    interactions_a = interactions_x_parsed[box_ind][0];
-    interactions_b= interactions_x_parsed[box_ind][1];
+    int box_ind_hash_y;
     b_size = b_data.size(1);
-    if (interactions_a>-1) {
-        for (int b_ind = 0;b_ind <b_size ; b_ind++) { //for all dims of b A*b, b \in \mathbb{R}^{n\times d}, d>=1.
-            acc = 0;
-            for (int m = interactions_a; m < interactions_b; m++) {
-                int_m = interactions_y[m];
-                for (int jstart = 0, tile = 0; jstart < cheb_data_size; jstart += blockDim.x, tile++) {
-                    int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
-                    if (j < cheb_data_size) {
-                        for (int k = 0; k < nd; k++) {
-                            yj[nd * threadIdx.x+k] = cheb_data_Y[j][k]+centers_Y[int_m][k] - cX_i[k]; //Error also occurs here!
-                        }
-                        bj[threadIdx.x] = b_data[j + int_m * cheb_data_size][b_ind];
+    for (int b_ind = 0;b_ind <b_size ; b_ind++) { //for all dims of b A*b, b \in \mathbb{R}^{n\times d}, d>=1.
+        acc = 0;
+        for (int m = interactions_a; m < interactions_b; m++) {
+            int_m = interactions_y[m];
+            box_ind_hash_y = interactions_y_hash[m];
+            for (int jstart = 0, tile = 0; jstart < cheb_data_size; jstart += blockDim.x, tile++) {
+                int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
+                if (j < cheb_data_size) {
+                    for (int k = 0; k < nd; k++) {
+                        yj[nd * threadIdx.x+k] = cheb_data_Y[j][k]+centers_Y[int_m][k] - cX_i[k]; //Error also occurs here!
                     }
-                    __syncthreads(); //Need to be smart with this, don't slow down the others!
-                    if (i_calc < cheb_data_size) { // we compute x1i only if needed
-                        scalar_t *yjrel = yj; // Loop on the columns of the current block.
-                        for (int p = 0; (p < blockDim.x) && (p < cheb_data_size - jstart); p++, yjrel += nd) {
-                            acc += rbf<scalar_t,nd>(x_i, yjrel, ls)* bj[p]; //sums incorrectly cause pointer is fucked not sure if allocating properly
-                        }
+                    bj[threadIdx.x] = b_data[j + box_ind_hash_y * cheb_data_size][b_ind];//second hashing for Y
+                }
+                __syncthreads(); //Need to be smart with this, don't slow down the others!
+                if (i_calc < cheb_data_size) { // we compute x1i only if needed
+                    scalar_t *yjrel = yj; // Loop on the columns of the current block.
+                    for (int p = 0; (p < blockDim.x) && (p < cheb_data_size - jstart); p++, yjrel += nd) {
+                        acc += rbf<scalar_t,nd>(x_i, yjrel, ls)* bj[p]; //sums incorrectly cause pointer is fucked not sure if allocating properly
                     }
-                    __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
                 }
                 __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
-
             }
-            if (i_calc < cheb_data_size) { // we compute x1i only if needed
-                output[i][b_ind] += acc;
-            }
-            __syncthreads();
+            __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
 
         }
-//        __syncthreads();
+        if (i_calc < cheb_data_size) { // we compute x1i only if needed
+            output[i][b_ind] = acc;
+        }
+        __syncthreads();
+
     }
+    __syncthreads();
 }
 /*****
  *
@@ -634,19 +656,18 @@ __global__ void skip_conv_far_boxes_opt(//needs rethinking
 //
 
 __global__ void parse_x_boxes(
-        const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> box_cumsum,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> box_cumsum,
         torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> results
 ){
     int tid  = threadIdx.x + blockDim.x*blockIdx.x;
     int n = box_cumsum.size(0);
     if (tid<n){
-        int box_nr = box_cumsum[tid][0];
         if (tid==0){
-            results[box_nr][0] = 0;
-            results[box_nr][1] = box_cumsum[tid][1];
+            results[tid][0] = 0;
+            results[tid][1] = box_cumsum[tid];
         }else{
-            results[box_nr][0] = box_cumsum[tid-1][1];
-            results[box_nr][1] = box_cumsum[tid][1];
+            results[tid][0] = box_cumsum[tid-1];
+            results[tid][1] = box_cumsum[tid];
         }
     }
     __syncthreads();
@@ -994,4 +1015,40 @@ __global__ void box_division_assign_hash(
     }
     int perm_val = device_lookup(perm,idx,hash_size);
     sorted_index[atomicAdd(&global_unique[perm_val],1)+global_vector_counter_cum[perm_val]] = i;
+}
+
+__global__ void hash_into_natural_order(
+        KeyValue* hash_list,
+        int * hash_size,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> hash_these_values_into_natural_order
+){
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    if (i>hash_these_values_into_natural_order.size(0)-1){return;}
+    device_insert(hash_list,hash_these_values_into_natural_order[i],i,hash_size);
+    __syncthreads();
+
+}
+
+__global__ void sanity_check_hash_into_natural_order(
+        KeyValue* hash_list,
+        int * hash_size,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> hash_these_values_into_natural_order
+){
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    if (i>hash_these_values_into_natural_order.size(0)-1){return;}
+    int j = device_lookup(hash_list,hash_these_values_into_natural_order[i],hash_size);
+    printf("key %i, val %i\n",hash_these_values_into_natural_order[i],j);
+    __syncthreads();
+}
+
+__global__ void create_interactions_hash_y(
+        KeyValue* hash_list,
+        int * hash_size,
+        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> interactions_hash_y
+){
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    if (i>interactions_hash_y.size(0)-1){return;}
+    int key = interactions_hash_y[i];
+    int val = device_lookup(hash_list,key,hash_size);
+    interactions_hash_y[i]=val;
 }
