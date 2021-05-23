@@ -335,7 +335,7 @@ void benchmark_6(int n,float min_points, int threshold,float mean,float var,floa
 //    exact_MV<float> ffm_obj_grad_exact = exact_MV<float>(X,X,ls,op_grad,lambda,device_cuda);
     std::cout<<"------------- "<<"Normal distribution: "<< "mean "<<mean<<" box_variance "<<var<<" n: "<<n<<" min_points: "<< min_points <<" nr_interpolation_points: "<<nr_of_interpolation_points <<" -------------"<<std::endl;
     torch::Tensor subsampled_X = X_train.slice(0,0,threshold);
-    exact_MV<scalar_t,nd> exact_ref = exact_MV<scalar_t,nd>(subsampled_X, X_train, ls_in);
+    exact_MV<scalar_t,nd> exact_ref = exact_MV<scalar_t,nd>(subsampled_X, Y_train, ls_in);
 
 
     auto start = std::chrono::high_resolution_clock::now();

@@ -645,29 +645,20 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> separate_interactions(
     torch::Tensor edge = ntree_X.edge;
     scalar_t square_edge = edge.item<scalar_t>()*edge.item<scalar_t>()*ls;
     bool do_inital_check = square_edge<=3;
-    bool enable_smooth_field = square_edge<=0.1;
     auto d_bool_check = allocate_scalar_to_cuda<bool>(do_inital_check);
     if(var_comp){
-        torch::Tensor x_var,max_var_x,max_var_y,tmp;
-        auto *d_eff_var_limit = allocate_scalar_to_cuda<scalar_t>(eff_var_limit);
-        x_var = get_low_variance_pairs<scalar_t,nd>(ntree_X,ntree_X.box_indices_sorted);
-        std::tie(max_var_x,tmp) = x_var.max(1);
-        max_var_x = max_var_x*ls;
-        if (ntree_X.data.data_ptr()!=ntree_Y.data.data_ptr()){
-            torch::Tensor y_var = get_low_variance_pairs<scalar_t,nd>(ntree_Y,ntree_Y.box_indices_sorted);
-            std::tie(max_var_y,tmp) = y_var.max(1);
-            max_var_y = max_var_y*ls;
-        }else{
-            max_var_y = max_var_x;
-        }
-
+        bool enable_smooth_field_pair = (square_edge/12)<=eff_var_limit;
+        bool enable_smooth_field_all = (square_edge/12)<=(eff_var_limit/2);
+        scalar_t crit_distance = sqrt(eff_var_limit*6/ls);
+        auto d_enable_smooth_field_pair = allocate_scalar_to_cuda<bool>(enable_smooth_field_pair);
+        auto d_enable_smooth_field_all = allocate_scalar_to_cuda<bool>(enable_smooth_field_all);
+        auto d_crit_distance = allocate_scalar_to_cuda<scalar_t>(crit_distance);
+        auto d_ls = allocate_scalar_to_cuda<scalar_t>(ls);
         boolean_separate_interactions_small_var_comp<scalar_t,nd><<<gridSize,blockSize>>>(
                 centers_X.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
                 centers_Y.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
                 unique_X.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
                 unique_Y.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
-                max_var_x.packed_accessor64<scalar_t,1,torch::RestrictPtrTraits>(),
-                max_var_y.packed_accessor64<scalar_t,1,torch::RestrictPtrTraits>(),
                 interactions.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
                 edge.data_ptr<scalar_t>(),
                 far_field_mask.packed_accessor64<bool,1,torch::RestrictPtrTraits>(),
@@ -675,8 +666,11 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> separate_interactions(
                 keep_mask.packed_accessor64<bool,1,torch::RestrictPtrTraits>(),
                 d_nr_of_interpolation_points,
                 d_small_field_limit,
-                d_eff_var_limit,
-                d_bool_check
+                d_bool_check,
+                d_enable_smooth_field_pair,
+                d_enable_smooth_field_all,
+                d_crit_distance,
+                d_ls
         );
         cudaDeviceSynchronize();
     }else{

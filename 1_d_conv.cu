@@ -764,8 +764,6 @@ __global__ void boolean_separate_interactions_small_var_comp(
         const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> centers_Y,
         const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> unique_og_X,
         const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> unique_og_Y,
-        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> eff_var_X,
-        const torch::PackedTensorAccessor64<scalar_t,1,torch::RestrictPtrTraits> eff_var_Y,
         const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions,
         const scalar_t * edge,
         torch::PackedTensorAccessor64<bool,1,torch::RestrictPtrTraits> is_far_field,
@@ -773,8 +771,11 @@ __global__ void boolean_separate_interactions_small_var_comp(
         torch::PackedTensorAccessor64<bool,1,torch::RestrictPtrTraits> keep_mask,
         const int * nr_interpolation_points,
         const int * small_field_limit,
-        const scalar_t * eff_var_limit,
-        const bool * do_init_check
+        const bool * do_init_check,
+        const bool * enable_pair,
+        const bool * enable_all,
+        const scalar_t * crit_distance,
+        const scalar_t * ls
 ){
     int i = threadIdx.x+blockIdx.x*blockDim.x; // Thread nr
     int n = interactions.size(0);
@@ -782,7 +783,6 @@ __global__ void boolean_separate_interactions_small_var_comp(
     int bx = interactions[i][0];
     int by = interactions[i][1];
     int interaction_size;
-    scalar_t tot_var;
     scalar_t distance[nd];
     scalar_t cx[nd];
     scalar_t cy[nd];
@@ -794,13 +794,6 @@ __global__ void boolean_separate_interactions_small_var_comp(
             return;
         }
     }
-    tot_var = eff_var_X[bx] + eff_var_Y[by];
-    if (tot_var<= *eff_var_limit){
-        is_far_field[i]=true;
-        keep_mask[i]=false;
-        return;
-    }
-
 
 #pragma unroll
     for (int k=0;k<nd;k++){
@@ -808,13 +801,30 @@ __global__ void boolean_separate_interactions_small_var_comp(
         cy[k] = centers_Y[by][k];
         distance[k]=cy[k] - cx[k];
     }
-    if (get_2_norm<scalar_t,nd>(distance)>=(*edge*2)){
+    scalar_t norm_dist = get_2_norm<scalar_t,nd>(distance);
+    if (norm_dist>=(*edge*2)){
         if(*do_init_check){
             is_far_field[i]=true;
         }
         keep_mask[i]=false;
         return;
     }
+    if (*enable_pair) {
+        if ((norm_dist*norm_dist*(*ls)) <= 1e-2) {
+            is_far_field[i]=true;
+            keep_mask[i]=false;
+            return;
+        }
+    }
+    if (*enable_all) {
+        if (norm_dist <= *crit_distance) {
+            is_far_field[i]=true;
+            keep_mask[i]=false;
+            return;
+        }
+    }
+
+
     if (interaction_size<(2* *small_field_limit)){
         is_small_field[i]=true;
         keep_mask[i]=false;
