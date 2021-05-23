@@ -592,29 +592,7 @@ std::tuple<torch::Tensor,torch::Tensor> unbind_sort(torch::Tensor & interactions
     return std::make_tuple(tmp[0],tmp[1]);
 }
 
-template <typename scalar_t, int nd>
-torch::Tensor get_low_variance_pairs(
-        n_tree_cuda<scalar_t,nd> & ntree_X,
-        torch::Tensor & big_enough
-){
-    torch::Tensor box_variance_1 = torch::zeros({big_enough.size(0),nd}).toType(dtype<scalar_t>()).to(big_enough.device());
-    torch::Tensor & x_dat = ntree_X.data;
-    torch::Tensor & box_ind = ntree_X.sorted_index;
-    torch::Tensor & x_box_cum = ntree_X.unique_counts_cum;
-    dim3 blockSize,gridSize;
-    int mem;
-    std::tie(blockSize,gridSize,mem)=get_kernel_launch_params<scalar_t>(nd,big_enough.size(0));
-    box_variance<scalar_t, nd><<<gridSize, blockSize, mem>>>(
-            x_dat.packed_accessor64<scalar_t, 2, torch::RestrictPtrTraits>(),
-            box_ind.packed_accessor64<int, 1, torch::RestrictPtrTraits>(),
-            x_box_cum.packed_accessor64<int, 1, torch::RestrictPtrTraits>(),
-            big_enough.packed_accessor64<int, 1, torch::RestrictPtrTraits>(),
-            box_variance_1.packed_accessor64<scalar_t, 2, torch::RestrictPtrTraits>()
-    );
-    cudaDeviceSynchronize();
-    return box_variance_1;
 
-}
 
 template <typename scalar_t, int nd>
 std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> separate_interactions(

@@ -883,54 +883,6 @@ __global__ void transpose_to_existing_only_tree(
 }
 
 
-template<typename scalar_t,int cols>
-__global__ void box_variance(
-        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
-        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> x_dat_reordering,
-        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> x_box_cum,
-        torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> big_enough_boxes,
-        torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> output_1
-)
-{
-    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
-    unsigned int x_n = big_enough_boxes.size(0);
-    scalar_t x_i[cols];
-    scalar_t x_i_square[cols];
-    int box_ind;
-    int limit=1000;
-    int start,end,end_num;
-    if (i>x_n-1) {
-        return;
-    }
-
-    box_ind = big_enough_boxes[i];
-    for (int c=0;c<cols;c++){
-        x_i[c]=0.0;
-        x_i_square[c]=0.0;
-    }
-    start = x_box_cum[box_ind];
-    end = x_box_cum[box_ind+1];
-    scalar_t acc = end-start;
-    if (acc<limit){
-        end_num=end;
-    }else{
-        end_num = start+limit;
-        acc = (scalar_t)limit;
-    }
-    for (int j = start; j<end_num;j++) {
-        for (int d = 0;d<cols;d++) {
-            x_i[d]+=X_data[x_dat_reordering[j]][d];
-            x_i_square[d]+=square(X_data[x_dat_reordering[j]][d]);
-        }
-    }
-    for (int d = 0;d<cols;d++) {
-        if (acc>1){
-            output_1[i][d] = (x_i_square[d]/acc-square(x_i[d]/acc))*acc/(acc-1);
-        }
-    }
-}
-
-
 __global__ void repeat_within(
         const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> short_cumsum,
         const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> repeat_interleaved,
