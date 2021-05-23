@@ -252,7 +252,7 @@ void benchmark_4(int n,float min_points, int threshold,float mean,float var,floa
     torch::Tensor X_train = container.attr("X").toTensor();
     X_train = X_train.toType(dtype<scalar_t>()).to(device_cuda);
 
-    torch::Tensor b_train = torch::ones({n,1}).toType(dtype<scalar_t>()).to(device_cuda);
+    torch::Tensor b_train = torch::randn({n,1}).toType(dtype<scalar_t>()).to(device_cuda);
     torch::Tensor res,res_ref;
     FFM_object<scalar_t,nd> ffm_obj = FFM_object<scalar_t, nd>(X_train, X_train, ls_in, device_cuda, min_points,
                                                                nr_of_interpolation_points,
