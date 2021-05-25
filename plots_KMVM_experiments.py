@@ -33,13 +33,15 @@ class subfigure(Environment):
         super().__init__(options=position,arguments=width, **kwargs)
 
 
-x=8
-plt.rcParams['figure.figsize'] = 1.5*x, x
+x=20
+plt.rcParams['figure.figsize'] = 1.4*x, x
 
-font_size = 24
+font_size = 80
 plt.rcParams['font.size'] = font_size
-plt.rcParams['legend.fontsize'] = 24
+plt.rcParams['legend.fontsize'] = 80
 plt.rcParams['axes.labelsize'] = font_size
+plt.rcParams['text.usetex'] = True
+plt.rcParams['font.family'] = "serif"
 
 group_on = ['n', 'd', 'effective_variance', 'min_points', 'small field limit', 'nr of node points',
             'effective variance limit']
@@ -56,35 +58,35 @@ y_trans  = np.log10(y)
 
 M_nlogn, b = np.polyfit(x_trans, y_trans, 1)
 print(round(M_nlogn,2))
-fig, ax = plt.subplots()
-prop = ax._get_lines.prop_cycler
 
 def complexity_plots(savefig, df, X, Y, slice,label_nice):
+    fig, ax = plt.subplots()
+    prop = ax._get_lines.prop_cycler
     mean = Y
     els = df[slice].unique().tolist()
 
     big_X,big_Y = df[X],df[Y]
-
 
     for label_df in els:
         color = next(prop)['color']
         sub_df = df[df[slice]==label_df]
         m, b = np.polyfit(np.log10(sub_df[X]).astype(int), np.log10(sub_df[mean]), 1)
         print(m, b)
-        plt.scatter(np.log10(sub_df[X]), np.log10(sub_df[mean]), marker='o',alpha=0.4,color=color)
-        plt.plot(np.arange(min(np.log10(big_X)), max(np.log10(big_X)) + 1, step=1),
-                 np.arange(min(np.log10(big_X)), max(np.log10(big_X)) + 1, step=1) * m + b,color=color)
-        plt.plot([], [], '-o' ,label=f'{label_nice}: {label_df}',color=color)
+        tmp_var = round(label_df,2) if isinstance(label_df,float) else label_df
+        plt.scatter(np.log10(sub_df[X]), np.log10(sub_df[mean]), marker='o',alpha=0.3,color=color,s=300,label=f'{label_nice}: {tmp_var}')
+        # plt.plot(np.arange(min(np.log10(big_X)), max(np.log10(big_X)) + 1, step=1),
+        #          np.arange(min(np.log10(big_X)), max(np.log10(big_X)) + 1, step=1) * m + b,color=color)
+        # plt.plot([], [], 'o' ,label=f'{label_nice}: {round(label_df,2)}',color=color)
 
     m, b = np.polyfit(np.log10(big_X), np.log10(big_Y), 1)
     print(m,b)
     plt.plot(np.arange(min(np.log10(big_X)), max(np.log10(big_X))+1, step=1),np.arange(min(np.log10(big_X)), max(np.log10(big_X))+1, step=1)*m+b,c='k',label=f'Complexity curve, slope={round(m,2)}', linewidth=4)
     plt.plot(np.arange(min(np.log10(big_X)), max(np.log10(big_X))+1, step=1),np.arange(min(np.log10(big_X)), max(np.log10(big_X))+1, step=1)*M_nlogn+b,c='k',linestyle='dashed',label='$\mathcal{O}(n\log n)$ curve, slope=1.11')
-    plt.legend(prop={'size': 20},loc=0)
+    plt.legend(loc=2)
     plt.xticks(np.arange(min(np.log10(big_X)), max(np.log10(big_X))+1, step=1))
 
     plt.xlabel('$\log_{10}(N)$')
-    plt.ylabel(r'$\log_{10}(T)$ seconds ')
+    plt.ylabel(r'$\log_{10}(T)$ seconds')
     plt.savefig(savefig,bbox_inches = 'tight',pad_inches = 0)
     plt.clf()
 
@@ -95,9 +97,10 @@ def error_plot(savefig, df, X, Y, slice,label_nice):
     els = df[slice].unique().tolist()
     for label_df in els:
         sub_df = df[df[slice]==label_df]
-        plt.scatter(sub_df[X], sub_df[mean], marker='o',label=f'{label_nice}: {label_df}',alpha=0.4)
-    plt.xlabel('Number of nodes $r$')
-    plt.ylabel(r'Relative Error')
+        plt.scatter(np.log10(sub_df[X]), np.log10(sub_df[mean]), marker='o',label=f'{label_nice}: {label_df}',alpha=0.3,s=300)
+    plt.xticks(np.arange(min(np.log10(df[X])), max(np.log10(df[X]))+1, step=1))
+    plt.xlabel('$\log_{10}(N)$')
+    plt.ylabel(r'Relative Error $\log_{10}(x)$')
     plt.legend()
     plt.savefig(savefig,bbox_inches = 'tight',pad_inches = 0)
     plt.clf()
@@ -105,13 +108,13 @@ def error_plot(savefig, df, X, Y, slice,label_nice):
 
 def get_worse_best(save_tex,df,X,Y):
     max = df.loc[df.groupby([X])[Y].idxmax()][['effective_variance','nr of node points',
-            'effective variance limit','relative error 2', 'time (s)']]
-    max.columns = ['EV','$r$','$\eta$','Relative Error','Time (s)']
+            'effective variance limit','relative error 2', 'time (s)','dataset_name_2']]
+    max.columns = ['EV','$r$','$\eta$','Relative Error','Time (s)','Dataset']
     max.columns = pd.MultiIndex.from_product([['Worst'],max.columns ])
     min = df.loc[df.groupby([X])[Y].idxmin()][['n','effective_variance','nr of node points',
-            'effective variance limit','relative error 2', 'time (s)']]
+            'effective variance limit','relative error 2', 'time (s)','dataset_name_2']]
     min['n'] = np.log10(min['n']).astype(int)
-    min.columns = [r'$\log_{10}(N)$','EV','$r$','$\eta$','Relative Error','Time (s)']
+    min.columns = [r'$\log_{10}(N)$','EV','$r$','$\eta$','Relative Error','Time (s)','Dataset']
 
     min.columns = pd.MultiIndex.from_product([['Best'],min.columns ])
     max = max.reset_index(drop=True)
@@ -122,44 +125,56 @@ def get_worse_best(save_tex,df,X,Y):
     df.to_latex(save_tex,escape=False,index=False)
     return df
 
-def build_plot(df_name,plot_name):
-    df = pd.read_csv(df_name,index_col=0)
+def build_plot(df,plot_name):
     if not os.path.exists(plot_name):
         os.makedirs(plot_name)
     else:
         shutil.rmtree(plot_name)
         os.makedirs(plot_name)
 
-    complexity_plots(f'{plot_name}/test_1.png', df, 'n', meanstd[1], 'effective_variance','EV')
-    complexity_plots(f'{plot_name}/test_2.png', df, 'n', meanstd[1], 'effective variance limit','$\eta$')
-    complexity_plots(f'{plot_name}/test_3.png', df, 'n', meanstd[1], 'nr of node points','$r$')
-    error_plot(f'{plot_name}/test_4.png', df, 'nr of node points', meanstd[0], 'n','$N$') #Show independence of n
-    error_plot(f'{plot_name}/test_5.png', df, 'nr of node points', meanstd[0], 'effective_variance','EV')
-    error_plot(f'{plot_name}/test_6.png', df, 'nr of node points', meanstd[0], 'effective variance limit','$\eta$')
-    get_worse_best(f'{plot_name}/test_1.tex',df,'n',meanstd[0])
-    get_worse_best(f'{plot_name}/test_2.tex',df,'n',meanstd[1])
+    complexity_plots(f'{plot_name}/test_{1}.png', df, 'n', meanstd[1], 'effective variance limit','$\eta$')
+    error_plot(f'{plot_name}/test_{2}.png', df, 'n', meanstd[0], 'nr of node points','Nodes') #Show independence of n
+    complexity_plots(f'{plot_name}/test_{3}.png', df, 'n', meanstd[1], 'dataset_name','Group')
+    error_plot(f'{plot_name}/test_{4}.png', df, 'n', meanstd[0], 'dataset_name','Group') #Show independence of n
+    get_worse_best(f'{plot_name}/best_0.tex',df,'n',meanstd[0])
+    get_worse_best(f'{plot_name}/worst_0.tex',df,'n',meanstd[1])
 
     doc = Document(default_filepath=f'{plot_name}/subfig_tex')
     string_append = ''
     with doc.create(Figure(position='H')) as plot:
-        for i,p in enumerate(range(1,7)):
+        for i,p in enumerate(range(1,5)):
             p_str = f'{plot_name}/test_{p}.png'
             string_append+=r'\includegraphics[width=0.33\linewidth]{%s}'%p_str + '%\n'
-            if (i+1)%3==0:
+            if (i+1)%2==0:
                 with doc.create(subfigure(position='H', width=NoEscape(r'\linewidth'))):
                     doc.append(string_append)
                 string_append=''
     doc.generate_tex()
 
 if __name__ == '__main__':
-    build_plot("experiment_1_results_summary.csv",'exp_1')
-    # df = pd.read_csv("experiment_1_results_summary.csv",index_col=0)
-    # complexity_plots('test_1.png', df, 'n', meanstd[1], 'effective_variance','Effective variance')
-    # complexity_plots('test_2.png', df, 'n', meanstd[1], 'effective variance limit','$\eta$')
-    # complexity_plots('test_3.png', df, 'n', meanstd[1], 'nr of node points','$r$')
-    # error_plot('test_4.png', df, 'nr of node points', meanstd[0], 'n','$N$') #Show independence of n
-    # error_plot('test_5.png', df, 'nr of node points', meanstd[0], 'effective_variance','Effective variance')
-    # error_plot('test_6.png', df, 'nr of node points', meanstd[0], 'effective variance limit','$\eta$')
-    # get_worse_best('test_1.tex',df,'n',meanstd[0])
-    # get_worse_best('test_2.tex',df,'n',meanstd[1])
 
+    names_3 = ['Uniform','Normal', 'Uniform and Normal']
+    names = ['Standard']*3
+    list_1=[]
+    for i in range(1,4):
+        df = pd.read_csv(f"experiment_{i}_results_summary.csv")
+        df = df[df['effective_variance']<100]
+        df['dataset_name'] = names[i-1]
+        df['dataset_name_2'] = names_3[i-1]
+        list_1.append(df)
+    names_3  = ['Brownian Motion','Clustered', 'Fractional Brownian Motion']
+    names_2 = ['Pathological']*3
+    exotic = ['Brownian_Motion.csv','Clustered.csv','Fractional_Brownian_Motion.csv']
+    for j,el in enumerate(exotic):
+        df = pd.read_csv(el)
+        df['effective_variance'] = round(df['effective_variance'],2)
+        df = df[df['effective_variance']<100]
+        df['dataset_name'] = names_2[j]
+        df['dataset_name_2'] = names_3[j]
+        list_1.append(df)
+    big_df = pd.concat(list_1,ignore_index=True)
+
+    build_plot(big_df,f'plot_1')
+    # df = pd.read_csv(f"Clustered.csv")
+    # df = df[df['effective variance limit']==0.5]
+    # df = df[df['n']>1e6]

@@ -80,6 +80,12 @@ int main(int argc, char const *argv[]){
     if(job==6){
         benchmark_6<float,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
     }
+    if(job==7){
+        benchmark_7<float,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
+    }
+    if(job==8){
+        benchmark_8<float,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
+    }
 
 
     cudaProfilerStop();

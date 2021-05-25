@@ -99,6 +99,7 @@ def ConjugateGradientSolver(binding, linop, b, eps=1e-6):
         a += alp * p
         r -= alp * Mp
         nr2new = (r ** 2).sum()
+        print(nr2new)
         if nr2new < delta:
             break
         p = r + (nr2new / nr2) * p
@@ -190,7 +191,7 @@ def KernelLinearSolver(FFM_obj,
         my_routine = tools.Genred(
             formula, variables, reduction_op="Sum", axis=1, dtype=dtype
         )
-        oos2 = tools.array([1.0 / sigma ** 2], dtype=dtype).cuda()
+        oos2 = tools.array([0.5 / sigma ** 2], dtype=dtype).cuda()
         KernelMatrix = GaussKernelMatrix(sigma)
 
         def K(u, v, x):

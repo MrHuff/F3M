@@ -44,11 +44,12 @@ if __name__ == '__main__':
     N = 1000000000
     d=3
     m = 100000
-    X = torch.rand(N, d).float()
-    b = torch.randn(N, 1).float()
+    X = torch.randn(N, d).float()
+    # b = torch.randn(N, 1).float()
+    b = torch.randn(m, 1).float()
     x_ref = X[:m].float()
     ls = 1
-    min_points = 5000
+    min_points = 10000
     small_field = 64
     # obj_test = FFM(X=X,ls=ls,min_points=min_points,eff_var_limit=0.1,var_compression=True,small_field_points=64)
     # start= time.time()
@@ -58,30 +59,30 @@ if __name__ == '__main__':
     # print(sq_time)
     # feels very much like a cache/loading issue??!?!?!?!?!
     # timing doesn't work either...
-    obj_test = FFM(X=x_ref,Y=X,ls=ls,min_points=min_points,eff_var_limit=0.1,var_compression=True,small_field_points=small_field)
-    start= time.time()
-    f_1 = obj_test@b
-    end = time.time()
-    asymetric_time =end-start
-    print(asymetric_time)
-
-    # obj_test_2 = FFM(X=X,Y=x_ref,ls=ls,min_points=min_points,eff_var_limit=0.1,var_compression=True,small_field_points=small_field)
-    # # start= time.time()
-    # f_2 = obj_test_2@f_1
+    # obj_test = FFM(X=x_ref,Y=X,ls=ls,min_points=min_points,eff_var_limit=0.1,var_compression=True,small_field_points=small_field)
+    # start= time.time()
+    # f_1 = obj_test@b
     # end = time.time()
-    # transpose =end-start
-    # print(transpose)
+    # asymetric_time =end-start
+    # print(asymetric_time)
+
+    obj_test_2 = FFM(X=X,Y=x_ref,ls=ls,min_points=min_points,eff_var_limit=0.1,var_compression=True,small_field_points=small_field)
+    start= time.time()
+    f_2 = obj_test_2@b
+    end = time.time()
+    transpose =end-start
+    print(transpose)
 
     # bmark_1 = keops_matmul(X=x_ref,Y=X,ls=ls,type=torch.float32)
-    bmark_2 = benchmark_matmul(X=x_ref,Y=X,ls=ls)
-    #
-    #
-    start= time.time()
-    res = bmark_2@b
-    end = time.time()
-    keops_full =end-start
-    print(keops_full)
-    print(torch.norm(res-f_1)/torch.norm(res))
+    # bmark_2 = benchmark_matmul(X=x_ref,Y=X,ls=ls)
+    # #
+    # #
+    # start= time.time()
+    # res = bmark_2@b
+    # end = time.time()
+    # keops_full =end-start
+    # print(keops_full)
+    # print(torch.norm(res-f_1)/torch.norm(res))
 
     #
     # start= time.time()

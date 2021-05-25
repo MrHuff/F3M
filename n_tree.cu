@@ -340,15 +340,22 @@ void apply_laplace_interpolation_v2(
         KeyValue* x_to_hash,
         int * hash_table_size_pointer
 ){
-    unique_vec = unique_vec.toType(torch::kLong);
-    torch::Tensor boxes_count = n_tree.unique_counts.index({unique_vec});
-    unique_vec = unique_vec.toType(torch::kInt32);
+    dim3 blockSize,gridSize;
+    int memory,blkSize;
+    torch::Tensor & counts_ref_const = n_tree.unique_counts;
+    torch::Tensor boxes_count = torch::zeros_like(unique_vec);
+    std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<int>(1, boxes_count.size(0));
+    int_indexing<<<gridSize, blockSize>>>(
+            counts_ref_const.packed_accessor64<int, 1, torch::RestrictPtrTraits>(),
+            unique_vec.packed_accessor64<int, 1, torch::RestrictPtrTraits>(),
+            boxes_count.packed_accessor64<int, 1, torch::RestrictPtrTraits>()
+    );
+
     torch::Tensor & idx_reordering = n_tree.sorted_index;
     torch::Tensor & data = n_tree.data;
     torch::Tensor & centers = n_tree.centers;
     torch::Tensor & edge = n_tree.edge;
-    dim3 blockSize,gridSize;
-    int memory,blkSize;
+
     torch::Tensor indicator,box_block;
     int min_size=boxes_count.min().item<int>();
     blkSize = optimal_blocksize(min_size);
@@ -695,9 +702,9 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> separate_interactions(
     bool do_inital_check = square_edge<=3;
     auto d_bool_check = allocate_scalar_to_cuda<bool>(do_inital_check);
     if(var_comp){
-        bool enable_smooth_field_pair = (square_edge/12)<=eff_var_limit;
-        bool enable_smooth_field_all = (square_edge/12)<=(eff_var_limit/2);
-        scalar_t crit_distance = sqrt(eff_var_limit*6/ls);
+        bool enable_smooth_field_pair = (square_edge/4)<=eff_var_limit;
+        bool enable_smooth_field_all = (square_edge/4)<=(eff_var_limit/2);
+        scalar_t crit_distance = sqrt(eff_var_limit*2/ls);
         auto d_enable_smooth_field_pair = allocate_scalar_to_cuda<bool>(enable_smooth_field_pair);
         auto d_enable_smooth_field_all = allocate_scalar_to_cuda<bool>(enable_smooth_field_all);
         auto d_crit_distance = allocate_scalar_to_cuda<scalar_t>(crit_distance);
@@ -806,9 +813,14 @@ void near_field_run(
     cudaMemcpy(d_ls, &ls, sizeof(scalar_t), cudaMemcpyHostToDevice);
     dim3 blockSize,gridSize;
     int memory,blkSize;
-    unique_x = unique_x.toType(torch::kLong);
-    torch::Tensor x_boxes_count = ntree_X.unique_counts.index({unique_x});
-    unique_x = unique_x.toType(torch::kInt32);
+    torch::Tensor & counts_ref_const = ntree_X.unique_counts;
+    torch::Tensor x_boxes_count = torch::zeros_like(unique_x);
+    std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<int>(1, x_boxes_count.size(0));
+    int_indexing<<<gridSize, blockSize>>>(
+            counts_ref_const.packed_accessor64<int, 1, torch::RestrictPtrTraits>(),
+            unique_x.packed_accessor64<int, 1, torch::RestrictPtrTraits>(),
+            x_boxes_count.packed_accessor64<int, 1, torch::RestrictPtrTraits>()
+    );
 //    torch::Tensor & x_box_idx = ntree_X.box_indices_sorted_reindexed;
     torch::Tensor & cuda_X_job = ntree_X.data;
     torch::Tensor & cuda_Y_job = ntree_Y.data;
@@ -857,7 +869,7 @@ void near_field_run(
 }
 template <typename scalar_t, int nd>
 std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> get_field(
-        torch::Tensor & near_field,
+        torch::Tensor & near_field_old,
         n_tree_cuda<scalar_t,nd> & ntree_X,
         n_tree_cuda<scalar_t,nd> & ntree_Y,
         scalar_t & ls,
@@ -868,40 +880,57 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> get_field(
         int & small_field_limit
 ){
 
-    torch::Tensor interactions, far_field,small_field;
+    torch::Tensor interactions, far_field,small_field,near_field;
 //    std::cout<<"active boxes X: "<<ntree_X.box_indices_sorted_reindexed.size(0)<<std::endl;
 //    std::cout<<"active boxes Y: "<<ntree_Y.box_indices_sorted_reindexed.size(0)<<std::endl;
-    if ((near_field.size(0)*ntree_X.dim_fac*ntree_Y.dim_fac)>1e8){
-        std::vector<torch::Tensor> interaction_list ={};
-        std::vector<torch::Tensor>chunked_near_field=torch::chunk(near_field,10,0);
+    if ((near_field_old.size(0)*ntree_X.dim_fac*ntree_Y.dim_fac)>1e9){
+        far_field = torch::empty({0,2}).toType(torch::kInt32).to(near_field_old.device());
+        small_field = torch::empty({0,2}).toType(torch::kInt32).to(near_field_old.device());
+        near_field = torch::empty({0,2}).toType(torch::kInt32).to(near_field_old.device());
+        std::vector<torch::Tensor>chunked_near_field=torch::chunk(near_field_old,10,0);
+        torch::Tensor far_field_small,small_field_small,near_field_small;
         for (torch::Tensor &inter_subset : chunked_near_field){
             inter_subset = get_new_interactions(ntree_X.depth,ntree_Y.depth,inter_subset,ntree_X.dim_fac,gpu_device); //Doesn't work for new setup since the division is changed...
 //            std::cout<<"interactions_1: "<<inter_subset.size(0)<<std::endl;
             inter_subset = filter_out_interactions(inter_subset,ntree_X,ntree_Y);
 //            std::cout<<"interactions_2: "<<inter_subset.size(0)<<std::endl;
-            interaction_list.push_back(inter_subset);
+            std::tie(far_field_small,small_field_small,near_field_small) =
+                    separate_interactions<scalar_t,nd>(
+                            inter_subset,
+                            ntree_X,
+                            ntree_Y,
+                            gpu_device,
+                            small_field_limit,
+                            nr_of_interpolation_points,
+                            ls,
+                            var_compression,
+                            eff_var_limit
+                    );
+            far_field = torch::cat({far_field,far_field_small},0);
+            small_field = torch::cat({small_field,small_field_small},0);
+            near_field = torch::cat({near_field,near_field_small},0);
         }
-        interactions = torch::cat(interaction_list,0);
-
+        far_field = far_field.index({torch::argsort(far_field.slice(1,0,1).squeeze())});
+        small_field = small_field.index({torch::argsort(small_field.slice(1,0,1).squeeze())});
+        near_field = near_field.index({torch::argsort(near_field.slice(1,0,1).squeeze())});
     }else{
-        interactions = get_new_interactions(ntree_X.depth,ntree_Y.depth,near_field,ntree_X.dim_fac,gpu_device); //Doesn't work for new setup since the division is changed...
-//        std::cout<<"interactions_1: "<<interactions.size(0)<<std::endl;
+        interactions = get_new_interactions(ntree_X.depth,ntree_Y.depth,near_field_old,ntree_X.dim_fac,gpu_device); //Doesn't work for new setup since the division is changed...
         interactions = filter_out_interactions(interactions,ntree_X,ntree_Y);
-//        std::cout<<"interactions_2: "<<interactions.size(0)<<std::endl;
+        std::tie(far_field,small_field,near_field) =
+                separate_interactions<scalar_t,nd>(
+                        interactions,
+                        ntree_X,
+                        ntree_Y,
+                        gpu_device,
+                        small_field_limit,
+                        nr_of_interpolation_points,
+                        ls,
+                        var_compression,
+                        eff_var_limit
+                );
     }
 
-    std::tie(far_field,small_field,near_field) =
-            separate_interactions<scalar_t,nd>(
-                    interactions,
-                    ntree_X,
-                    ntree_Y,
-                    gpu_device,
-                    small_field_limit,
-                    nr_of_interpolation_points,
-                    ls,
-                    var_compression,
-                    eff_var_limit
-            );
+
     return std::make_tuple(far_field,small_field,near_field);
 
 }
@@ -1005,7 +1034,6 @@ torch::Tensor FFM_XY(torch::Tensor &X_data, torch::Tensor &Y_data, torch::Tensor
         n_tree_cuda<scalar_t,nd> ntree_X = n_tree_cuda<scalar_t,nd>(edge,X_data,xmin,xmax,gpu_device);
         while (near_field.numel()>0 and ntree_X.avg_nr_points > min_points){
             ntree_X.divide();//needs to be fixed... Should get 451 errors, OK. Memory issue is consistent
-            std::cout<<"depth: "<<ntree_X.depth<<std::endl;
             near_field = far_field_run<scalar_t, nd>(
                     ntree_X,
                     ntree_X,

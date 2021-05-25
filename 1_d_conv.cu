@@ -1052,3 +1052,12 @@ __global__ void create_interactions_hash_y(
     int val = device_lookup(hash_list,key,hash_size);
     interactions_hash_y[i]=val;
 }
+
+__global__ void int_indexing(const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> number_counts,
+                             torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> unique,
+                             torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> subset
+){
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    if (i>subset.size(0)-1){return;}
+    subset[i] = number_counts[unique[i]];
+}

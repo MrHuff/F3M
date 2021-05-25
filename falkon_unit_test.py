@@ -3,13 +3,10 @@ import torch
 # plt.style.use('ggplot')
 import falkon
 from conjugate_gradient.custom_falkon import custom_Falkon
-from conjugate_gradient.custom_incore_falkon import InCoreFalkon_custom
-
 from conjugate_gradient.custom_gaussian_kernel import custom_GaussianKernel
-from conjugate_gradient.benchmark_Gaussian_kernel import bench_GaussianKernel
 from FFM_classes import *
 import pykeops
-pykeops.clean_pykeops()
+# pykeops.clean_pykeops()
 # pykeops.test_torch_bindings()
 
 def calc_R2(true,pred):
@@ -18,36 +15,23 @@ def calc_R2(true,pred):
     r2 = 1-(mse/var)
     return r2.item()
 
-
-def generate_random_problem(X,prob_size,ls):
-    perm = torch.randperm(prob_size)
-    x_ref = X[perm]
-    true_sol = torch.randn(prob_size,1)
-
-    tmp = benchmark_matmul(X=X,Y=x_ref,ls=ls**2)
-
-    solve_for = tmp@true_sol
-
-    del tmp
-    torch.cuda.empty_cache()
-    return solve_for.cpu()
-
-
 #Fix the slack variable for keops, probably best to do custom solution for reproducibility.
 if __name__ == '__main__':
-    torch.manual_seed(2) #Dude seems to be a seed issue wtf
     N=100000000
-    d=3
-    ls = 1
-    penalty = 1e-4
-    M = 10000
-    X = torch.randn(N, d)
-    Y = generate_random_problem(X,1000,ls)
+    M=10000
+
+    eff_var=0.1 # 0.1 - 1e-3, 1 - 1e-3, 10, 1e-2?, 1e-2 is already acceptable... Unif
+    # eff_var=10 # 0.1 - 1e-3, 1 - 1e-3, 10, 1e-2?, 1e-2 is already acceptable... Norm
+    penalty = 1e-3 #does a little better, seems like 3F-M might need a little more penalty...
+    problem_set = torch.load(f'normal_probem_N={N}_eff_var={eff_var}.pt')
+    X = problem_set['X']
+    Y = problem_set['y']
+    ls = problem_set['ls']
     #
     # OK PICK YOUR POISON, EITHER ONE IS SLOW OR ONE IS FAST DEPENDING ON TRANSPOSE, MIGHT ALMOST SWITCH TAG IN BETWEEN
     # WHAT THE FUCK IS GOING ON????
-    nr_of_interpolation_nodes = 64
-    kernel = custom_GaussianKernel(sigma=ls,min_points=9500,var_compression=True,interpolation_nr=nr_of_interpolation_nodes)
+    nr_of_interpolation_nodes = 27
+    kernel = custom_GaussianKernel(sigma=ls,min_points=7500,var_compression=True,interpolation_nr=nr_of_interpolation_nodes,eff_var_limit=0.5)
     options = falkon.FalkonOptions(use_cpu=False,debug=True)
     model = custom_Falkon(kernel=kernel, penalty=penalty, M=M, options=options)
     model.fit(X, Y)
