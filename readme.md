@@ -1,24 +1,18 @@
-**To install:**
+*3F-M* (Triple-FM)
 
-* CUDA devtoolkit 10.1
-* GCC 7+
-* CMAKE
-* LibTorch, download @ pytorch.org. Make sure to get the (cxx11 ABI) version.
-* LibTorch needs cuBLAS and cuDNN. These can be downloaded and installed from Nvidia webpage
+To able to run anything with 3F-M you will need:
 
-In cmake options, make sure to add -DCMAKE_PREFIX_PATH=/path_to_libtorch_download/libtorch-cxx11-abi-shared-with-deps-1.4.0/libtorch
+1. A pytorch v1.8>= with either CUDA 10.2 or 11.1.
+2. A GCC compiler. It's recommended to use the https://anaconda.org/omgarcia/gcc-6 compiler that comes with conda, it works for all dependencies.
+3. CUDA 10.2 nvcc compiler, for pykeops and FALKON.
 
-There might be some modifications needed for each specific system. This is developed on Ubuntu 18.04.
+To run 3,4,5D experiments run the command:
 
-Compile by using:
+python experiments.py --idx={experiment number}
 
-1. Making an application directory, its recommended to use /cmake-build-debug
-2. Build cmake: cmake -DCMAKE_BUILD_TYPE=Debug -DCMAKE_PREFIX_PATH="/homes/rhu/C_pp_libs/libtorch" -G "CodeBlocks - Unix Makefiles" /homes/rhu/cuda_n_body
-3. Build the actual application: cmake --build /homes/rhu/cuda_n_body/cmake-build-debug --target cuda_n_body -- -j8
+To run FALKON experiments: 
 
-Release mode:
+1. First generate the data by running python generate_KRR_data.py
+2. Then run python experiments_2.py --idx={experiment number}
 
-2. cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="/homes/rhu/C_pp_libs/libtorch" -G "CodeBlocks - Unix Makefiles" /homes/rhu/cuda_n_body
-3. cmake --build /homes/rhu/cuda_n_body/cmake-build-release --target cuda_n_body -- -j8
 
-replace the paths with your own system paths.
