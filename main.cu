@@ -71,7 +71,7 @@ int main(int argc, char const *argv[]){
         benchmark_3<float,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,fname,seed);//Weird curse of dimensionality... Should scale linearly in diemnsions...
     }
     if(job==4){
-        benchmark_4<float,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
+        benchmark_4<float,2>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
 
     }
     if(job==5){
@@ -79,6 +79,12 @@ int main(int argc, char const *argv[]){
     }
     if(job==6){
         benchmark_6<float,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
+    }
+    if(job==7){
+        benchmark_7<float,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
+    }
+    if(job==8){
+        benchmark_8<float,3>(n,min_points,threshold,a,b,ls,nr_of_interpolation_nodes,var_comp,eff_var,small_field_limit,fname);//Weird curse of dimensionality... Should scale linearly in diemnsions...
     }
 
 
