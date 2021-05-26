@@ -268,7 +268,7 @@ def dataset_X():
         # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1],[2 ],[16,],[1e-2]):
         # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1],[2 ],[16,],[1e-4]):
         for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1],[2 ],[16,],[1e-1]):
-            problem_set = torch.load(f'real_problem_N={N}_eff_var={eff_var}_3.pt')
+            problem_set = torch.load(f'real_problem_N={N}_eff_var={eff_var}.pt')
             X = problem_set['X']
             Y = problem_set['y']
             ls = problem_set['ls']
