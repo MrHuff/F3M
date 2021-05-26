@@ -73,7 +73,7 @@ def complexity_plots(savefig, df, X, Y, slice,label_nice):
         m, b = np.polyfit(np.log10(sub_df[X]).astype(int), np.log10(sub_df[mean]), 1)
         print(m, b)
         tmp_var = round(label_df,2) if isinstance(label_df,float) else label_df
-        plt.scatter(np.log10(sub_df[X]), np.log10(sub_df[mean]), marker='o',alpha=0.3,color=color,s=300,label=f'{label_nice}: {tmp_var}')
+        plt.scatter(np.log10(sub_df[X]), np.log10(sub_df[mean]), marker='o',alpha=0.7,color=color,s=300,label=f'{label_nice}: {tmp_var}')
         # plt.plot(np.arange(min(np.log10(big_X)), max(np.log10(big_X)) + 1, step=1),
         #          np.arange(min(np.log10(big_X)), max(np.log10(big_X)) + 1, step=1) * m + b,color=color)
         # plt.plot([], [], 'o' ,label=f'{label_nice}: {round(label_df,2)}',color=color)
@@ -97,7 +97,7 @@ def error_plot(savefig, df, X, Y, slice,label_nice):
     els = df[slice].unique().tolist()
     for label_df in els:
         sub_df = df[df[slice]==label_df]
-        plt.scatter(np.log10(sub_df[X]), np.log10(sub_df[mean]), marker='o',label=f'{label_nice}: {label_df}',alpha=0.3,s=300)
+        plt.scatter(np.log10(sub_df[X]), np.log10(sub_df[mean]), marker='o',label=f'{label_nice}: {label_df}',alpha=0.7,s=300)
     plt.xticks(np.arange(min(np.log10(df[X])), max(np.log10(df[X]))+1, step=1))
     plt.xlabel('$\log_{10}(N)$')
     plt.ylabel(r'Relative Error $\log_{10}(x)$')
@@ -175,6 +175,19 @@ if __name__ == '__main__':
     big_df = pd.concat(list_1,ignore_index=True)
 
     build_plot(big_df,f'plot_1')
-    # df = pd.read_csv(f"Clustered.csv")
-    # df = df[df['effective variance limit']==0.5]
-    # df = df[df['n']>1e6]
+
+    names_3 = ['Uniform','Normal', 'Uniform and Normal']
+    names = ['4D']*3
+    list_1=[]
+    for i in range(6,9):
+        df = pd.read_csv(f"experiment_{i}_results_summary.csv",index_col=0)
+        df = df[df['effective_variance']<100]
+        df = df[df['d']==4]
+        df['dataset_name'] = names[i-6]
+        df['dataset_name_2'] = names_3[i-6]
+        list_1.append(df)
+    big_df = pd.concat(list_1,ignore_index=True)
+    print(big_df)
+    build_plot(big_df,f'plot_2')
+
+

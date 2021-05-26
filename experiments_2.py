@@ -52,7 +52,7 @@ def uniform_X():
        k(X,X) - uniform distribution with varying effective variance, N and d.
        :return:
        """
-    dirname = 'FALKON_uniform'
+    dirname = 'FALKON_uniform_rerun_eff_var=0.1_1'
     counter = 0
     M=100000
     N=1000000000
@@ -61,7 +61,10 @@ def uniform_X():
     for seed in [3]:
         torch.manual_seed(seed)
         for d in [3]:
-            for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.1],[27,27,64],[1e-3,1e-3,1e-2]):
+            # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.1],[27,27,64],[1e-3,1e-3,1e-2]):
+            # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([ 10],[0.5],[64],[1e-3]):
+            # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([ 10],[0.5],[27],[1e-3]):
+            for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([ 0.1],[0.5],[27],[1e-4]):
                 problem_set = torch.load(f'uniform_probem_N={N}_eff_var={eff_var}.pt')
                 X = problem_set['X']
                 Y = problem_set['y']
@@ -87,7 +90,7 @@ def uniform_X():
 
                     df = calculate_results(seed, N, d, ls ** 2, 1 / (ls ** 2), nr_of_interpolation,
                                            nr_of_interpolation,
-                                           nr_of_interpolation, 0.1, r2, CG_TIME, TOTAL_TIME,
+                                           nr_of_interpolation, eff_var_limit, r2, CG_TIME, TOTAL_TIME,
                                            INFERENCE_TIME,penalty)
                     df.to_csv(f'{dirname}/{dirname}_{counter}.csv')
                     print('Wrote experiments: ', counter)
@@ -103,7 +106,7 @@ def uniform_X_benchmarks():
        k(X,X) - uniform distribution with varying effective variance, N and d.
        :return:
        """
-    dirname = 'FALKON_uniform_benchmarks'
+    dirname = 'FALKON_uniform_benchmarks_rerun_4'
     counter = 0
     M=100000
     N=1000000000
@@ -113,7 +116,9 @@ def uniform_X_benchmarks():
     for seed in [3]:
         torch.manual_seed(seed)
         for d in [3]:
-            for eff_var, penalty in zip([0.1, 1, 10], [1e-3, 1e-3, 1e-2]):
+            # for eff_var, penalty in zip([0.1, 1, 10], [1e-3, 1e-3, 1e-2]):
+            # for eff_var, penalty in zip([0.1, 1], [1e-2, 1e-2]):
+            for eff_var, penalty in zip([0.1], [1e-4]):
                 problem_set = torch.load(f'uniform_probem_N={N}_eff_var={eff_var}.pt')
                 X = problem_set['X']
                 Y = problem_set['y']
@@ -147,7 +152,7 @@ def uniform_X_benchmarks():
                 counter += 1
                 print('counter: ', counter)
 def normal_X():
-    dirname = 'FALKON_normal'
+    dirname = 'FALKON_normal_rerun_7'
     counter = 0
     M=100000
     N=1000000000
@@ -156,13 +161,18 @@ def normal_X():
     for seed in [3]:
         torch.manual_seed(seed)
         for d in [3]:
-            for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.1],[27,27,64],[1e-3,1e-3,1e-2]):
+            # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.1],[27,27,64],[1e-3,1e-3,1e-2]):
+            # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.5],[27,27,64],[1e-2,1e-3/2,1e-3]):
+            # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.5],[27,27,27],[1e-2/2,1e-3/4,1e-4]):
+            # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([10],[0.5],[27],[1e-5]):
+            # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([10],[0.5],[27],[1e-6]):
+            for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([10],[0.1],[64],[0.0]):
                 problem_set = torch.load(f'normal_probem_N={N}_eff_var={eff_var}.pt')
                 X = problem_set['X']
                 Y = problem_set['y']
                 ls = problem_set['ls']
                 if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
-                    kernel = custom_GaussianKernel(sigma=ls, min_points=5000,
+                    kernel = custom_GaussianKernel(sigma=ls, min_points=500,
                                                    var_compression=True,
                                                    interpolation_nr=nr_of_interpolation,eff_var_limit=eff_var_limit)
                     options = falkon.FalkonOptions(use_cpu=False, debug=True)
@@ -182,7 +192,7 @@ def normal_X():
 
                     df = calculate_results(seed, N, d, ls ** 2, 1 / (ls ** 2), nr_of_interpolation,
                                            nr_of_interpolation,
-                                           nr_of_interpolation, 0.1, r2, CG_TIME, TOTAL_TIME,
+                                           nr_of_interpolation, eff_var_limit, r2, CG_TIME, TOTAL_TIME,
                                            INFERENCE_TIME,penalty)
                     df.to_csv(f'{dirname}/{dirname}_{counter}.csv')
                     print('Wrote experiments: ', counter)
@@ -197,7 +207,7 @@ def normal_X_bench():
        k(X,X) - uniform distribution with varying effective variance, N and d.
        :return:
        """
-    dirname = 'FALKON_normal_benchmarks'
+    dirname = 'FALKON_normal_benchmarks_rerun_1'
     counter = 0
     M=100000
     N=1000000000
@@ -207,7 +217,7 @@ def normal_X_bench():
     for seed in [3]:
         torch.manual_seed(seed)
         for d in [3]:
-            for eff_var, penalty in zip([0.1, 10, 1], [1e-3, 1e-3, 1e-2]):
+            for eff_var, penalty in zip([10], [1e-6]):
                 problem_set = torch.load(f'normal_probem_N={N}_eff_var={eff_var}.pt')
                 X = problem_set['X']
                 Y = problem_set['y']
@@ -242,7 +252,7 @@ def normal_X_bench():
                 print('counter: ', counter)
 
 def dataset_X():
-    dirname = 'FALKON_dataset'
+    dirname = 'FALKON_dataset_rerun_12'
     counter = 0
     M=100000
     N=1000000000
@@ -250,45 +260,49 @@ def dataset_X():
     if not os.path.exists(dirname):
         os.makedirs(dirname)
     for seed in [1]:
-        for eff_var in [0.1, 10, 1]:
+        # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.1],[16,16,25],[1e-3,1e-3,1e-2]):
+        # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.5],[16,16,25],[1e-2,1e-4,1e-4]):
+        # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.5],[16,16,25],[1.0,1e-3/2,1e-2/2]):
+        # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.3, 0.3, 0.3],[25,25,36],[1e-1,1e-4,1e-4]):
+        # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 10],[0.3, 0.3],[36,36],[1e-3,1e-5]):
+        # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1],[0.1],[36],[1]):
+        for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1],[0.1],[36],[5]):
             problem_set = torch.load(f'real_problem_N={N}_eff_var={eff_var}.pt')
             X = problem_set['X']
             Y = problem_set['y']
             ls = problem_set['ls']
+            if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
+                torch.cuda.synchronize()
+                kernel = custom_GaussianKernel(sigma=ls, min_points=250,
+                                               var_compression=True,
+                                               interpolation_nr=nr_of_interpolation,eff_var_limit=eff_var_limit)
 
-            for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.1],[16,16,25],[1e-3,1e-3,1e-2]):
-                if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
-                    torch.cuda.synchronize()
-                    kernel = custom_GaussianKernel(sigma=ls, min_points=2500,
-                                                   var_compression=True,
-                                                   interpolation_nr=nr_of_interpolation,eff_var_limit=eff_var_limit)
+                options = falkon.FalkonOptions(use_cpu=False, debug=False)
+                model = custom_Falkon(kernel=kernel, penalty=penalty, M=M, options=options)
 
-                    options = falkon.FalkonOptions(use_cpu=False, debug=False)
-                    model = custom_Falkon(kernel=kernel, penalty=penalty, M=M, options=options)
+                start = time.time()
+                model.fit(X, Y)
+                end = time.time()
+                TOTAL_TIME = end - start
+                CG_TIME = model.conjugate_gradient_time
 
-                    start = time.time()
-                    model.fit(X, Y)
-                    end = time.time()
-                    TOTAL_TIME = end - start
-                    CG_TIME = model.conjugate_gradient_time
+                start = time.time()
+                preds = model.predict(X)
+                end = time.time()
+                INFERENCE_TIME = end - start
+                r2 = calc_R2(Y, preds)
 
-                    start = time.time()
-                    preds = model.predict(X)
-                    end = time.time()
-                    INFERENCE_TIME = end - start
-                    r2 = calc_R2(Y, preds)
-
-                    df = calculate_results(seed, X.shape[0], d, ls**2, 1 / ls**2, nr_of_interpolation, nr_of_interpolation,
-                                           nr_of_interpolation, 0.1, r2, CG_TIME, TOTAL_TIME,
-                                           INFERENCE_TIME,penalty)
-                    df.to_csv(f'{dirname}/{dirname}_{counter}.csv')
-                    print('Wrote experiments: ', counter)
-                    del kernel, preds, model
-                    torch.cuda.empty_cache()
+                df = calculate_results(seed, X.shape[0], d, ls**2, 1 / ls**2, nr_of_interpolation, nr_of_interpolation,
+                                       nr_of_interpolation,eff_var_limit, r2, CG_TIME, TOTAL_TIME,
+                                       INFERENCE_TIME,penalty)
+                df.to_csv(f'{dirname}/{dirname}_{counter}.csv')
+                print('Wrote experiments: ', counter)
+                del kernel, preds, model
+                torch.cuda.empty_cache()
             counter += 1
             print('counter: ', counter)
 def dataset_X_bench():
-    dirname = 'FALKON_dataset_benchmarks'
+    dirname = 'FALKON_dataset_benchmarks_rerun_2'
     counter = 0
     nr_of_interpolation = 0
     N=1000000000
@@ -297,7 +311,9 @@ def dataset_X_bench():
     seed=0
     if not os.path.exists(dirname):
         os.makedirs(dirname)
-    for eff_var,penalty in zip([0.1,1,10],[1e-3,1e-3,1e-2]):
+    # for eff_var,penalty in zip([0.1,1,10],[1e-3,1e-3,1e-2]):
+    # for eff_var,penalty in zip([0.1,1,10],[1e-2,1e-4,1e-3]):
+    for eff_var,penalty in zip([10],[1e-5]):
         problem_set = torch.load(f'real_problem_N={N}_eff_var={eff_var}.pt')
         X = problem_set['X']
         Y = problem_set['y']

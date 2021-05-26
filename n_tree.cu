@@ -702,9 +702,9 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> separate_interactions(
     bool do_inital_check = square_edge<=3;
     auto d_bool_check = allocate_scalar_to_cuda<bool>(do_inital_check);
     if(var_comp){
-        bool enable_smooth_field_pair = (square_edge/4)<=eff_var_limit;
-        bool enable_smooth_field_all = (square_edge/4)<=(eff_var_limit/2);
-        scalar_t crit_distance = sqrt(eff_var_limit*2/ls);
+        bool enable_smooth_field_pair = (float)nd*(square_edge/4)<=eff_var_limit;
+        bool enable_smooth_field_all = (float)nd*(square_edge/4)<=(eff_var_limit/2);
+        scalar_t crit_distance = sqrt(eff_var_limit*2/((float)nd*ls));
         auto d_enable_smooth_field_pair = allocate_scalar_to_cuda<bool>(enable_smooth_field_pair);
         auto d_enable_smooth_field_all = allocate_scalar_to_cuda<bool>(enable_smooth_field_all);
         auto d_crit_distance = allocate_scalar_to_cuda<scalar_t>(crit_distance);

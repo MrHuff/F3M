@@ -59,16 +59,22 @@ def process_df(df_1):
     return mean
 
 if __name__ == '__main__':
-    load_exotic_results('Clustered',"./benchs_sparse/results/")
-    load_exotic_results('Brownian_Motion',"./benchs_sparse/results/")
-    load_exotic_results('Fractional_Brownian_Motion',"./benchs_sparse/results/")
-    pass
-    for i in range(1,4):
+    # load_exotic_results('Clustered',"./benchs_sparse/results/")
+    # load_exotic_results('Brownian_Motion',"./benchs_sparse/results/")
+    # load_exotic_results('Fractional_Brownian_Motion',"./benchs_sparse/results/")
+    # pass
+    # for i in range(1,4):
+    #     df_1 = load_and_concat_df(f'experiment_{i}')
+    #     df_1_processsed = process_df(df_1)
+    #     df_1_processsed.to_csv(f"experiment_{i}_results_summary.csv")
+    # for i in range(1,3):
+    #     df_1 = load_and_concat_df(f'experiment_{i}_27')
+    #     df_1_processsed = process_df(df_1)
+    #     df_1_processsed.to_csv(f"experiment_{i}_27_results_summary.csv")
+
+
+    for i in range(6,9):
         df_1 = load_and_concat_df(f'experiment_{i}')
         df_1_processsed = process_df(df_1)
         df_1_processsed.to_csv(f"experiment_{i}_results_summary.csv")
-    for i in range(1,3):
-        df_1 = load_and_concat_df(f'experiment_{i}_27')
-        df_1_processsed = process_df(df_1)
-        df_1_processsed.to_csv(f"experiment_{i}_27_results_summary.csv")
 
