@@ -39,39 +39,75 @@ from run_obj import *
 
 # import pykeops
 # pykeops.clean_pykeops()
+class Container(torch.nn.Module):
+    def __init__(self, my_values):
+        super().__init__()
+        for key in my_values:
+            setattr(self, key, my_values[key])
 
 if __name__ == '__main__':
-    N = 1000000000
-    d=3
-    m = 100000
-    X = torch.randn(N, d).float()
-    # b = torch.randn(N, 1).float()
-    b = torch.randn(m, 1).float()
-    x_ref = X[:m].float()
-    ls = 1
-    min_points = 10000
-    small_field = 64
-    # obj_test = FFM(X=X,ls=ls,min_points=min_points,eff_var_limit=0.1,var_compression=True,small_field_points=64)
-    # start= time.time()
-    # obj_test@b
-    # end = time.time()
-    # sq_time =end-start
-    # print(sq_time)
-    # feels very much like a cache/loading issue??!?!?!?!?!
-    # timing doesn't work either...
-    # obj_test = FFM(X=x_ref,Y=X,ls=ls,min_points=min_points,eff_var_limit=0.1,var_compression=True,small_field_points=small_field)
-    # start= time.time()
-    # f_1 = obj_test@b
-    # end = time.time()
-    # asymetric_time =end-start
-    # print(asymetric_time)
+    eff_var=0.1
+    N=1000000000
+    problem_set = torch.load(f'real_problem_N={N}_eff_var={eff_var}_3.pt')
+    X = problem_set['X']
+    Y = problem_set['y']
+    # print(Y[:1000])
+    # my_values = {
+    #     'X':X.float(),
+    #     'b':Y.float()
+    #
+    # }
+    # container = torch.jit.script(Container(my_values))
+    # container.save("../faulty_data_2.pt")
 
-    obj_test_2 = FFM(X=X,Y=x_ref,ls=ls,min_points=min_points,eff_var_limit=0.1,var_compression=True,small_field_points=small_field)
+    Y = problem_set['y']
+    ls = problem_set['ls']
+    x_ref = X[:5000]
+    nodes = 16
+    obj_test = FFM(X=X,ls=ls,min_points=5000,eff_var_limit=2,var_compression=True,small_field_points=nodes,nr_of_interpolation=nodes)
     start= time.time()
-    f_2 = obj_test_2@b
+    res = obj_test@Y
     end = time.time()
-    transpose =end-start
-    print(transpose)
+    print(end-start)
+
+    bmark_2 = benchmark_matmul(X=x_ref,Y=X,ls=ls)
+    res_2 = bmark_2@Y
+
+    print(torch.norm(res[:5000]-res_2)/torch.norm(res_2))
+
+
+
+    # N = 1000000000
+    # d=3
+    # m = 100000
+    # X = torch.randn(N, d).float()
+    # # b = torch.randn(N, 1).float()
+    # b = torch.randn(m, 1).float()
+    # x_ref = X[:m].float()
+    # ls = 1
+    # min_points = 10000
+    # small_field = 64
+    # # obj_test = FFM(X=X,ls=ls,min_points=min_points,eff_var_limit=0.1,var_compression=True,small_field_points=64)
+    # # start= time.time()
+    # # obj_test@b
+    # # end = time.time()
+    # # sq_time =end-start
+    # # print(sq_time)
+    # # feels very much like a cache/loading issue??!?!?!?!?!
+    # # timing doesn't work either...
+    # # obj_test = FFM(X=x_ref,Y=X,ls=ls,min_points=min_points,eff_var_limit=0.1,var_compression=True,small_field_points=small_field)
+    # # start= time.time()
+    # # f_1 = obj_test@b
+    # # end = time.time()
+    # # asymetric_time =end-start
+    # # print(asymetric_time)
+    #
+    # obj_test_2 = FFM(X=X,Y=x_ref,ls=ls,min_points=min_points,eff_var_limit=0.1,var_compression=True,small_field_points=small_field)
+    # start= time.time()
+    # f_2 = obj_test_2@b
+    # end = time.time()
+    # transpose =end-start
+    # print(transpose)
 
     # bmark_1 = keops_matmul(X=x_ref,Y=X,ls=ls,type=torch.float32)
     # bmark_2 = benchmark_matmul(X=x_ref,Y=X,ls=ls)

@@ -248,11 +248,13 @@ void benchmark_4(int n,float min_points, int threshold,float mean,float var,floa
     const std::string device_cpu = "cpu";
     scalar_t ls_in = (scalar_t) ls;
 
-    torch::jit::script::Module container = torch::jit::load("./faulty_data.pt");
+    torch::jit::script::Module container = torch::jit::load("./faulty_data_2.pt");
     torch::Tensor X_train = container.attr("X").toTensor();
+    torch::Tensor b_train = container.attr("b").toTensor();
+    X_train = X_train.slice(0,0,n);
+    b_train = b_train.slice(0,0,n);
     X_train = X_train.toType(dtype<scalar_t>()).to(device_cuda);
-
-    torch::Tensor b_train = torch::randn({n,1}).toType(dtype<scalar_t>()).to(device_cuda);
+    b_train = b_train.toType(dtype<scalar_t>()).to(device_cuda);
     torch::Tensor res,res_ref;
     FFM_object<scalar_t,nd> ffm_obj = FFM_object<scalar_t, nd>(X_train, X_train, ls_in, device_cuda, min_points,
                                                                nr_of_interpolation_points,

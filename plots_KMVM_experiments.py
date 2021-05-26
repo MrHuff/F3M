@@ -101,7 +101,7 @@ def error_plot(savefig, df, X, Y, slice,label_nice):
     plt.xticks(np.arange(min(np.log10(df[X])), max(np.log10(df[X]))+1, step=1))
     plt.xlabel('$\log_{10}(N)$')
     plt.ylabel(r'Relative Error $\log_{10}(x)$')
-    plt.legend()
+    plt.legend(loc='upper left')
     plt.savefig(savefig,bbox_inches = 'tight',pad_inches = 0)
     plt.clf()
 
@@ -174,6 +174,9 @@ if __name__ == '__main__':
         list_1.append(df)
     big_df = pd.concat(list_1,ignore_index=True)
 
+
+
+
     build_plot(big_df,f'plot_1')
 
     names_3 = ['Uniform','Normal', 'Uniform and Normal']
@@ -190,4 +193,9 @@ if __name__ == '__main__':
     print(big_df)
     build_plot(big_df,f'plot_2')
 
+    df = pd.read_csv(f"5d_exp.csv", index_col=0)
+    df = df[df['effective_variance'] < 100]
+    df = df[df['d'] ==5]
+
+    build_plot(df,f'plot_3')
 

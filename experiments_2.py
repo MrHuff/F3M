@@ -252,7 +252,7 @@ def normal_X_bench():
                 print('counter: ', counter)
 
 def dataset_X():
-    dirname = 'FALKON_dataset_rerun_12'
+    dirname = 'FALKON_dataset_v3_5'
     counter = 0
     M=100000
     N=1000000000
@@ -260,14 +260,15 @@ def dataset_X():
     if not os.path.exists(dirname):
         os.makedirs(dirname)
     for seed in [1]:
-        # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.1],[16,16,25],[1e-3,1e-3,1e-2]):
-        # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.5],[16,16,25],[1e-2,1e-4,1e-4]):
-        # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.5],[16,16,25],[1.0,1e-3/2,1e-2/2]):
-        # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.3, 0.3, 0.3],[25,25,36],[1e-1,1e-4,1e-4]):
-        # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 10],[0.3, 0.3],[36,36],[1e-3,1e-5]):
-        # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1],[0.1],[36],[1]):
-        for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1],[0.1],[36],[5]):
-            problem_set = torch.load(f'real_problem_N={N}_eff_var={eff_var}.pt')
+        # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.5],[16,16,16],[1e-2,1e-2,1e-2]):
+        # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.5],[16,16,16],[1e-3,1e-3,1e-3]):
+        # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.5],[16,16,16],[1e-4,1e-4,1e-4]):
+        # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.5],[16,16,16],[1e-5,1e-5,1e-5]):
+        # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1],[2 ],[16,],[1e-3,]):
+        # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1],[2 ],[16,],[1e-2]):
+        # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1],[2 ],[16,],[1e-4]):
+        for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1],[2 ],[16,],[1e-1]):
+            problem_set = torch.load(f'real_problem_N={N}_eff_var={eff_var}_3.pt')
             X = problem_set['X']
             Y = problem_set['y']
             ls = problem_set['ls']
@@ -302,7 +303,10 @@ def dataset_X():
             counter += 1
             print('counter: ', counter)
 def dataset_X_bench():
-    dirname = 'FALKON_dataset_benchmarks_rerun_2'
+
+    # pykeops.clean_pykeops()
+    # pykeops.test_torch_bindings()
+    dirname = 'FALKON_dataset_benchmarks_v3_3'
     counter = 0
     nr_of_interpolation = 0
     N=1000000000
@@ -311,10 +315,12 @@ def dataset_X_bench():
     seed=0
     if not os.path.exists(dirname):
         os.makedirs(dirname)
-    # for eff_var,penalty in zip([0.1,1,10],[1e-3,1e-3,1e-2]):
-    # for eff_var,penalty in zip([0.1,1,10],[1e-2,1e-4,1e-3]):
-    for eff_var,penalty in zip([10],[1e-5]):
-        problem_set = torch.load(f'real_problem_N={N}_eff_var={eff_var}.pt')
+    # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.5],[16,16,16],[1e-3,1e-3,1e-3]):
+    # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.5],[16,16,16],[1e-4,1e-4,1e-4]):
+    for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1],[0.5],[16],[1e-3,]):
+    # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1],[0.5],[16],[1e-4]):
+    # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1],[0.5],[16],[1e-2]):
+        problem_set = torch.load(f'real_problem_N={N}_eff_var={eff_var}_3.pt')
         X = problem_set['X']
         Y = problem_set['y']
         ls = problem_set['ls']

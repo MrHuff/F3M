@@ -6,7 +6,8 @@ torch.manual_seed(3)
 d=3
 N=1000000000
 # eff_var=1
-for eff_var in [0.1,1,10]:
+# for eff_var in [0.1,1,10]:
+for eff_var in [0.1]:
     ls = 1/(2**0.5*eff_var**0.5)
     perm = torch.arange(0,1000)
     alpha = torch.randn(1000,1)
@@ -32,8 +33,10 @@ for eff_var in [0.1,1,10]:
     # data_dict_2 = {'X':X_2,'y':y_2, 'ls':ls, 'eff_var':eff_var}
     # torch.save(data_dict_2,f'normal_probem_N={N}_eff_var={eff_var}.pt')
     #
-    X_3 = torch.load('standardized_data_osm.pt')
 
+
+    X_3 = torch.load('standardized_data_osm.pt')
+    alpha = torch.randn(1000,1)*0.0001
     x_ref_3 = X_3[perm,:]
     object = benchmark_matmul(X_3,x_ref_3,ls=ls)
     y_3 = object@alpha
@@ -42,7 +45,8 @@ for eff_var in [0.1,1,10]:
     y_3 = y_3 + torch.randn_like(y_3)*0.01
 
     data_dict_3 = {'X':X_3,'y':y_3,'ls':ls,'eff_var':eff_var}
-    torch.save(data_dict_3,f'real_problem_N={N}_eff_var={eff_var}_2.pt')
+    torch.save(data_dict_3,f'real_problem_N={N}_eff_var={eff_var}_3.pt')
+    print(y_3[:100])
     #
     #
     #
