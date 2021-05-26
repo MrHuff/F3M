@@ -52,7 +52,7 @@ def uniform_X():
        k(X,X) - uniform distribution with varying effective variance, N and d.
        :return:
        """
-    dirname = 'FALKON_uniform_rerun_eff_var=0.1_1'
+    dirname = 'FALKON_uniform'
     counter = 0
     M=100000
     N=1000000000
@@ -61,10 +61,7 @@ def uniform_X():
     for seed in [3]:
         torch.manual_seed(seed)
         for d in [3]:
-            # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.1],[27,27,64],[1e-3,1e-3,1e-2]):
-            # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([ 10],[0.5],[64],[1e-3]):
-            # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([ 10],[0.5],[27],[1e-3]):
-            for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([ 0.1],[0.5],[27],[1e-4]):
+            for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.1],[27,27,64],[1e-4,1e-3,1e-2]):
                 problem_set = torch.load(f'uniform_probem_N={N}_eff_var={eff_var}.pt')
                 X = problem_set['X']
                 Y = problem_set['y']
@@ -106,7 +103,7 @@ def uniform_X_benchmarks():
        k(X,X) - uniform distribution with varying effective variance, N and d.
        :return:
        """
-    dirname = 'FALKON_uniform_benchmarks_rerun_4'
+    dirname = 'FALKON_uniform_benchmarks'
     counter = 0
     M=100000
     N=1000000000
@@ -116,9 +113,7 @@ def uniform_X_benchmarks():
     for seed in [3]:
         torch.manual_seed(seed)
         for d in [3]:
-            # for eff_var, penalty in zip([0.1, 1, 10], [1e-3, 1e-3, 1e-2]):
-            # for eff_var, penalty in zip([0.1, 1], [1e-2, 1e-2]):
-            for eff_var, penalty in zip([0.1], [1e-4]):
+            for eff_var, penalty in zip([0.1, 1, 10], [1e-4, 1e-4, 1e-4]):
                 problem_set = torch.load(f'uniform_probem_N={N}_eff_var={eff_var}.pt')
                 X = problem_set['X']
                 Y = problem_set['y']
@@ -152,7 +147,7 @@ def uniform_X_benchmarks():
                 counter += 1
                 print('counter: ', counter)
 def normal_X():
-    dirname = 'FALKON_normal_rerun_7'
+    dirname = 'FALKON_normal'
     counter = 0
     M=100000
     N=1000000000
@@ -161,12 +156,7 @@ def normal_X():
     for seed in [3]:
         torch.manual_seed(seed)
         for d in [3]:
-            # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.1],[27,27,64],[1e-3,1e-3,1e-2]):
-            # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.5],[27,27,64],[1e-2,1e-3/2,1e-3]):
-            # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.5],[27,27,27],[1e-2/2,1e-3/4,1e-4]):
-            # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([10],[0.5],[27],[1e-5]):
-            # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([10],[0.5],[27],[1e-6]):
-            for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([10],[0.1],[64],[0.0]):
+            for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.5],[27,27,27],[1e-2/2,1e-3/4,1e-6]):
                 problem_set = torch.load(f'normal_probem_N={N}_eff_var={eff_var}.pt')
                 X = problem_set['X']
                 Y = problem_set['y']
@@ -252,7 +242,7 @@ def normal_X_bench():
                 print('counter: ', counter)
 
 def dataset_X():
-    dirname = 'FALKON_dataset_v3_5'
+    dirname = 'FALKON_dataset'
     counter = 0
     M=100000
     N=1000000000
@@ -260,14 +250,7 @@ def dataset_X():
     if not os.path.exists(dirname):
         os.makedirs(dirname)
     for seed in [1]:
-        # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.5],[16,16,16],[1e-2,1e-2,1e-2]):
-        # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.5],[16,16,16],[1e-3,1e-3,1e-3]):
-        # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.5],[16,16,16],[1e-4,1e-4,1e-4]):
-        # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.5],[16,16,16],[1e-5,1e-5,1e-5]):
-        # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1],[2 ],[16,],[1e-3,]):
-        # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1],[2 ],[16,],[1e-2]):
-        # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1],[2 ],[16,],[1e-4]):
-        for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1],[2 ],[16,],[1e-1]):
+        for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.5],[16,16,16],[1e-3,1e-4,1e-3]):
             problem_set = torch.load(f'real_problem_N={N}_eff_var={eff_var}.pt')
             X = problem_set['X']
             Y = problem_set['y']
@@ -306,7 +289,7 @@ def dataset_X_bench():
 
     # pykeops.clean_pykeops()
     # pykeops.test_torch_bindings()
-    dirname = 'FALKON_dataset_benchmarks_v3_3'
+    dirname = 'FALKON_dataset_benchmarks'
     counter = 0
     nr_of_interpolation = 0
     N=1000000000
@@ -315,11 +298,7 @@ def dataset_X_bench():
     seed=0
     if not os.path.exists(dirname):
         os.makedirs(dirname)
-    # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.5],[16,16,16],[1e-3,1e-3,1e-3]):
-    # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.5],[16,16,16],[1e-4,1e-4,1e-4]):
-    for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1],[0.5],[16],[1e-3,]):
-    # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1],[0.5],[16],[1e-4]):
-    # for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1],[0.5],[16],[1e-2]):
+    for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.5],[16,16,16],[1e-4,1e-4,1e-4]):
         problem_set = torch.load(f'real_problem_N={N}_eff_var={eff_var}_3.pt')
         X = problem_set['X']
         Y = problem_set['y']

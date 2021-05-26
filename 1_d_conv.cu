@@ -153,7 +153,7 @@ __global__ void rbf_1d_reduce_shared_torch(
             if (i < x_n) { // we compute x1i only if needed
                 scalar_t *yjrel = yj; // Loop on the columns of the current block.
                 for (int jrel = 0; (jrel < blockDim.x) && (jrel < y_n - jstart); jrel++, yjrel += nd) {
-                    acc += rbf<scalar_t,nd>(x_i, yjrel,ls) * bj[jrel]; //sums incorrectly cause pointer is fucked not sure if allocating properly
+                    acc += rbf<scalar_t,nd>(x_i, yjrel,ls) * bj[jrel];
                 }
             }
             __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
@@ -301,7 +301,7 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor64<scalar_t
                     scalar_t *yjrel = yj; // Loop on the columns of the current block.
                     for (int jrel = 0; (jrel < blockDim.x) && (jrel < end - jstart); jrel++, yjrel += nd) {
                         acc += rbf<scalar_t, nd>(x_i, yjrel, ls) *
-                               bj[jrel]; //sums incorrectly cause pointer is fucked not sure if allocating properly
+                               bj[jrel];
                     }
                 }
                 __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
@@ -626,7 +626,7 @@ __global__ void skip_conv_far_boxes_opt(//needs rethinking
                 if (i_calc < cheb_data_size) { // we compute x1i only if needed
                     scalar_t *yjrel = yj; // Loop on the columns of the current block.
                     for (int p = 0; (p < blockDim.x) && (p < cheb_data_size - jstart); p++, yjrel += nd) {
-                        acc += rbf<scalar_t,nd>(x_i, yjrel, ls)* bj[p]; //sums incorrectly cause pointer is fucked not sure if allocating properly
+                        acc += rbf<scalar_t,nd>(x_i, yjrel, ls)* bj[p];
                     }
                 }
                 __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!

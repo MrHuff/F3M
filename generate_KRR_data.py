@@ -1,12 +1,8 @@
-import torch
-
 from FFM_classes import *
 
 torch.manual_seed(3)
 d=3
 N=1000000000
-# eff_var=1
-# for eff_var in [0.1,1,10]:
 for eff_var in [0.1]:
     ls = 1/(2**0.5*eff_var**0.5)
     perm = torch.arange(0,1000)
