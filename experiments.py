@@ -402,10 +402,12 @@ def experiment_7(device="cuda:0"):
         for d in [4,5]:
             node_list = [256, 512, 1024]
             for nr_of_interpolation in node_list:
-                for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 250000000],
+                for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 500000000],
                                                             [5000, 5000, 20000, 20000],
                                                             [nr_of_interpolation, 2500,
                                                              10000, 10000]):
+                    if d>4 and n==500000000:
+                        n=500000000/2
                     for r2 in [0.1,1,10]:
                         X=0
                         b=0
