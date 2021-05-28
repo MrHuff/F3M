@@ -242,7 +242,7 @@ def normal_X_bench():
                 print('counter: ', counter)
 
 def dataset_X():
-    dirname = 'FALKON_dataset'
+    dirname = 'FALKON_dataset_neo_4'
     counter = 0
     M=100000
     N=1000000000
@@ -250,8 +250,8 @@ def dataset_X():
     if not os.path.exists(dirname):
         os.makedirs(dirname)
     for seed in [1]:
-        for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.5],[16,16,16],[1e-3,1e-4,1e-3]):
-            problem_set = torch.load(f'real_problem_N={N}_eff_var={eff_var}.pt')
+        for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[2, 2, 2],[16,16,16],[1e-1,1e-1,1e-1]):
+            problem_set = torch.load(f'real_problem_N={N}_eff_var={eff_var}_4.pt')
             X = problem_set['X']
             Y = problem_set['y']
             ls = problem_set['ls']
@@ -289,7 +289,7 @@ def dataset_X_bench():
 
     # pykeops.clean_pykeops()
     # pykeops.test_torch_bindings()
-    dirname = 'FALKON_dataset_benchmarks'
+    dirname = 'FALKON_dataset_benchmarks_neo_4'
     counter = 0
     nr_of_interpolation = 0
     N=1000000000
@@ -298,8 +298,8 @@ def dataset_X_bench():
     seed=0
     if not os.path.exists(dirname):
         os.makedirs(dirname)
-    for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.5],[16,16,16],[1e-4,1e-4,1e-4]):
-        problem_set = torch.load(f'real_problem_N={N}_eff_var={eff_var}_3.pt')
+    for eff_var,eff_var_limit,nr_of_interpolation,penalty in zip([0.1, 1, 10],[0.5, 0.5, 0.5],[16,16,16],[1e-1,1e-1,1e-1]):
+        problem_set = torch.load(f'real_problem_N={N}_eff_var={eff_var}_4.pt')
         X = problem_set['X']
         Y = problem_set['y']
         ls = problem_set['ls']

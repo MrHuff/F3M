@@ -73,8 +73,14 @@ if __name__ == '__main__':
     #     df_1_processsed.to_csv(f"experiment_{i}_27_results_summary.csv")
 
 
-    for i in range(6,9):
-        df_1 = load_and_concat_df(f'experiment_{i}')
+    # for i in range(6,9):
+    #     df_1 = load_and_concat_df(f'experiment_{i}')
+    #     df_1_processsed = process_df(df_1)
+    #     df_1_processsed.to_csv(f"experiment_{i}_results_summary.csv")
+    list_cat =[]
+    for i in range(1,4):
+        df_1 = load_and_concat_df(f'experiment_10_{i}')
         df_1_processsed = process_df(df_1)
-        df_1_processsed.to_csv(f"experiment_{i}_results_summary.csv")
-
+        list_cat.append(df_1_processsed)
+    big_list = pd.concat(list_cat)
+    big_list.to_csv(f"experiment_10_results_summary.csv")

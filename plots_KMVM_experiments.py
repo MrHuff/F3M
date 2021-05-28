@@ -9,7 +9,7 @@ from matplotlib import pyplot as plt
 from pylatex import Document, Section, Figure, SubFigure, NoEscape,Command
 from pylatex.base_classes import Environment
 from pylatex.package import Package
-
+import seaborn as sns
 
 class subfigure(Environment):
     """A class to wrap LaTeX's alltt environment."""
@@ -95,13 +95,27 @@ def error_plot(savefig, df, X, Y, slice,label_nice):
     mean = Y
     std = Y+' std'
     els = df[slice].unique().tolist()
-    for label_df in els:
-        sub_df = df[df[slice]==label_df]
-        plt.scatter(np.log10(sub_df[X]), np.log10(sub_df[mean]), marker='o',label=f'{label_nice}: {label_df}',alpha=0.7,s=300)
-    plt.xticks(np.arange(min(np.log10(df[X])), max(np.log10(df[X]))+1, step=1))
+    df['log_mean'] = np.log10(df[mean])
+    df['log_X']  = np.log10(df[X])
+    if (slice=='nr of node points'):
+        df[slice] = df[slice].apply(lambda x: f'$r={int(x)}$')
+    # dd = pd.melt(df, id_vars=X,var_name=slice,)
+    g = sns.boxplot(x='log_X', y='log_mean', data=df, hue=slice)
+    el = df['log_X'].unique().tolist()
+    el = [round(e,1) for e in el]
+    g.set(xticklabels=sorted(el))
+    g.legend(loc=2)
+    # for label_df in els:
+
+        # sub_df = df[df[slice]==label_df]
+        # un_x = sub_df[X].unique()
+        # mean_2 = sub_df.groupby(X)['log_mean'].mean()
+        # plt.scatter(np.log10(sub_df[X]), np.log10(sub_df[mean]), marker='o',label=f'{label_nice}: {label_df}',alpha=0.7,s=300)
+        # plt.plot(sorted(np.log10(un_x)),mean_2)
+    # plt.xticks(np.arange(min(np.log10(df[X])), max(np.log10(df[X]))+1, step=1))
     plt.xlabel('$\log_{10}(N)$')
     plt.ylabel(r'Relative Error $\log_{10}(x)$')
-    plt.legend(loc='upper left')
+    # plt.legend(loc=0)
     plt.savefig(savefig,bbox_inches = 'tight',pad_inches = 0)
     plt.clf()
 
@@ -186,7 +200,7 @@ if __name__ == '__main__':
         df = pd.read_csv(f"experiment_{i}_results_summary.csv",index_col=0)
         df = df[df['effective_variance']<100]
         df = df[df['d']==4]
-        df['dataset_name'] = names[i-6]
+        df['dataset_name'] = names_3[i-6]
         df['dataset_name_2'] = names_3[i-6]
         list_1.append(df)
     big_df = pd.concat(list_1,ignore_index=True)

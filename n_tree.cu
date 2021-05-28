@@ -699,7 +699,13 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> separate_interactions(
     torch::Tensor &unique_Y  = ntree_Y.unique_counts;
     torch::Tensor edge = ntree_X.edge;
     scalar_t square_edge = edge.item<scalar_t>()*edge.item<scalar_t>()*ls;
-    bool do_inital_check = square_edge<=3;
+    bool do_inital_check;
+    if (var_comp){
+        do_inital_check = square_edge<=3;
+    }else{
+        do_inital_check =true;
+    }
+//    bool do_inital_check = true;
     auto d_bool_check = allocate_scalar_to_cuda<bool>(do_inital_check);
     if(var_comp){
         bool enable_smooth_field_pair = (float)nd*(square_edge/4)<=eff_var_limit;
@@ -968,7 +974,7 @@ torch::Tensor far_field_run(
     ;
 
 //    std::cout<<"near_field: "<<near_field.size(0)<<std::endl;
-    std::tie(far_field,small_field,near_field) = get_field<scalar_t,nd>(
+        std::tie(far_field,small_field,near_field) = get_field<scalar_t,nd>(
             near_field,
             ntree_X,
             ntree_Y,

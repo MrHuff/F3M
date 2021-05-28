@@ -22,8 +22,8 @@ if __name__ == '__main__':
 
     eff_var=0.1 # 0.1 - 1e-3, 1 - 1e-3, 10, 1e-2?, 1e-2 is already acceptable... Unif
     # eff_var=10 # 0.1 - 1e-3, 1 - 1e-3, 10, 1e-2?, 1e-2 is already acceptable... Norm
-    penalty = 1e-3 #does a little better, seems like 3F-M might need a little more penalty...
-    problem_set = torch.load(f'normal_probem_N={N}_eff_var={eff_var}.pt')
+    penalty = 1e-2 #does a little better, seems like 3F-M might need a little more penalty...
+    problem_set = torch.load(f'small_real_problem_N={N}_eff_var={eff_var}_5.pt')
     X = problem_set['X']
     Y = problem_set['y']
     ls = problem_set['ls']
@@ -31,7 +31,7 @@ if __name__ == '__main__':
     # OK PICK YOUR POISON, EITHER ONE IS SLOW OR ONE IS FAST DEPENDING ON TRANSPOSE, MIGHT ALMOST SWITCH TAG IN BETWEEN
     # WHAT THE FUCK IS GOING ON????
     nr_of_interpolation_nodes = 27
-    kernel = custom_GaussianKernel(sigma=ls,min_points=7500,var_compression=True,interpolation_nr=nr_of_interpolation_nodes,eff_var_limit=0.5)
+    kernel = custom_GaussianKernel(sigma=ls,min_points=250,var_compression=True,interpolation_nr=nr_of_interpolation_nodes,eff_var_limit=0.5)
     options = falkon.FalkonOptions(use_cpu=False,debug=True)
     model = custom_Falkon(kernel=kernel, penalty=penalty, M=M, options=options)
     model.fit(X, Y)
