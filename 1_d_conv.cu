@@ -1092,15 +1092,11 @@ __global__ void skip_conv_far_boxes_opt_old(//needs rethinking
     scalar_t *yj = &buffer[0];
     scalar_t *bj = &buffer[blockDim.x*nd];
 //    scalar_t *distance = &buffer[cheb_data_size*(nd+1)];
-    scalar_t *cX_i = &buffer[blockDim.x*(nd+1)]; //Get another shared memory pointer.
 
-    if (threadIdx.x<nd){
-        cX_i[threadIdx.x] = centers_X[box_ind][threadIdx.x];
-    }
     //Load these points only... the rest gets no points... threadIdx.x +a to b. ...
     if (i_calc<cheb_data_size) {
         for (int k = 0; k < nd; k++) {
-            x_i[k] = cheb_data_X[i_calc][k];
+            x_i[k] = cheb_data_X[i_calc][k]+centers_X[box_ind][k];
         }
     }
 
@@ -1116,7 +1112,7 @@ __global__ void skip_conv_far_boxes_opt_old(//needs rethinking
                     int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
                     if (j < cheb_data_size) {
                         for (int k = 0; k < nd; k++) {
-                            yj[nd * threadIdx.x+k] = cheb_data_Y[j][k]+centers_Y[int_m][k] - cX_i[k]; //Error also occurs here!
+                            yj[nd * threadIdx.x+k] = cheb_data_Y[j][k]+centers_Y[int_m][k]; //Error also occurs here!
                         }
                         bj[threadIdx.x] = b_data[j + int_m * cheb_data_size][b_ind];
                     }
@@ -1337,6 +1333,24 @@ __global__ void laplace_shared_transpose_old(
             output[idx_reorder][b_ind] += acc;
         }
 
+    }
+    __syncthreads();
+}
+__global__ void parse_x_boxes_old(
+        const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> box_cumsum,
+        torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> results
+){
+    int tid  = threadIdx.x + blockDim.x*blockIdx.x;
+    int n = box_cumsum.size(0);
+    if (tid<n){
+        int box_nr = box_cumsum[tid][0];
+        if (tid==0){
+            results[box_nr][0] = 0;
+            results[box_nr][1] = box_cumsum[tid][1];
+        }else{
+            results[box_nr][0] = box_cumsum[tid-1][1];
+            results[box_nr][1] = box_cumsum[tid][1];
+        }
     }
     __syncthreads();
 }

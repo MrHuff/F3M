@@ -607,11 +607,12 @@ void far_field_compute_v2(
 ){
     dim3 blockSize,gridSize;
     int memory;
-    torch::Tensor low_rank_y;
+    torch::Tensor low_rank_y,low_rank_y_ref;
     torch::Tensor cheb_data_X = cheb_data*x_box.edge/2.+x_box.edge/2.; //scaling lagrange nodes to edge scale
     low_rank_y = torch::zeros({cheb_data.size(0)*unique_y.size(0),b.size(1)}).toType(dtype<scalar_t>()).to(device_gpu);
+    low_rank_y_ref = low_rank_y.clone();
     //ok might want to adapt things a bit so they don't explode at the end!
-
+//
     int hash_table_size = 1024 * 1024;
     while (hash_table_size < (int) (2 * unique_x.size(0))) {
         hash_table_size *= 2;
@@ -640,19 +641,19 @@ void far_field_compute_v2(
     );
     cudaDeviceSynchronize();
 
-//    apply_laplace_interpolation_v2<scalar_t,nd>(y_box,
-//                                                b,
-//                                                device_gpu,
-//                                                chebnodes_1D,
-//                                                laplace_combinations,
-//                                                node_list_cum,
-//                                                cheb_w,
-//                                                true,
-//                                                low_rank_y,
-//                                                unique_y,
-//                                                hash_list_y,
-//                                                hash_list_size_y
-//    ); //no problems here!
+    apply_laplace_interpolation_v2<scalar_t,nd>(y_box,
+                                                b,
+                                                device_gpu,
+                                                chebnodes_1D,
+                                                laplace_combinations,
+                                                node_list_cum,
+                                                cheb_w,
+                                                true,
+                                                low_rank_y_ref,
+                                                unique_y,
+                                                hash_list_y,
+                                                hash_list_size_y
+    ); //no problems here!
     apply_laplace_interpolation_v2_old<scalar_t,nd>(y_box,
                                                 b,
                                                 device_gpu,
@@ -664,23 +665,23 @@ void far_field_compute_v2(
                                                 low_rank_y
     ); //no problems here!
 
-//    low_rank_y =  setup_skip_conv<scalar_t,nd>( //error happens here
-//            cheb_data_X,
-//            cheb_data_X,
-//            low_rank_y,
-//            x_box.centers,
-//            y_box.centers,
-//            unique_x,
-//            ls,
-//            device_gpu,
-//            interactions_x_parsed,
-//            interactions_y,
-//            hash_list_x,
-//            hash_list_size_x,
-//            hash_list_y,
-//            hash_list_size_y
-//
-//    );
+    low_rank_y_ref =  setup_skip_conv<scalar_t,nd>( //error happens here
+            cheb_data_X,
+            cheb_data_X,
+            low_rank_y_ref,
+            x_box.centers,
+            y_box.centers,
+            unique_x,
+            ls,
+            device_gpu,
+            interactions_x_parsed,
+            interactions_y,
+            hash_list_x,
+            hash_list_size_x,
+            hash_list_y,
+            hash_list_size_y
+
+    );
 
     low_rank_y =  setup_skip_conv_old<scalar_t,nd>( //error happens here
             cheb_data_X,
@@ -694,7 +695,8 @@ void far_field_compute_v2(
             interactions_x_parsed,
             interactions_y
     );
-    apply_laplace_interpolation_v2<scalar_t,nd>(x_box,
+
+    apply_laplace_interpolation_v2_old<scalar_t,nd>(x_box,
                                                 low_rank_y,
                                                 device_gpu,
                                                 chebnodes_1D,
@@ -702,13 +704,23 @@ void far_field_compute_v2(
                                                 node_list_cum,
                                                 cheb_w,
                                                 false,
-                                                output,
-                                                unique_x,
-                                                hash_list_x,
-                                                hash_list_size_x
-                                                );
-    destroy_hashtable(hash_list_x);
-    destroy_hashtable(hash_list_y);
+                                                output
+    );
+//    apply_laplace_interpolation_v2<scalar_t,nd>(x_box,
+//                                                low_rank_y,
+//                                                device_gpu,
+//                                                chebnodes_1D,
+//                                                laplace_combinations,
+//                                                node_list_cum,
+//                                                cheb_w,
+//                                                false,
+//                                                output,
+//                                                unique_x,
+//                                                hash_list_x,
+//                                                hash_list_size_x
+//                                                );
+//    destroy_hashtable(hash_list_x);
+//    destroy_hashtable(hash_list_y);
 
 };
 torch::Tensor get_new_interactions(
@@ -1095,6 +1107,23 @@ int get_interpolation_rule(scalar_t & effective_edge,int & nr_of_interpolation){
     }
     return nr_of_interpolation;
 
+}
+
+template <int nd>
+torch::Tensor process_interactions_old(torch::Tensor & interactions,int x_boxes,const std::string & gpu_device){
+    torch::Tensor box_indices,tmp,counts,count_cumsum,results;
+    std::tie(box_indices,tmp,counts) = torch::unique_consecutive(interactions,false,true);
+    count_cumsum = torch::stack({box_indices.toType(torch::kInt32),counts.cumsum(0).toType(torch::kInt32)},1);  //64+1 vec
+    results = -torch::ones({x_boxes,2}).toType(torch::kInt32).to(gpu_device);
+    dim3 blockSize,gridSize;
+    int memory;
+    std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<int>(nd, count_cumsum.size(0));
+    parse_x_boxes_old<<<gridSize,blockSize>>>(
+            count_cumsum.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
+            results.packed_accessor64<int,2,torch::RestrictPtrTraits>()
+    );
+    cudaDeviceSynchronize();
+    return results;
 }
 
 template <typename scalar_t, int nd>
