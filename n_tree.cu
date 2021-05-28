@@ -423,7 +423,7 @@ torch::Tensor setup_skip_conv(
         int * hash_list_size_x,
         KeyValue* hash_list_y,
         int * hash_list_size_y
-){
+){ ////SOMETHING WRONG HERE
     dim3 blockSize,gridSize;
     int memory;
     torch::Tensor interactions_y_hash = interactions_y.clone();
@@ -461,6 +461,131 @@ torch::Tensor setup_skip_conv(
     cudaDeviceSynchronize();
     return output;
 }
+template <typename scalar_t,int nd>
+void apply_laplace_interpolation_v2_old(
+        n_tree_cuda<scalar_t,nd>& n_tree,
+        torch::Tensor &b,
+        const std::string & device_gpu,
+        torch::Tensor & nodes,
+        torch::Tensor & laplace_indices,
+        torch::Tensor & node_list_cum,
+        torch::Tensor & cheb_w,
+        const bool & transpose,
+        torch::Tensor & output
+
+){
+    torch::Tensor & boxes_count = n_tree.unique_counts;
+    torch::Tensor & idx_reordering = n_tree.sorted_index;
+    torch::Tensor & data = n_tree.data;
+    torch::Tensor & centers = n_tree.centers;
+    torch::Tensor & edge = n_tree.edge;
+
+    dim3 blockSize,gridSize;
+    int memory,blkSize;
+    torch::Tensor indicator,box_block;
+    int min_size=boxes_count.min().item<int>();
+    blkSize = optimal_blocksize(min_size);
+    std::tie(blockSize,gridSize,memory,indicator,box_block) = skip_kernel_launch<scalar_t>(nd,blkSize,boxes_count,n_tree.box_indices_sorted_reindexed);
+    memory = memory+2*nodes.size(0)*sizeof(scalar_t)+(nd+1)*sizeof(int); //Seems the last write is where the trouble is...
+    torch::Tensor boxes_count_cumulative = n_tree.unique_counts_cum_reindexed;
+
+    if (transpose){
+
+        lagrange_shared_old<scalar_t, nd><<<gridSize, blockSize, memory>>>(
+                data.packed_accessor64<scalar_t, 2, torch::RestrictPtrTraits>(),
+                b.packed_accessor64<scalar_t, 2, torch::RestrictPtrTraits>(),
+                nodes.packed_accessor64<scalar_t, 1, torch::RestrictPtrTraits>(),
+                laplace_indices.packed_accessor64<int, 2, torch::RestrictPtrTraits>(),
+                output.packed_accessor64<scalar_t, 2, torch::RestrictPtrTraits>(),
+                indicator.packed_accessor64<int, 1, torch::RestrictPtrTraits>(),
+                box_block.packed_accessor64<int, 1, torch::RestrictPtrTraits>(),
+                boxes_count_cumulative.packed_accessor64<int, 1, torch::RestrictPtrTraits>(),
+                centers.packed_accessor64<scalar_t, 2, torch::RestrictPtrTraits>(),
+                edge.data_ptr<scalar_t>(),
+                idx_reordering.packed_accessor64<int, 1, torch::RestrictPtrTraits>(),
+                node_list_cum.packed_accessor64<int, 1, torch::RestrictPtrTraits>(),
+                cheb_w.packed_accessor64<scalar_t, 1, torch::RestrictPtrTraits>()
+        );
+        cudaDeviceSynchronize();
+
+    }else{
+        laplace_shared_transpose_old<scalar_t,nd><<<gridSize,blockSize,memory>>>(
+                data.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                b.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                nodes.packed_accessor64<scalar_t,1,torch::RestrictPtrTraits>(),
+                laplace_indices.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
+                output.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                indicator.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                box_block.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                boxes_count_cumulative.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                centers.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                edge.data_ptr<scalar_t>(),
+                idx_reordering.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                node_list_cum.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+                cheb_w.packed_accessor64<scalar_t,1,torch::RestrictPtrTraits>()
+        );
+        cudaDeviceSynchronize();
+    }
+}
+
+template <typename scalar_t,int nd>
+torch::Tensor setup_skip_conv_old(
+        torch::Tensor &cheb_data_X,
+        torch::Tensor &cheb_data_Y,
+        torch::Tensor &b_data,
+        torch::Tensor & centers_X,
+        torch::Tensor & centers_Y,
+        torch::Tensor & unique_sorted_boxes_idx,
+        scalar_t & ls,
+        const std::string & device_gpu,
+        torch::Tensor & interactions_x_parsed,
+        torch::Tensor & interactions_y
+){
+    scalar_t *d_ls;
+    cudaMalloc((void **)&d_ls, sizeof(scalar_t));
+    cudaMemcpy(d_ls, &ls, sizeof(scalar_t), cudaMemcpyHostToDevice);
+    torch::Tensor indicator,box_block,output;
+    int cheb_data_size=cheb_data_X.size(0);
+    int blkSize = optimal_blocksize(cheb_data_size);
+//    torch::Tensor boxes_count = min_size*torch::ones({unique_sorted_boxes_idx.size(0)+1}).toType(torch::kInt32);
+    torch::Tensor boxes_count = cheb_data_size * torch::ones(unique_sorted_boxes_idx.size(0)).toType(torch::kInt32).to(device_gpu);
+    dim3 blockSize,gridSize;
+    int memory;
+    unique_sorted_boxes_idx = unique_sorted_boxes_idx.toType(torch::kInt32);
+    std::tie(blockSize,gridSize,memory,indicator,box_block) = skip_kernel_launch<scalar_t>(nd,blkSize,boxes_count,unique_sorted_boxes_idx);
+    output = torch::zeros({ centers_X.size(0)*cheb_data_X.size(0),b_data.size(1)}).toType(dtype<scalar_t>()).to(device_gpu);
+    skip_conv_far_boxes_opt_old<scalar_t,nd><<<gridSize,blockSize,memory>>>(
+            cheb_data_X.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+            cheb_data_Y.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+            b_data.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+            output.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+            d_ls,
+            centers_X.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+            centers_Y.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+            indicator.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+            box_block.packed_accessor64<int,1,torch::RestrictPtrTraits>(),
+            interactions_x_parsed.packed_accessor64<int,2,torch::RestrictPtrTraits>(),
+            interactions_y.packed_accessor64<int,1,torch::RestrictPtrTraits>()
+    );
+    cudaDeviceSynchronize();
+    return output;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 //Always pass interactions..., if there aint any then ok etc...
 template <typename scalar_t,int nd>
 void far_field_compute_v2(
@@ -515,7 +640,20 @@ void far_field_compute_v2(
     );
     cudaDeviceSynchronize();
 
-    apply_laplace_interpolation_v2<scalar_t,nd>(y_box,
+//    apply_laplace_interpolation_v2<scalar_t,nd>(y_box,
+//                                                b,
+//                                                device_gpu,
+//                                                chebnodes_1D,
+//                                                laplace_combinations,
+//                                                node_list_cum,
+//                                                cheb_w,
+//                                                true,
+//                                                low_rank_y,
+//                                                unique_y,
+//                                                hash_list_y,
+//                                                hash_list_size_y
+//    ); //no problems here!
+    apply_laplace_interpolation_v2_old<scalar_t,nd>(y_box,
                                                 b,
                                                 device_gpu,
                                                 chebnodes_1D,
@@ -523,29 +661,38 @@ void far_field_compute_v2(
                                                 node_list_cum,
                                                 cheb_w,
                                                 true,
-                                                low_rank_y,
-                                                unique_y,
-                                                hash_list_y,
-                                                hash_list_size_y
+                                                low_rank_y
     ); //no problems here!
 
+//    low_rank_y =  setup_skip_conv<scalar_t,nd>( //error happens here
+//            cheb_data_X,
+//            cheb_data_X,
+//            low_rank_y,
+//            x_box.centers,
+//            y_box.centers,
+//            unique_x,
+//            ls,
+//            device_gpu,
+//            interactions_x_parsed,
+//            interactions_y,
+//            hash_list_x,
+//            hash_list_size_x,
+//            hash_list_y,
+//            hash_list_size_y
+//
+//    );
 
-    low_rank_y =  setup_skip_conv<scalar_t,nd>( //error happens here
+    low_rank_y =  setup_skip_conv_old<scalar_t,nd>( //error happens here
             cheb_data_X,
             cheb_data_X,
             low_rank_y,
             x_box.centers,
             y_box.centers,
-            unique_x,
+            x_box.box_indices_sorted_reindexed,
             ls,
             device_gpu,
             interactions_x_parsed,
-            interactions_y,
-            hash_list_x,
-            hash_list_size_x,
-            hash_list_y,
-            hash_list_size_y
-
+            interactions_y
     );
     apply_laplace_interpolation_v2<scalar_t,nd>(x_box,
                                                 low_rank_y,
