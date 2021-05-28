@@ -169,7 +169,7 @@ void benchmark_2(int n,float min_points, int threshold,float mean,float var,floa
 
 
     torch::Tensor res_compare = res.slice(0,0,threshold);
-    torch::Tensor rel_error  = ((res_ref-res_compare)/res_ref).abs_().mean();
+    torch::Tensor rel_error  = ((res_ref-res_compare).norm()/res_ref.norm());
     auto rel_error_float = rel_error.item<scalar_t>();
     std::cout<<res_ref.slice(0,0,10)<<std::endl;
     std::cout<<res.slice(0,0,10)<<std::endl;

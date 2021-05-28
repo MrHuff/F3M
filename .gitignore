@@ -22,5 +22,7 @@ build
 *.parq
 *.pyc
 *.png
+*.pdf
+*.tex
 __pycache__
 build/temp.linux-x86_64-3.7
