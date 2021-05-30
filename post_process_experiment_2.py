@@ -10,7 +10,7 @@ from post_process_experiment_1 import *
 #               'experiment_6_1024_10',
 #               'experiment_6_1024_rest',
 #               'experiment_7_5',
-#               'experiment_8'
+#               'experiment_8_hack'
 #               ]
 # dataset_name = ['Uniform']*6+['Normal']+['Uniform and Normal']
 #
@@ -59,16 +59,16 @@ from post_process_experiment_1 import *
 # mean['relative error 2'] = round(mean['relative error 2'],4)
 # mean['time (s)'] = round(mean['time (s)'],2)
 # print(mean)
-df = pd.read_csv("experiment_10_results_summary.csv",index_col=0)
-df = df[df['effective variance limit']==0.5]
-df = df[df['nr of node points']==64]
-group_on=['n']
-mean = df.groupby(group_on)[meanstd].mean()
-mean = mean.reset_index()
-std = df.groupby(group_on)[meanstd].std()
-std = std.reset_index()
-mean['relative error 2 std'] = round(std['relative error 2'],5)
-mean['time (s) std'] = round(std['time (s)'],2)
-mean['relative error 2'] = round(mean['relative error 2'],4)
-mean['time (s)'] = round(mean['time (s)'],2)
-print(mean)
+# df = pd.read_csv("experiment_10_results_summary.csv",index_col=0)
+# df = df[df['effective variance limit']==0.5]
+# df = df[df['nr of node points']==64]
+# group_on=['n']
+# mean = df.groupby(group_on)[meanstd].mean()
+# mean = mean.reset_index()
+# std = df.groupby(group_on)[meanstd].std()
+# std = std.reset_index()
+# mean['relative error 2 std'] = round(std['relative error 2'],5)
+# mean['time (s) std'] = round(std['time (s)'],2)
+# mean['relative error 2'] = round(mean['relative error 2'],4)
+# mean['time (s)'] = round(mean['time (s)'],2)
+# print(mean)

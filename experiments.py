@@ -459,7 +459,7 @@ def experiment_8(device="cuda:0"):
     ref_points = 5000
     ls = float(1.0)/2**0.5 #lengthscale
     counter = 0
-    dirname = 'experiment_8'
+    dirname = 'experiment_8_hack'
     if not os.path.exists(dirname):
         os.makedirs(dirname)
     node_list = [256,512,1024]

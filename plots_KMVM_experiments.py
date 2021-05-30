@@ -10,7 +10,7 @@ from pylatex import Document, Section, Figure, SubFigure, NoEscape,Command
 from pylatex.base_classes import Environment
 from pylatex.package import Package
 import seaborn as sns
-
+from post_process_experiment_1 import *
 class subfigure(Environment):
     """A class to wrap LaTeX's alltt environment."""
     packages = [Package('subcaption')]
@@ -167,31 +167,43 @@ def build_plot(df,plot_name):
 
 if __name__ == '__main__':
 
-    names_3 = ['Uniform','Normal', 'Uniform and Normal']
-    names = ['Standard']*3
-    list_1=[]
-    for i in range(1,4):
-        df = pd.read_csv(f"experiment_{i}_results_summary.csv")
-        df = df[df['effective_variance']<100]
-        df['dataset_name'] = names[i-1]
-        df['dataset_name_2'] = names_3[i-1]
-        list_1.append(df)
-    names_3  = ['Brownian Motion','Clustered', 'Fractional Brownian Motion']
-    names_2 = ['Pathological']*3
-    exotic = ['Brownian_Motion.csv','Clustered.csv','Fractional_Brownian_Motion.csv']
-    for j,el in enumerate(exotic):
-        df = pd.read_csv(el)
-        df['effective_variance'] = round(df['effective_variance'],2)
-        df = df[df['effective_variance']<100]
-        df['dataset_name'] = names_2[j]
-        df['dataset_name_2'] = names_3[j]
-        list_1.append(df)
-    big_df = pd.concat(list_1,ignore_index=True)
+    # names_3 = ['Uniform','Normal', 'Uniform and Normal']
+    # names = ['Standard']*3
+    # list_1=[]
+    # for i in range(1,4):
+    #     df = pd.read_csv(f"experiment_{i}_results_summary.csv")
+    #     df = df[df['effective_variance']<100]
+    #     df['dataset_name'] = names[i-1]
+    #     df['dataset_name_2'] = names_3[i-1]
+    #     list_1.append(df)
+    # names_3  = ['Brownian Motion','Clustered', 'Fractional Brownian Motion']
+    # names_2 = ['Pathological']*3
+    # exotic = ['Brownian_Motion.csv','Clustered.csv','Fractional_Brownian_Motion.csv']
+    # for j,el in enumerate(exotic):
+    #     df = pd.read_csv(el)
+    #     df['effective_variance'] = round(df['effective_variance'],2)
+    #     df = df[df['effective_variance']<100]
+    #     df['dataset_name'] = names_2[j]
+    #     df['dataset_name_2'] = names_3[j]
+    #     list_1.append(df)
+    # big_df = pd.concat(list_1,ignore_index=True)
+    #
+    #
+    #
+    #
+    # build_plot(big_df,f'plot_1')
 
+    df_1 = load_and_concat_df(f'experiment_6_hack')
+    df_1_processsed = process_df(df_1)
+    df_1_processsed.to_csv(f"experiment_6_results_summary.csv")
 
+    df_1 = load_and_concat_df(f'experiment_7_hailmary')
+    df_1_processsed = process_df(df_1)
+    df_1_processsed.to_csv(f"experiment_7_results_summary.csv")
 
-
-    build_plot(big_df,f'plot_1')
+    df_1 = load_and_concat_df(f'experiment_8_hack')
+    df_1_processsed = process_df(df_1)
+    df_1_processsed.to_csv(f"experiment_8_results_summary.csv")
 
     names_3 = ['Uniform','Normal', 'Uniform and Normal']
     names = ['4D']*3
@@ -207,9 +219,19 @@ if __name__ == '__main__':
     print(big_df)
     build_plot(big_df,f'plot_2')
 
-    df = pd.read_csv(f"5d_exp.csv", index_col=0)
-    df = df[df['effective_variance'] < 100]
-    df = df[df['d'] ==5]
+    names_3 = ['Uniform','Normal', 'Uniform and Normal']
+    names = ['5D']*3
+    list_1=[]
+    for i in range(6,9):
+        df = pd.read_csv(f"experiment_{i}_results_summary.csv",index_col=0)
+        df = df[df['effective_variance']<100]
+        df = df[df['d']==5]
+        df['dataset_name'] = names_3[i-6]
+        df['dataset_name_2'] = names_3[i-6]
+        list_1.append(df)
+    big_df = pd.concat(list_1,ignore_index=True)
+    print(big_df)
+    build_plot(big_df,f'plot_3')
 
-    build_plot(df,f'plot_3')
+
 
