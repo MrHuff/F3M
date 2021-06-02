@@ -9,11 +9,10 @@
 #CUDACXX=/usr/local/cuda-10.2/bin/nvcc CUDA_VISIBLE_DEVICES=7 python experiments_2.py --idx=6 &>> experiment_2_data_bench.out
 
 
-CUDACXX=/opt/cuda-10.2/bin/nvcc CUDA_VISIBLE_DEVICES=0 python experiments_3.py --idx=1 --penalty_in=1e-4 &
-CUDACXX=/opt/cuda-10.2/bin/nvcc CUDA_VISIBLE_DEVICES=1 python experiments_3.py --idx=1 --penalty_in=1e-3 &
-CUDACXX=/opt/cuda-10.2/bin/nvcc CUDA_VISIBLE_DEVICES=2 python experiments_3.py --idx=1 --penalty_in=1e-5 &
-CUDACXX=/opt/cuda-10.2/bin/nvcc CUDA_VISIBLE_DEVICES=3 python experiments_3.py --idx=1 --penalty_in=1e-6 &
-CUDACXX=/opt/cuda-10.2/bin/nvcc CUDA_VISIBLE_DEVICES=4 python experiments_3.py --idx=0 --penalty_in=1e-4 &
-CUDACXX=/opt/cuda-10.2/bin/nvcc CUDA_VISIBLE_DEVICES=5 python experiments_3.py --idx=0 --penalty_in=1e-3 &
-CUDACXX=/opt/cuda-10.2/bin/nvcc CUDA_VISIBLE_DEVICES=6 python experiments_3.py --idx=0 --penalty_in=1e-5 &
-CUDACXX=/opt/cuda-10.2/bin/nvcc CUDA_VISIBLE_DEVICES=7 python experiments_3.py --idx=0 --penalty_in=1e-6 &
+#CUDACXX=/opt/cuda-10.2/bin/nvcc CUDA_VISIBLE_DEVICES=0 python experiments_3.py --idx=0 --penalty_in=1e-1 --seed=0.1 &
+CUDACXX=/opt/cuda-10.2/bin/nvcc CUDA_VISIBLE_DEVICES=0 python experiments_3.py --idx=0 --penalty_in=2.5e-2 --seed=1 &
+CUDACXX=/opt/cuda-10.2/bin/nvcc CUDA_VISIBLE_DEVICES=1 python experiments_3.py --idx=1 --penalty_in=1e-2 --seed=1 &
+CUDACXX=/opt/cuda-10.2/bin/nvcc CUDA_VISIBLE_DEVICES=2 python experiments_3.py --idx=1 --penalty_in=1e-3 --seed=2 &
+CUDACXX=/opt/cuda-10.2/bin/nvcc CUDA_VISIBLE_DEVICES=3 python experiments_3.py --idx=1 --penalty_in=1e-1 --seed=3 &
+CUDACXX=/opt/cuda-10.2/bin/nvcc CUDA_VISIBLE_DEVICES=4 python experiments_3.py --idx=1 --penalty_in=5e-1 --seed=3 &
+CUDACXX=/opt/cuda-10.2/bin/nvcc CUDA_VISIBLE_DEVICES=5 python experiments_3.py --idx=1 --penalty_in=5e-3 --seed=3 &

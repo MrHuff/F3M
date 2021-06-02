@@ -143,8 +143,66 @@ def experiment_7(chunk_idx,device="cuda:0"):
             del X, b, true_0,FFM_obj, res_0
             torch.cuda.empty_cache()
 
+def experiment_8(chunk_idx,device="cuda:0"):
+    """
+    k(X,Y) - uniform X, normal Y with varying effective variance, N and d. 0 distance between X and Y
+    :return:
+    """
+    ref_points = 5000
+    ls = float(1.0)/2**0.5 #lengthscale
+    dirname = 'experiment_8_hailmary'
+    if not os.path.exists(dirname):
+        os.makedirs(dirname)
+    with open('mix_jobs.pkl', 'rb') as f:
+        job_list_full = pickle.load(f)
+    jobs_len = len(job_list_full)
+    per_chunk = jobs_len // 8
+    chunked_list = [job_list_full[i:i + per_chunk] for i in range(0, len(job_list_full), per_chunk)]
+    job_list = chunked_list[chunk_idx]
+    for job in job_list:
+        seed = job['seed']
+        n = job['n']
+        d = job['d']
+        nr_of_interpolation = job['nr_of_interpolation']
+        min_points = job['min_points']
+        small_field_limit = job['small_field_limit']
+        r2 = job['r2']
+        eff_var_limit = job['eff_var_limit']
+        counter = job['counter']
+        print(job)
+        if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
+            torch.manual_seed(seed)
+            X = torch.empty(n, d).uniform_(0, (r2 * 12) ** 0.5)
+            Y = torch.empty(n, d).normal_(0, r2 ** 0.5)
+            b = torch.empty(n, 1).normal_(0, 1)  # weights
+            x_ref = X[0:ref_points, :]  # reference X
+            keops_benchmark_0 = benchmark_matmul_double(x_ref, Y, ls=ls,
+                                                        device=device)  # get some references
+            true_0 = keops_benchmark_0 @ b  # calculate reference
+            torch.cuda.synchronize()
+            del keops_benchmark_0, x_ref
+            torch.cuda.empty_cache()
+            print("benchmarks done\n")
+            torch.cuda.synchronize()
+            FFM_obj = FFM(X=X,Y=Y, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
+                          eff_var_limit=eff_var_limit, var_compression=True,
+                          device=device, small_field_points=small_field_limit)
+            torch.cuda.synchronize()
+            start = time.time()
+            res_0 = FFM_obj @ b
+            end = time.time()
+            torch.cuda.synchronize()
+            calc_time = end-start
+            df = calculate_results(true_0, res_0, ref_points, seed, n, d, r2, min_points,
+                                   small_field_limit, nr_of_interpolation, eff_var_limit,
+                                   calc_time)
+            df.to_csv(f'{dirname}/{dirname}_{counter}.csv')
+            del X,Y, b, true_0,FFM_obj, res_0
+            torch.cuda.empty_cache()
+
 if __name__ == '__main__':
     input_args = vars(job_parser().parse_args())
     idx = input_args['idx']
     # experiment_7(chunk_idx=idx)
-    experiment_6(chunk_idx=idx)
+    # experiment_6(chunk_idx=idx)
+    experiment_8(chunk_idx=idx)
