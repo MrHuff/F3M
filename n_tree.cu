@@ -423,7 +423,7 @@ torch::Tensor setup_skip_conv(
         int * hash_list_size_x,
         KeyValue* hash_list_y,
         int * hash_list_size_y
-){
+){ ////SOMETHING WRONG HERE
     dim3 blockSize,gridSize;
     int memory;
     torch::Tensor interactions_y_hash = interactions_y.clone();
@@ -461,6 +461,7 @@ torch::Tensor setup_skip_conv(
     cudaDeviceSynchronize();
     return output;
 }
+
 //Always pass interactions..., if there aint any then ok etc...
 template <typename scalar_t,int nd>
 void far_field_compute_v2(
@@ -486,7 +487,7 @@ void far_field_compute_v2(
     torch::Tensor cheb_data_X = cheb_data*x_box.edge/2.+x_box.edge/2.; //scaling lagrange nodes to edge scale
     low_rank_y = torch::zeros({cheb_data.size(0)*unique_y.size(0),b.size(1)}).toType(dtype<scalar_t>()).to(device_gpu);
     //ok might want to adapt things a bit so they don't explode at the end!
-
+//
     int hash_table_size = 1024 * 1024;
     while (hash_table_size < (int) (2 * unique_x.size(0))) {
         hash_table_size *= 2;
@@ -547,6 +548,9 @@ void far_field_compute_v2(
             hash_list_size_y
 
     );
+
+
+
     apply_laplace_interpolation_v2<scalar_t,nd>(x_box,
                                                 low_rank_y,
                                                 device_gpu,
@@ -699,12 +703,18 @@ std::tuple<torch::Tensor,torch::Tensor,torch::Tensor> separate_interactions(
     torch::Tensor &unique_Y  = ntree_Y.unique_counts;
     torch::Tensor edge = ntree_X.edge;
     scalar_t square_edge = edge.item<scalar_t>()*edge.item<scalar_t>()*ls;
-    bool do_inital_check = square_edge<=3;
+    bool do_inital_check;
+    if (var_comp){
+        do_inital_check = square_edge<=5;
+    }else{
+        do_inital_check =true;
+    }
+//    bool do_inital_check = true;
     auto d_bool_check = allocate_scalar_to_cuda<bool>(do_inital_check);
     if(var_comp){
-        bool enable_smooth_field_pair = (float)nd*(square_edge/4)<=eff_var_limit;
-        bool enable_smooth_field_all = (float)nd*(square_edge/4)<=(eff_var_limit/2);
-        scalar_t crit_distance = sqrt(eff_var_limit*2/((float)nd*ls));
+        bool enable_smooth_field_pair = (nd*square_edge/4)<=eff_var_limit;
+        bool enable_smooth_field_all = (nd*square_edge/4)<=(eff_var_limit/2);
+        scalar_t crit_distance = sqrt(eff_var_limit*2/(nd*ls));
         auto d_enable_smooth_field_pair = allocate_scalar_to_cuda<bool>(enable_smooth_field_pair);
         auto d_enable_smooth_field_all = allocate_scalar_to_cuda<bool>(enable_smooth_field_all);
         auto d_crit_distance = allocate_scalar_to_cuda<scalar_t>(crit_distance);
@@ -944,6 +954,8 @@ int get_interpolation_rule(scalar_t & effective_edge,int & nr_of_interpolation){
 
 }
 
+
+
 template <typename scalar_t, int nd>
 torch::Tensor far_field_run(
         n_tree_cuda<scalar_t,nd> & ntree_X,
@@ -968,7 +980,7 @@ torch::Tensor far_field_run(
     ;
 
 //    std::cout<<"near_field: "<<near_field.size(0)<<std::endl;
-    std::tie(far_field,small_field,near_field) = get_field<scalar_t,nd>(
+        std::tie(far_field,small_field,near_field) = get_field<scalar_t,nd>(
             near_field,
             ntree_X,
             ntree_Y,

@@ -16,19 +16,32 @@ import torch
 random.seed(0)
 np.random.seed(0)
 torch.manual_seed(1)
-# X = MaternClusterData(2,100,100,.05)
-# PlotData(X)
+n=5000
+X = MaternClusterData(2,100,100,.05)
+PlotDataSave(X,name='cluster.png')
+X = FBMData(2,n,.75)
+PlotDataSave(X,name='FBM.png')
+X = FBMData(2,n,.5)
+PlotDataSave(X,name='BM.png')
+X = torch.rand(5000,2)*12**0.5
+PlotDataSave(X,name='unif.png')
+X = torch.randn(5000,2)
+PlotDataSave(X,name='normal.png')
+
+X = torch.rand(5000,2)*12**0.5
+Y = torch.randn(5000,2)
+PlotDataSave2(X,Y,name='mix.png')
 #
 # X = MaternClusterData(3,100,100,.05)
 # PlotData(X)
 
-n = 100000000
-X = FBMData(3,n,.75)
-print(X.shape)
-PlotData(X)
+# n = 100000000
+# X = FBMData(3,n,.75)
+# print(X.shape)
+# PlotData(X)
 
 # X = FBMData(3,n,0.25)
 # PlotData(X)
 
-plt.show()
+# plt.show()
 

@@ -17,7 +17,7 @@ if __name__ == '__main__':
     if not os.path.exists('minmax_data_osm.pt'):
         max,_ = data.max(0)
         min,_ = data.min(0)
-        data =-min
+        data -=min
         data/=(max-min)
         torch.save(data,'minmax_data_osm.pt')
         print(data.var(0))

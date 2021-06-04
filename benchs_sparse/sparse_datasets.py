@@ -7,7 +7,38 @@ def UnitBox(X):
     X = X - X.min(dim=0, keepdims=True)[0]
     X = X / X.max(dim=0, keepdims=True)[0]
     return X
-    
+def PlotDataSave2(X,Y, max_npoints = np.inf,name='fig_exotic.png'):
+    n, dim = X.shape
+    m = min(n,max_npoints)
+    if dim==2:
+        n = X.shape[0]
+        plt.figure(figsize=(12,10))
+        plt.plot(X[:m,0], X[:m,1], '.', markersize=2)
+        plt.plot(Y[:m,0], Y[:m,1], '.',color='r', markersize=2)
+        plt.axis('equal')
+        plt.savefig(name,bbox_inches = 'tight',pad_inches = 0)
+    elif dim==3:
+        ax = plt.figure(figsize=(16,10)).add_subplot(projection='3d')
+        X = X.numpy()
+        ax.plot(X[:m,0], X[:m,1], X[:m,2], '.', markersize=.5)
+    else:
+        raise ValueError("not implemented")
+def PlotDataSave(X, max_npoints = np.inf,name='fig_exotic.png'):
+    n, dim = X.shape
+    m = min(n,max_npoints)
+    if dim==2:
+        n = X.shape[0]
+        plt.figure(figsize=(12,10))
+        plt.plot(X[:m,0], X[:m,1], '.', markersize=2)
+        plt.axis('equal')
+        plt.savefig(name,bbox_inches = 'tight',pad_inches = 0)
+    elif dim==3:
+        ax = plt.figure(figsize=(16,10)).add_subplot(projection='3d')
+        X = X.numpy()
+        ax.plot(X[:m,0], X[:m,1], X[:m,2], '.', markersize=.5)
+    else:
+        raise ValueError("not implemented")
+
 def PlotData(X, max_npoints = np.inf):
     n, dim = X.shape
     m = min(n,max_npoints)

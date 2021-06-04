@@ -592,15 +592,11 @@ __global__ void skip_conv_far_boxes_opt(//needs rethinking
     scalar_t *buffer = reinterpret_cast<scalar_t *>(my_smem);
     scalar_t *yj = &buffer[0];
     scalar_t *bj = &buffer[blockDim.x*nd];
-    scalar_t *cX_i = &buffer[blockDim.x*(nd+1)]; //Get another shared memory pointer.
 
-    if (threadIdx.x<nd){
-        cX_i[threadIdx.x] = centers_X[box_ind][threadIdx.x];
-    }
     //Load these points only... the rest gets no points... threadIdx.x +a to b. ...
     if (i_calc<cheb_data_size) {
         for (int k = 0; k < nd; k++) {
-            x_i[k] = cheb_data_X[i_calc][k];
+            x_i[k] = cheb_data_X[i_calc][k]+centers_X[box_ind][k];
         }
     }
     __syncthreads();
@@ -618,7 +614,7 @@ __global__ void skip_conv_far_boxes_opt(//needs rethinking
                 int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
                 if (j < cheb_data_size) {
                     for (int k = 0; k < nd; k++) {
-                        yj[nd * threadIdx.x+k] = cheb_data_Y[j][k]+centers_Y[int_m][k] - cX_i[k]; //Error also occurs here!
+                        yj[nd * threadIdx.x+k] = cheb_data_Y[j][k]+centers_Y[int_m][k]; //Error also occurs here!
                     }
                     bj[threadIdx.x] = b_data[j + box_ind_hash_y * cheb_data_size][b_ind];//second hashing for Y
                 }
