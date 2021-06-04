@@ -138,10 +138,16 @@ def complexity_plots_3(folder, df, X, Y, slice,label_nice):
     mean = Y
     std = Y+' std'
     els = df[slice].unique().tolist()
+    slope_dict  = {}
+    for label_df in els:
+        sub_df = df[df[slice]==label_df]
+        m, b = np.polyfit(np.log10(sub_df[X]), np.log10(sub_df[mean]), 1)
+        slope_dict[label_df]=m
+
     df['log_mean'] = np.log10(df[mean])
     df['log_X']  = np.log10(df[X])
     if (slice=='dataset_name_2'):
-        df[slice] = df[slice].apply(lambda x: f'{x}')
+        df[slice] = df[slice].apply(lambda x: f'{x}, slope={round(slope_dict[x],2)}')
     # dd = pd.melt(df, id_vars=X,var_name=slice,)
     g = sns.boxplot(x='log_X', y='log_mean', data=df, hue=slice)
     el = df['log_X'].unique().tolist()
@@ -153,11 +159,13 @@ def complexity_plots_3(folder, df, X, Y, slice,label_nice):
     big_X,big_Y = df[X],df[Y]
     m, b = np.polyfit(np.log10(big_X), np.log10(big_Y), 1)
     m_2, b_2 = np.polyfit(np.array(sorted(coords)),np.array(sorted(coords_Y)), 1)
+    colors = ['tab:blue','tab:orange','tab:green','tab:red','tab:purple','tab:brown']
+
+    for i,label_df in enumerate(els):
+        g.plot(np.array(sorted(coords)),
+               np.array(sorted(coords)) * (slope_dict[label_df]*m_2) + b_2-0.05, c=colors[i], linewidth=2)
     g.plot(np.array(sorted(coords)),
-           np.array(sorted(coords)) * m_2 + b_2, c='k',
-             label=f'Complexity curve, slope={round(m, 2)}', linewidth=4)
-    g.plot(np.array(sorted(coords)),
-           np.array(sorted(coords)) * M_nlogn*(m_2/m) + b_2+0.04, c='k', linestyle='dashed',
+           np.array(sorted(coords)) * M_nlogn*(m_2/m) + b_2+0.05, c='k', linestyle='dashed',
              label='$\mathcal{O}(n\log n)$ curve, slope=1.11')
     plt.legend(loc='center left',bbox_to_anchor=(1, 0.5))
     plt.xlabel('$\log_{10}(N)$')
@@ -296,9 +304,9 @@ if __name__ == '__main__':
     complexity_plots_3(f'{plot_name}/', big_df, 'n', meanstd[1], 'dataset_name_2','Dataset')
     error_plot_2(f'{plot_name}/test_{6}.png', big_df, 'n', meanstd[0], 'dataset_name_2','Dataset') #
 
-
-
-
+    #
+    #
+    #
     df_1 = load_and_concat_df(f'experiment_6_hailmary')
     df_1_processsed = process_df(df_1)
     df_1_processsed.to_csv(f"experiment_6_results_summary.csv")
@@ -338,6 +346,6 @@ if __name__ == '__main__':
     big_df = pd.concat(list_1,ignore_index=True)
     print(big_df)
     build_plot(big_df,f'plot_3')
-
-
+    #
+    #
 

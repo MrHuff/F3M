@@ -147,5 +147,4 @@ if __name__ == '__main__':
         for seed in [1,2,3]:
             dataset_X(penalty_in,seed)
     elif idx==1:
-        for seed in [1,2,3]:
-            dataset_X_bench(penalty_in,seed)
+        dataset_X_bench(penalty_in,seed)
