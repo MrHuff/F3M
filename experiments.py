@@ -4,7 +4,7 @@ from FFM_classes import *
 import torch
 from run_obj import *
 import os
-columns = ['seed','n','d','effective_variance','min_points','small field limit','nr of node points','effective variance limit','relative error','relative error 2',
+columns = ['eff_var','n','d','effective_variance','min_points','small field limit','nr of node points','effective variance limit','relative error','relative error 2',
            'relative error max','abs error','abs error max','mean true','std true','min true','max true','time (s)']
 import time
 import argparse

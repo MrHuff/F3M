@@ -16,7 +16,7 @@ def generate_jobs_normal():
                             if d > 4 and n == 500000000:
                                 n = 500000000 // 2
                             dict_param = {
-                                'seed':seed,
+                                'eff_var':seed,
                                 'd':int(d),
                                 'nr_of_interpolation':nr_of_interpolation,
                                 'n':int(n),
@@ -44,7 +44,7 @@ def generate_jobs_uniform():
                                                                     [nr_of_interpolation, nr_of_interpolation,
                                                                      nr_of_interpolation, nr_of_interpolation]):
                             dict_param = {
-                                'seed':seed,
+                                'eff_var':seed,
                                 'd':d,
                                 'nr_of_interpolation':nr_of_interpolation,
                                 'n':n,
@@ -74,7 +74,7 @@ def generate_jobs_mix():
                                                                      nr_of_interpolation,
                                                                      nr_of_interpolation]):
                             dict_param = {
-                                'seed':seed,
+                                'eff_var':seed,
                                 'd':d,
                                 'nr_of_interpolation':nr_of_interpolation,
                                 'n':n,
@@ -89,7 +89,7 @@ def generate_jobs_mix():
                             counter+=1
     with open('mix_jobs.pkl', 'wb') as f:
         pickle.dump(dict_list, f)
-if __name__ == '__main__':
-    generate_jobs_uniform()
-    generate_jobs_normal()
-    generate_jobs_mix()
+# if __name__ == '__main__':
+#     generate_jobs_uniform()
+#     generate_jobs_normal()
+#     generate_jobs_mix()

@@ -4,12 +4,13 @@ from FFM_classes import *
 import torch
 from run_obj import *
 import os
-columns = ['seed','n','d','effective_variance','min_points','small field limit','nr of node points','effective variance limit','relative error','relative error 2',
+columns = ['eff_var','n','d','effective_variance','min_points','small field limit','nr of node points','effective variance limit','relative error','relative error 2',
            'relative error max','abs error','abs error max','mean true','std true','min true','max true','time (s)']
 import time
 import argparse
 import os
 import pickle
+from generate_jobs import *
 def job_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--idx', type=int, nargs='?', default=-1, help='which dataset to run')
@@ -53,7 +54,7 @@ def experiment_6(chunk_idx,device="cuda:0"):
     chunked_list  = [job_list_full[i:i + per_chunk] for i in range(0, len(job_list_full), per_chunk)]
     job_list = chunked_list[chunk_idx]
     for job in job_list:
-        seed = job['seed']
+        seed = job['eff_var']
         n = job['n']
         d = job['d']
         nr_of_interpolation = job['nr_of_interpolation']
@@ -106,7 +107,7 @@ def experiment_7(chunk_idx,device="cuda:0"):
     chunked_list  = [job_list_full[i:i + per_chunk] for i in range(0, len(job_list_full), per_chunk)]
     job_list = chunked_list[chunk_idx]
     for job in job_list:
-        seed = job['seed']
+        seed = job['eff_var']
         n = job['n']
         d = job['d']
         nr_of_interpolation = job['nr_of_interpolation']
@@ -160,7 +161,7 @@ def experiment_8(chunk_idx,device="cuda:0"):
     chunked_list = [job_list_full[i:i + per_chunk] for i in range(0, len(job_list_full), per_chunk)]
     job_list = chunked_list[chunk_idx]
     for job in job_list:
-        seed = job['seed']
+        seed = job['eff_var']
         n = job['n']
         d = job['d']
         nr_of_interpolation = job['nr_of_interpolation']
@@ -201,8 +202,14 @@ def experiment_8(chunk_idx,device="cuda:0"):
             torch.cuda.empty_cache()
 
 if __name__ == '__main__':
+    generate_jobs_uniform()
+    generate_jobs_normal()
+    generate_jobs_mix()
     input_args = vars(job_parser().parse_args())
     idx = input_args['idx']
-    # experiment_7(chunk_idx=idx)
-    # experiment_6(chunk_idx=idx)
-    experiment_8(chunk_idx=idx)
+    if idx==7:
+        experiment_7(chunk_idx=1)
+    if idx == 6:
+        experiment_6(chunk_idx=1)
+    if idx == 8:
+        experiment_8(chunk_idx=1)

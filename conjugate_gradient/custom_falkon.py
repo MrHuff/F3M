@@ -57,7 +57,7 @@ class custom_Falkon(FalkonBase):
         fewer than 20 iterations are necessary, however this is problem
         dependent.
     seed : int or None
-        Random seed. Can be used to make results stable across runs.
+        Random eff_var. Can be used to make results stable across runs.
         Randomness is present in the center selection algorithm, and in
         certain optimizers.
     error_fn : Callable or None

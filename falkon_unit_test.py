@@ -21,7 +21,7 @@ if __name__ == '__main__':
     M=10000
 
     eff_var=0.1 # 0.1 - 1e-3, 1 - 1e-3, 10, 1e-2?, 1e-2 is already acceptable... Unif
-    # seed=10 # 0.1 - 1e-3, 1 - 1e-3, 10, 1e-2?, 1e-2 is already acceptable... Norm
+    # eff_var=10 # 0.1 - 1e-3, 1 - 1e-3, 10, 1e-2?, 1e-2 is already acceptable... Norm
     penalty = 1e-2 #does a little better, seems like 3F-M might need a little more penalty...
     problem_set = torch.load(f'small_real_problem_N={N}_eff_var={eff_var}_5.pt')
     X = problem_set['X']

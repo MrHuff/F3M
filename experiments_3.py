@@ -4,7 +4,7 @@ from FFM_classes import *
 import torch
 from run_obj import *
 import os
-columns = ['seed','n','d','ls','effective_variance','min_points','small field limit','nr of node points','effective variance limit','R^2','time_CG','time_full','time_inference','penalty']
+columns = ['eff_var','n','d','ls','effective_variance','min_points','small field limit','nr of node points','effective variance limit','R^2','time_CG','time_full','time_inference','penalty']
 import time
 import falkon
 from conjugate_gradient.custom_falkon import custom_Falkon
@@ -17,7 +17,7 @@ def job_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--idx', type=int, nargs='?', default=-1, help='which dataset to run')
     parser.add_argument('--penalty_in', type=float, nargs='?', default=-1, help='which dataset to run')
-    parser.add_argument('--seed', type=int, nargs='?', default=-1, help='which dataset to run')
+    parser.add_argument('--eff_var', type=int, nargs='?', default=-1, help='which dataset to run')
     return parser
 def calc_R2(true,pred):
     var = true.var()
@@ -142,9 +142,10 @@ if __name__ == '__main__':
     input_args = vars(job_parser().parse_args())
     idx = input_args['idx']
     penalty_in = input_args['penalty_in']
-    seed = input_args['seed']
+    seed = input_args['eff_var']
     if idx==0:
-        for seed in [1,2,3]:
+        for seed,penalty_in in zip([1,2,3],[0.0075,0.01,0.0075]):
             dataset_X(penalty_in,seed)
     elif idx==1:
-        dataset_X_bench(penalty_in,seed)
+        for seed,penalty_in in zip([1,2,3],[1e-3,0.025,1e-3]):
+            dataset_X_bench(penalty_in,seed)
