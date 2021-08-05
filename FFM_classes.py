@@ -1,4 +1,5 @@
 import torch
+import os
 from torch.utils.cpp_extension import load
 from pykeops.torch import Genred
 import torch.multiprocessing as mp
@@ -78,34 +79,90 @@ class FFM:
         if self.d==10:
             return load_obj.FFM_XY_FLOAT_10(X,Y,b,self.device,self.ls,self.min_points,self.nr_of_interpolation,self.var_compression,self.eff_var_limit,self.small_field_points)
 
-class par_FFM(FFM):
+class par_FFM_block():
     def __init__(self,
                  X,
+                 b,
                  Y=None,
                  ls=1.0,
                  min_points=1000,
                  nr_of_interpolation=64,
                  eff_var_limit=0.15,
                  var_compression=False,
-                 small_field_points = 1000,
-                 device = "cuda:0",
-                 par_factor = 10):
-        super(par_FFM, self).__init__(X,Y=Y,ls=ls,min_points=min_points,
-                                                       nr_of_interpolation=nr_of_interpolation,
-                                                           eff_var_limit=eff_var_limit,
-                                                       var_compression=var_compression,
-                                                       small_field_points = small_field_points,
-                                                       device = device)
-        self.par_factor = par_factor
-    def __matmul__(self, b):
-        self.b = b.float().to(self.device)
-        chunked_b = torch.chunk(self.b,self.par_factor,0)
-        chunked_Y = torch.chunk(self.Y,self.par_factor,0)
-        inputs = [(torch.clone(self.X),Y,b) for Y,b in zip(chunked_Y,chunked_b)]
-        with mp.Pool(processes = self.par_factor) as p:   # Paralleizing over 2 GPUs
-            results = p.starmap(self.forward,inputs)
+                 small_field_points=1000,
+                 devices=[0]
+                 ):
+        self.X = X.float()
+        self.b = b.float()
+        if torch.is_tensor(Y):
+            self.Y = Y.float()
+        else:
+            self.Y = self.X
+            print('X==Y assuming kernel covariance matmul')
+            assert self.X.data_ptr() == self.Y.data_ptr()
+        self.d = self.X.shape[1]
+        try:
+            assert self.d < 6
+        except AssertionError:
+            print('Sorry bro, dimensionality of your data is too big; Can only do up to 5')
+        self.ls = float(ls)
+        self.min_points = float(min_points)
+        self.nr_of_interpolation = int(nr_of_interpolation)
+        self.eff_var_limit = float(eff_var_limit)
+        self.var_compression = var_compression
+        self.devices = devices
+        self.small_field_points = small_field_points
+        self.par_fac = len(devices)
+        print(self.par_fac)
+        y_chunks = torch.chunk(self.Y, self.par_fac, dim=0)
+        x_chunks = torch.chunk(self.X, self.par_fac, dim=0)
+        b_chunks = torch.chunk(self.b, self.par_fac, dim=0)
+        self.jobs_list = []
+        for y_sub,b_sub in zip(y_chunks,b_chunks):
+            for x_sub,device in zip(x_chunks,self.devices):
+                self.jobs_list.append((x_sub.clone(),y_sub.clone(),b_sub.clone(),device))
+
+    def __call__(self):
+        with mp.Pool(processes = self.par_fac) as p:   # Paralleizing over 2 GPUs
+            results = p.starmap(self.forward,self.jobs_list)
         return results
 
+    def update_ls(self,ls):
+        try:
+            assert ls>0
+        except AssertionError:
+            print('ls less than 0, not allowed')
+        self.ls = float(ls)
+
+
+    def forward(self, X, Y, b,device):
+        print(device)
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(device)
+        X = X.to("cuda:0")
+        Y = Y.to("cuda:0")
+        b = b.to("cuda:0")
+        assert X.device == Y.device == b.device == torch.device(0)
+        try:
+            assert Y.shape[1] == X.shape[1]
+            assert Y.shape[0] == b.shape[0]
+        except AssertionError:
+            print('hey check the shapes of your tensor X,Y and b they dont match up!')
+            raise AssertionError
+        torch.cuda.synchronize()
+
+        if self.d == 1:
+            output = load_obj.FFM_XY_FLOAT_1(X, Y, b, "cuda:0", self.ls, self.min_points, self.nr_of_interpolation,
+                                           self.var_compression, self.eff_var_limit, self.small_field_points)
+        if self.d == 2:
+            output = load_obj.FFM_XY_FLOAT_2(X, Y, b, "cuda:0", self.ls, self.min_points, self.nr_of_interpolation,
+                                           self.var_compression, self.eff_var_limit, self.small_field_points)
+        if self.d == 3:
+            output = load_obj.FFM_XY_FLOAT_3(X, Y, b, "cuda:0", self.ls, self.min_points, self.nr_of_interpolation,
+                                           self.var_compression, self.eff_var_limit, self.small_field_points)
+        torch.cuda.synchronize()
+        del X,Y,b
+        torch.cuda.empty_cache()
+        return output
 
 class keops_matmul():
     def __init__(self,

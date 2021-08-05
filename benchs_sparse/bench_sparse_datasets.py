@@ -7,6 +7,7 @@ import pickle
 import sys
 import random
 import pykeops
+import os
 # pykeops.clean_pykeops()
 random.seed(0)
 np.random.seed(0)
@@ -31,12 +32,14 @@ def DoBench(todolist):
     # nr of interpolation nodes
     nr_of_interpolation =  [int(64), int(125),int(216)]
     # Effective variance threshold
-    eff_var_limit = [float(0.1), float(0.3),  float(0.5)]
     # stop when dividing when the largest box has 1000 points
+    # variance compression
+    var_compression = [False]
+    # eff_var_limit = [float(0.1), float(0.3),  float(0.5)]
+    eff_var_limit = [float(0.0)]
     min_points = [float(5000)]
-    # variance compression 
-    var_compression = [True]
-                
+
+    res_folder = 'res_ablation'
     for dataset_fun in todolist:
         for Nstr, Niter in zip(todo_N,Niters):
             for ls in todo_ls:
@@ -56,7 +59,7 @@ def DoBench(todolist):
                             eff_var_limit = eff_var_limit,
                             min_points = min_points,
                             var_compression = var_compression,
-                            small_field_points = [1000])
+                            small_field_points = [0])
                             
                     elapsed_rec.append(res["elapsed"])
                     rel_err_rec.append(res["rel_err"])
@@ -75,8 +78,9 @@ def DoBench(todolist):
                 
                 res["elapsed_rec"] = elapsed_rec
                 res["rel_err_rec"] = rel_err_rec
-    
-                f = open("benchs_sparse/results/"+title+".pkl", "wb")
+                if not os.path.exists(f"benchs_sparse/{res_folder}/"):
+                    os.makedirs(f"benchs_sparse/{res_folder}/")
+                f = open(f"benchs_sparse/{res_folder}/"+title+".pkl", "wb")
                 pickle.dump(res, f)
                 f.close()
                     

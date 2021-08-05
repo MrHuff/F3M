@@ -35,12 +35,11 @@ def calculate_results(true_0,res_0,ref_points,seed,n,d,r2,min_points,small_field
     return df
 
 
-def experiment_6(chunk_idx,device="cuda:0"):
+def experiment_6(chunk_idx,device="cuda:0",dirname='experiment_6'):
     """
     k(X,X) - uniform distribution with varying effective variance, N and d.
     :return:
     """
-    dirname = 'experiment_6_hailmary'
     ref_points = 5000
     ls = float(1.0)/2**0.5 #lengthscale
     if not os.path.exists(dirname):
@@ -50,7 +49,7 @@ def experiment_6(chunk_idx,device="cuda:0"):
         job_list_full = pickle.load(f)
 
     jobs_len = len(job_list_full)
-    per_chunk = jobs_len//8
+    per_chunk = jobs_len
     chunked_list  = [job_list_full[i:i + per_chunk] for i in range(0, len(job_list_full), per_chunk)]
     job_list = chunked_list[chunk_idx]
     for job in job_list:
@@ -90,12 +89,11 @@ def experiment_6(chunk_idx,device="cuda:0"):
             del FFM_obj, res_0,X, b, true_0
             torch.cuda.empty_cache()
 
-def experiment_7(chunk_idx,device="cuda:0"):
+def experiment_7(chunk_idx,device="cuda:0",dirname='experiment_7'):
     """
     k(X,X) - uniform distribution with varying effective variance, N and d.
     :return:
     """
-    dirname = 'experiment_7_hailmary'
     ref_points = 5000
     ls = float(1.0)/2**0.5 #lengthscale
     if not os.path.exists(dirname):
@@ -103,7 +101,7 @@ def experiment_7(chunk_idx,device="cuda:0"):
     with open('normal_jobs.pkl', 'rb') as f:
         job_list_full = pickle.load(f)
     jobs_len = len(job_list_full)
-    per_chunk = jobs_len//8
+    per_chunk = jobs_len
     chunked_list  = [job_list_full[i:i + per_chunk] for i in range(0, len(job_list_full), per_chunk)]
     job_list = chunked_list[chunk_idx]
     for job in job_list:
@@ -144,20 +142,19 @@ def experiment_7(chunk_idx,device="cuda:0"):
             del X, b, true_0,FFM_obj, res_0
             torch.cuda.empty_cache()
 
-def experiment_8(chunk_idx,device="cuda:0"):
+def experiment_8(chunk_idx,device="cuda:0",    dirname = 'experiment_8'):
     """
     k(X,Y) - uniform X, normal Y with varying effective variance, N and d. 0 distance between X and Y
     :return:
     """
     ref_points = 5000
     ls = float(1.0)/2**0.5 #lengthscale
-    dirname = 'experiment_8_hailmary'
     if not os.path.exists(dirname):
         os.makedirs(dirname)
     with open('mix_jobs.pkl', 'rb') as f:
         job_list_full = pickle.load(f)
     jobs_len = len(job_list_full)
-    per_chunk = jobs_len // 8
+    per_chunk = jobs_len
     chunked_list = [job_list_full[i:i + per_chunk] for i in range(0, len(job_list_full), per_chunk)]
     job_list = chunked_list[chunk_idx]
     for job in job_list:
@@ -202,14 +199,18 @@ def experiment_8(chunk_idx,device="cuda:0"):
             torch.cuda.empty_cache()
 
 if __name__ == '__main__':
-    generate_jobs_uniform()
-    generate_jobs_normal()
-    generate_jobs_mix()
+    # generate_jobs_uniform()
+    # generate_jobs_normal()
+    # generate_jobs_mix()
+    generate_jobs_uniform_ablation()
+    generate_jobs_normal_ablation()
+    generate_jobs_mix_ablation()
+
     input_args = vars(job_parser().parse_args())
     idx = input_args['idx']
     if idx==7:
-        experiment_7(chunk_idx=1)
+        experiment_7(chunk_idx=0,dirname='exp7_ablation')
     if idx == 6:
-        experiment_6(chunk_idx=1)
+        experiment_6(chunk_idx=0,dirname='exp6_ablation')
     if idx == 8:
-        experiment_8(chunk_idx=1)
+        experiment_8(chunk_idx=0,dirname='exp8_ablation')

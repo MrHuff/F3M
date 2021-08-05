@@ -63,7 +63,7 @@ def experiment_1(device="cuda:0"):
                         del keops_benchmark_0,x_ref
                         torch.cuda.empty_cache()
                         print("benchmarks done\n")
-                        for evarlimit in [0.7]:
+                        for evarlimit in [0.1, 0.3, 0.5]:
                             eff_var_limit = float(evarlimit)
                             if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
                                 torch.cuda.synchronize()
