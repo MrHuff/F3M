@@ -23,7 +23,7 @@ def generate_jobs_normal():
                                 'min_points':min_points,
                                 'small_field_limit':small_field_limit,
                                 'r2':r2,
-                                'eff_var_limit':eff_var_limit,
+                                'eff_var_limit':d*eff_var_limit,
                                 'counter':counter
                             }
                             dict_list.append(dict_param)
@@ -51,7 +51,7 @@ def generate_jobs_uniform():
                                 'min_points':min_points,
                                 'small_field_limit':small_field_limit,
                                 'r2':r2,
-                                'eff_var_limit':eff_var_limit,
+                                'eff_var_limit':d*eff_var_limit,
                                 'counter': counter
 
                             }
@@ -81,7 +81,7 @@ def generate_jobs_mix():
                                 'min_points':min_points,
                                 'small_field_limit':small_field_limit,
                                 'r2':r2,
-                                'eff_var_limit':eff_var_limit,
+                                'eff_var_limit':d*eff_var_limit,
                                 'counter': counter
 
                             }

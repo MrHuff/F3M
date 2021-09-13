@@ -11,9 +11,13 @@ import argparse
 import os
 import pickle
 from generate_jobs import *
+
+VAR_COMP=True
+
 def job_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--idx', type=int, nargs='?', default=-1, help='which dataset to run')
+    parser.add_argument('--chunk', type=int, nargs='?', default=-1, help='which dataset to run')
     return parser
 def calculate_results(true_0,res_0,ref_points,seed,n,d,r2,min_points,small_field_limit,nr_of_interpolation, eff_var_limit,calc_time):
     res_ref = res_0[:ref_points]
@@ -49,7 +53,7 @@ def experiment_6(chunk_idx,device="cuda:0",dirname='experiment_6'):
         job_list_full = pickle.load(f)
 
     jobs_len = len(job_list_full)
-    per_chunk = jobs_len
+    per_chunk = jobs_len//8
     chunked_list  = [job_list_full[i:i + per_chunk] for i in range(0, len(job_list_full), per_chunk)]
     job_list = chunked_list[chunk_idx]
     for job in job_list:
@@ -75,7 +79,7 @@ def experiment_6(chunk_idx,device="cuda:0",dirname='experiment_6'):
             torch.cuda.empty_cache()
             print("benchmarks done\n")
             FFM_obj= FFM(X=X, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
-                         eff_var_limit=eff_var_limit, var_compression=True,
+                         eff_var_limit=eff_var_limit, var_compression=VAR_COMP,
                          device=device, small_field_points=small_field_limit)
             torch.cuda.synchronize()
             start = time.time()
@@ -101,7 +105,7 @@ def experiment_7(chunk_idx,device="cuda:0",dirname='experiment_7'):
     with open('normal_jobs.pkl', 'rb') as f:
         job_list_full = pickle.load(f)
     jobs_len = len(job_list_full)
-    per_chunk = jobs_len
+    per_chunk = jobs_len//8
     chunked_list  = [job_list_full[i:i + per_chunk] for i in range(0, len(job_list_full), per_chunk)]
     job_list = chunked_list[chunk_idx]
     for job in job_list:
@@ -128,7 +132,7 @@ def experiment_7(chunk_idx,device="cuda:0",dirname='experiment_7'):
             torch.cuda.empty_cache()
             print("benchmarks done\n")
             FFM_obj= FFM(X=X, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
-                          eff_var_limit=eff_var_limit, var_compression=True,
+                          eff_var_limit=eff_var_limit, var_compression=VAR_COMP,
                           device=device, small_field_points=small_field_limit)
             torch.cuda.synchronize()
             start = time.time()
@@ -154,7 +158,7 @@ def experiment_8(chunk_idx,device="cuda:0",    dirname = 'experiment_8'):
     with open('mix_jobs.pkl', 'rb') as f:
         job_list_full = pickle.load(f)
     jobs_len = len(job_list_full)
-    per_chunk = jobs_len
+    per_chunk = jobs_len//8
     chunked_list = [job_list_full[i:i + per_chunk] for i in range(0, len(job_list_full), per_chunk)]
     job_list = chunked_list[chunk_idx]
     for job in job_list:
@@ -183,7 +187,7 @@ def experiment_8(chunk_idx,device="cuda:0",    dirname = 'experiment_8'):
             print("benchmarks done\n")
             torch.cuda.synchronize()
             FFM_obj = FFM(X=X,Y=Y, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
-                          eff_var_limit=eff_var_limit, var_compression=True,
+                          eff_var_limit=eff_var_limit, var_compression=VAR_COMP,
                           device=device, small_field_points=small_field_limit)
             torch.cuda.synchronize()
             start = time.time()
@@ -199,18 +203,18 @@ def experiment_8(chunk_idx,device="cuda:0",    dirname = 'experiment_8'):
             torch.cuda.empty_cache()
 
 if __name__ == '__main__':
-    # generate_jobs_uniform()
-    # generate_jobs_normal()
-    # generate_jobs_mix()
-    generate_jobs_uniform_ablation()
-    generate_jobs_normal_ablation()
-    generate_jobs_mix_ablation()
-
+    generate_jobs_uniform()
+    generate_jobs_normal()
+    generate_jobs_mix()
+    # generate_jobs_uniform_ablation()
+    # generate_jobs_normal_ablation()
+    # generate_jobs_mix_ablation()
     input_args = vars(job_parser().parse_args())
     idx = input_args['idx']
+    chunk = input_args['chunk']
     if idx==7:
-        experiment_7(chunk_idx=0,dirname='exp7_ablation')
+        experiment_7(chunk_idx=chunk,dirname='experiment_7_new')
     if idx == 6:
-        experiment_6(chunk_idx=0,dirname='exp6_ablation')
+        experiment_6(chunk_idx=chunk,dirname='experiment_6_new')
     if idx == 8:
-        experiment_8(chunk_idx=0,dirname='exp8_ablation')
+        experiment_8(chunk_idx=chunk,dirname='experiment_8_new')

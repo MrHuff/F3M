@@ -27,9 +27,9 @@ class FFM:
             assert self.X.data_ptr() == self.Y.data_ptr()
         self.d = self.X.shape[1]
         try:
-            assert self.d<6
+            assert self.d<10
         except AssertionError:
-            print('Sorry bro, dimensionality of your data is too big; Can only do up to 5')
+            print('Sorry bro, dimensionality of your data is too big; Can only do up to 10')
         self.ls = float(ls)
         self.min_points = float(min_points)
         self.nr_of_interpolation = int(nr_of_interpolation)
@@ -194,9 +194,9 @@ class keops_matmul():
             self.Y = self.X
         self.d = self.X.shape[1]
         try:
-            assert self.d > 0 and self.d < 6
+            assert self.d > 0 and self.d < 10
         except AssertionError:
-            print('Sorry bro, dimensionality of your data is too big; Can only do up to 5')
+            print('Sorry bro, dimensionality of your data is too big; Can only do up to 10')
         self.ls = torch.tensor([ls**0.5]).type(self.type).to(self.device)
         self.device = device
 
@@ -228,9 +228,9 @@ class benchmark_matmul():
             self.Y = self.X
         self.d = self.X.shape[1]
         try:
-            assert self.d>0 and self.d<6
+            assert self.d>0 and self.d<10
         except AssertionError:
-            print('Sorry bro, dimensionality of your data is too big; Can only do up to 5')
+            print('Sorry bro, dimensionality of your data is too big; Can only do up to 10')
             raise AssertionError
         self.ls = float(ls)
         self.device = device
@@ -289,9 +289,9 @@ class benchmark_matmul_double():
             self.Y = self.X
         self.d = self.X.shape[1]
         try:
-            assert self.d>0 and self.d<6
+            assert self.d>0 and self.d<10
         except AssertionError:
-            print('Sorry bro, dimensionality of your data is too big; Can only do up to 5')
+            print('Sorry bro, dimensionality of your data is too big; Can only do up to 10')
             raise AssertionError
 
         self.ls = float(ls)

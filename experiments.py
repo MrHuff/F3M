@@ -37,7 +37,7 @@ def experiment_1(device="cuda:0"):
     k(X,X) - uniform distribution with varying effective variance, N and d.
     :return:
     """
-    dirname = 'experiment_1_07'
+    dirname = 'experiment_1_aggresive'
     ref_points = 5000
     ls = float(1.0)/2**0.5 #lengthscale
     counter = 0
@@ -52,7 +52,7 @@ def experiment_1(device="cuda:0"):
                                                             [1000, 1000, 5000, 5000],
                                                             [nr_of_interpolation, nr_of_interpolation, nr_of_interpolation,
                                                              nr_of_interpolation]):
-                    for r2 in [0.1, 1, 10, 100]:
+                    for r2 in [0.1, 1, 10]:
                         torch.manual_seed(seed)
                         X = torch.empty(n, d).uniform_(0, (r2 * 12) ** 0.5)
                         b = torch.empty(n, 1).normal_(0, 1)
@@ -63,8 +63,8 @@ def experiment_1(device="cuda:0"):
                         del keops_benchmark_0,x_ref
                         torch.cuda.empty_cache()
                         print("benchmarks done\n")
-                        for evarlimit in [0.1, 0.3, 0.5]:
-                            eff_var_limit = float(evarlimit)
+                        for evarlimit in [0.1,0.3,0.5]:
+                            eff_var_limit = float(evarlimit)*d
                             if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
                                 torch.cuda.synchronize()
                                 FFM_obj= FFM(X=X, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
@@ -85,6 +85,7 @@ def experiment_1(device="cuda:0"):
                             print('counter: ',counter)
                         del X,b,true_0
                         torch.cuda.empty_cache()
+
 def experiment_2(device="cuda:0"):
     """
     k(X,X) - normal distribution with varying effective variance, N and d.
@@ -94,19 +95,19 @@ def experiment_2(device="cuda:0"):
     ref_points = 5000
     ls = float(1.0)/2**0.5 #lengthscale
     counter = 0
-    dirname = 'experiment_2_27'
+    dirname = 'experiment_2_aggresive'
     if not os.path.exists(dirname):
         os.makedirs(dirname)
     for seed in [1]:
         for d in [3]:
-            node_list = [3]
+            node_list = [4,5,6]
             for node_nr in node_list:
                 nr_of_interpolation = int(node_nr ** d)  # nr of interpolation nodes
                 for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 1000000000],
-                                                            [2500, 2500, 5000, 10000],
+                                                            [2500, 2500, 5000, 5000],
                                                             [nr_of_interpolation, nr_of_interpolation, nr_of_interpolation,
                                                              2500]):
-                    for r2 in [0.1, 1, 10, 100]:
+                    for r2 in [0.1, 1, 10]:
                         X = 0
                         b = 0
                         true_0 = 0
@@ -122,8 +123,8 @@ def experiment_2(device="cuda:0"):
                             del keops_benchmark_0, x_ref
                             torch.cuda.empty_cache()
                             print("benchmarks done\n")
-                        for evarlimit in [0.1, 0.3, 0.5]:
-                            eff_var_limit = float(evarlimit)
+                        for evarlimit in [0.1,0.3,0.5]:
+                            eff_var_limit = float(evarlimit)*d
                             if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
                                 torch.cuda.synchronize()
 
@@ -158,7 +159,7 @@ def experiment_3(device="cuda:0"):
     ref_points = 5000
     ls = float(1.0)/2**0.5 #lengthscale
     counter = 0
-    dirname = 'experiment_3'
+    dirname = 'experiment_3_aggresive'
     if not os.path.exists(dirname):
         os.makedirs(dirname)
     for seed in [1]:
@@ -173,7 +174,7 @@ def experiment_3(device="cuda:0"):
                                                             [2500, 2500, 2500, 2500],
                                                             [nr_of_interpolation, nr_of_interpolation, nr_of_interpolation,
                                                              nr_of_interpolation]):
-                    for r2 in [0.1, 1, 10, 100]:
+                    for r2 in [0.1, 1, 10]:
                         torch.manual_seed(seed)
                         X = torch.empty(n, d).uniform_(0, (r2 * 12) ** 0.5)
                         Y = torch.empty(n, d).normal_(0, r2 ** 0.5)
@@ -186,7 +187,7 @@ def experiment_3(device="cuda:0"):
                         torch.cuda.empty_cache()
                         print("benchmarks done\n")
                         for evarlimit in [0.1,0.3,0.5]:
-                            eff_var_limit = float(evarlimit)
+                            eff_var_limit = float(evarlimit)*d
                             if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
                                 torch.cuda.synchronize()
                                 FFM_obj = FFM(X=X,Y=Y, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
@@ -246,7 +247,7 @@ def experiment_4(device="cuda:0"):
                         torch.cuda.empty_cache()
                         print("benchmarks done\n")
                         for evarlimit in [0.1,0.3,0.5]:
-                            eff_var_limit = float(evarlimit)
+                            eff_var_limit = float(evarlimit)*d
                             if not os.path.exists(f'{dirname}/{dirname}_{counter}.csv'):
                                 torch.cuda.synchronize()
                                 FFM_obj = FFM(X=X, Y=Y, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,

@@ -38,7 +38,7 @@ plt.rcParams['figure.figsize'] = 1.4*x, x
 
 font_size = 80
 plt.rcParams['font.size'] = font_size
-plt.rcParams['legend.fontsize'] = 80
+plt.rcParams['legend.fontsize'] = 50
 plt.rcParams['axes.labelsize'] = font_size
 plt.rcParams['text.usetex'] = True
 plt.rcParams['font.family'] = "serif"
@@ -82,7 +82,7 @@ def complexity_plots(savefig, df, X, Y, slice,label_nice):
     print(m,b)
     plt.plot(np.arange(min(np.log10(big_X)), max(np.log10(big_X))+1, step=1),np.arange(min(np.log10(big_X)), max(np.log10(big_X))+1, step=1)*m+b,c='k',label=f'Complexity curve, slope={round(m,2)}', linewidth=4)
     plt.plot(np.arange(min(np.log10(big_X)), max(np.log10(big_X))+1, step=1),np.arange(min(np.log10(big_X)), max(np.log10(big_X))+1, step=1)*M_nlogn+b,c='k',linestyle='dashed',label='$\mathcal{O}(n\log n)$ curve, slope=1.11')
-    plt.legend(loc=2)
+    plt.legend()
     plt.xticks(np.arange(min(np.log10(big_X)), max(np.log10(big_X))+1, step=1))
 
     plt.xlabel('$\log_{10}(N)$')
@@ -113,7 +113,7 @@ def complexity_plots_2(folder, df, X, Y, slice,label_nice):
         # print(m,b)
         plt.plot(np.arange(min(np.log10(big_X)), max(np.log10(big_X))+1, step=1),np.arange(min(np.log10(big_X)), max(np.log10(big_X))+1, step=1)*m+b,c='k',label=f'Complexity curve, slope={round(m,2)}', linewidth=4)
         plt.plot(np.arange(min(np.log10(big_X)), max(np.log10(big_X))+1, step=1),np.arange(min(np.log10(big_X)), max(np.log10(big_X))+1, step=1)*M_nlogn+b,c='k',linestyle='dashed',label='$\mathcal{O}(n\log n)$ curve, slope=1.11')
-        plt.legend(loc=2)
+        plt.legend()
         plt.xticks(np.arange(min(np.log10(big_X)), max(np.log10(big_X))+1, step=1))
 
         plt.xlabel('$\log_{10}(N)$')
@@ -187,7 +187,7 @@ def error_plot(savefig, df, X, Y, slice,label_nice):
     el = df['log_X'].unique().tolist()
     el = [round(e,1) for e in el]
     g.set(xticklabels=sorted(el))
-    g.legend(loc=2)
+    g.legend()
     # for label_df in els:
 
         # sub_df = df[df[slice]==label_df]
@@ -277,75 +277,109 @@ def build_plot(df,plot_name):
 
 if __name__ == '__main__':
 
-    names_3 = ['Uniform','Normal', 'Uniform and Normal']
-    names = ['Standard']*3
-    list_1=[]
-    for i in range(1,4):
-        df = pd.read_csv(f"experiment_{i}_results_summary.csv")
-        df = df[df['effective_variance']<100]
-        df['dataset_name'] = names[i-1]
-        df['dataset_name_2'] = names_3[i-1]
+    # names_3 = ['Uniform','Normal', 'Uniform and Normal']
+    # names = ['Standard']*3
+    # list_1=[]
+    # dict_translate = {0.8999999999999999: 0.3,
+    #                   0.3: 0.1,
+    #                   1.5: 0.5}
+    # for i in range(1,4):
+    #     df = pd.read_csv(f"experiment_{i}_results_summary.csv")
+    #     df = df[df['effective_variance']<100]
+    #     df['effective variance limit'] = df['effective variance limit'].apply(lambda x: dict_translate[x])
+    #
+    #     df['dataset_name'] = names[i-1]
+    #     df['dataset_name_2'] = names_3[i-1]
+    #     list_1.append(df)
+    # names_3  = ['Brownian Motion','Clustered', 'Fractional Brownian Motion']
+    # names_2 = ['Pathological']*3
+    # exotic = ['Brownian_Motion.csv','Clustered.csv','Fractional_Brownian_Motion.csv']
+    # for j,el in enumerate(exotic):
+    #     df = pd.read_csv(el)
+    #     df['effective_variance'] = round(df['effective_variance'],2)
+    #     df = df[df['effective_variance']<100]
+    #     df['dataset_name'] = names_2[j]
+    #     df['dataset_name_2'] = names_3[j]
+    #     list_1.append(df)
+    # big_df = pd.concat(list_1,ignore_index=True)
+    # build_plot(big_df,f'plot_1')
+    # plot_name = 'plot_1'
+    #
+    #
+    # complexity_plots_3(f'{plot_name}/', big_df, 'n', meanstd[1], 'dataset_name_2','Dataset')
+    # error_plot_2(f'{plot_name}/test_{6}.png', big_df, 'n', meanstd[0], 'dataset_name_2','Dataset') #
+    # #
+    # # #
+    # # #
+    # # #
+    #
+    #
+    # dict_translate = {1.2: 0.3,
+    #                   0.4: 0.1,
+    #                   2.0: 0.5}
+    #
+    # names_3 = ['Uniform','Normal', 'Uniform and Normal']
+    # names = ['4D']*3
+    # list_1=[]
+    # for i in range(6,9):
+    #     df = pd.read_csv(f"experiment_{i}_results_summary.csv",index_col=0)
+    #     df = df[df['effective_variance']<100]
+    #     df = df[df['d']==4]
+    #     df['effective variance limit'] = df['effective variance limit'].apply(lambda x: dict_translate[x])
+    #
+    #     df['dataset_name'] = names_3[i-6]
+    #     df['dataset_name_2'] = names_3[i-6]
+    #     list_1.append(df)
+    # big_df = pd.concat(list_1,ignore_index=True)
+    # print(big_df)
+    # build_plot(big_df,f'plot_2')
+    # #
+    # dict_translate = {1.5: 0.3,
+    #                   0.5: 0.1,
+    #                   2.5: 0.5}
+    # names_3 = ['Uniform','Normal', 'Uniform and Normal']
+    # names = ['5D']*3
+    # list_1=[]
+    # for i in range(6,9):
+    #     df = pd.read_csv(f"experiment_{i}_results_summary.csv",index_col=0)
+    #     df = df[df['effective_variance']<100]
+    #     df = df[df['d']==5]
+    #     df['effective variance limit'] = df['effective variance limit'].apply(lambda x: dict_translate[x])
+    #
+    #     df['dataset_name'] = names_3[i-6]
+    #     df['dataset_name_2'] = names_3[i-6]
+    #     list_1.append(df)
+    # big_df = pd.concat(list_1,ignore_index=True)
+    # # big_df = big_df[big_df['dataset_name'].isin(['Normal','Uniform'])]
+    # # big_df = big_df[big_df['time (s)']<1300]
+    # print(big_df)
+    # build_plot(big_df,f'plot_3')
+
+    dict_translate = {0.7000000000000001: 0.1,
+                      2.1: 0.3,
+                      3.5: 0.5}
+    names_3 = ['Uniform', 'Normal', 'Uniform and Normal']
+    names = ['7D'] * 3
+    list_1 = []
+    for i in range(1, 4):
+        df = pd.read_csv(f"experiment_{i}_78D_uniform.csv", index_col=0)
+        df = df[df['effective_variance'] < 100]
+        df = df[df['d'] == 7]
+        df['effective variance limit'] = df['effective variance limit'].apply(lambda x: dict_translate[x])
+
+        df['dataset_name'] = names_3[i - 1]
+        df['dataset_name_2'] = names_3[i - 1]
         list_1.append(df)
-    names_3  = ['Brownian Motion','Clustered', 'Fractional Brownian Motion']
-    names_2 = ['Pathological']*3
-    exotic = ['Brownian_Motion.csv','Clustered.csv','Fractional_Brownian_Motion.csv']
-    for j,el in enumerate(exotic):
-        df = pd.read_csv(el)
-        df['effective_variance'] = round(df['effective_variance'],2)
-        df = df[df['effective_variance']<100]
-        df['dataset_name'] = names_2[j]
-        df['dataset_name_2'] = names_3[j]
-        list_1.append(df)
-    big_df = pd.concat(list_1,ignore_index=True)
-    build_plot(big_df,f'plot_1')
-    plot_name = 'plot_1'
+    big_df = pd.concat(list_1, ignore_index=True)
+
+    print(big_df.groupby('n')[meanstd].mean())
+    print(big_df.groupby('n')[meanstd].std())
+
+    # print(big_df)
+    build_plot(big_df, f'plot_7D')
 
 
-    complexity_plots_3(f'{plot_name}/', big_df, 'n', meanstd[1], 'dataset_name_2','Dataset')
-    error_plot_2(f'{plot_name}/test_{6}.png', big_df, 'n', meanstd[0], 'dataset_name_2','Dataset') #
 
+    # #
+    # #
     #
-    #
-    #
-    df_1 = load_and_concat_df(f'experiment_6_hailmary')
-    df_1_processsed = process_df(df_1)
-    df_1_processsed.to_csv(f"experiment_6_results_summary.csv")
-
-    df_1 = load_and_concat_df(f'experiment_7_hailmary')
-    df_1_processsed = process_df(df_1)
-    df_1_processsed.to_csv(f"experiment_7_results_summary.csv")
-
-    df_1 = load_and_concat_df(f'experiment_8_hailmary')
-    df_1_processsed = process_df(df_1)
-    df_1_processsed.to_csv(f"experiment_8_results_summary.csv")
-
-    names_3 = ['Uniform','Normal', 'Uniform and Normal']
-    names = ['4D']*3
-    list_1=[]
-    for i in range(6,9):
-        df = pd.read_csv(f"experiment_{i}_results_summary.csv",index_col=0)
-        df = df[df['effective_variance']<100]
-        df = df[df['d']==4]
-        df['dataset_name'] = names_3[i-6]
-        df['dataset_name_2'] = names_3[i-6]
-        list_1.append(df)
-    big_df = pd.concat(list_1,ignore_index=True)
-    print(big_df)
-    build_plot(big_df,f'plot_2')
-
-    names_3 = ['Uniform','Normal', 'Uniform and Normal']
-    names = ['5D']*3
-    list_1=[]
-    for i in range(6,9):
-        df = pd.read_csv(f"experiment_{i}_results_summary.csv",index_col=0)
-        df = df[df['effective_variance']<100]
-        df = df[df['d']==5]
-        df['dataset_name'] = names_3[i-6]
-        df['dataset_name_2'] = names_3[i-6]
-        list_1.append(df)
-    big_df = pd.concat(list_1,ignore_index=True)
-    print(big_df)
-    build_plot(big_df,f'plot_3')
-    #
-    #
-

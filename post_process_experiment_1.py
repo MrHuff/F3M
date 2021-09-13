@@ -13,7 +13,8 @@ group_on = ['n', 'd', 'effective_variance', 'min_points', 'small field limit', '
             'effective variance limit']
 meanstd = ['relative error 2','abs error','time (s)']
 
-def load_exotic_results(string_search,folder):
+
+def load_exotic_results(string_search,folder,save_name):
     files = os.listdir(folder)
     d=3
     big_data = []
@@ -39,7 +40,7 @@ def load_exotic_results(string_search,folder):
                 big_data.append(mini_dat)
     big_data = np.concatenate(big_data,axis=0)
     df = pd.DataFrame(big_data,columns=['n', 'd', 'effective_variance','nr of node points','effective variance limit', 'min_points','var comp', 'small field limit','abs error','relative error 2', 'time (s)'])
-    df.to_csv(f'{string_search}.csv')
+    df.to_csv(f'{save_name}.csv')
 
 def load_and_concat_df(exp_folder):
     files = os.listdir(exp_folder)
@@ -59,25 +60,44 @@ def process_df(df_1):
     return mean
 
 if __name__ == '__main__':
-    # load_exotic_results('Clustered',"./benchs_sparse/results/")
-    # load_exotic_results('Brownian_Motion',"./benchs_sparse/results/")
-    # load_exotic_results('Fractional_Brownian_Motion',"./benchs_sparse/results/")
-    # pass
+    # load_exotic_results('Clustered',"./benchs_sparse/results/",'Clustered')
+    # load_exotic_results('Brownian_Motion',"./benchs_sparse/results/",'Brownian_Motion')
+    # load_exotic_results('Fractional_Brownian_Motion',"./benchs_sparse/results/",'Fractional_Brownian_Motion')
     # for i in range(1,4):
-    #     df_1 = load_and_concat_df(f'experiment_{i}')
+    #     # df_1 = load_and_concat_df(f'old_experiments_3/experiment_{i}')
+    #     df_1 = load_and_concat_df(f'experiment_{i}_aggresive')
     #     df_1_processsed = process_df(df_1)
     #     df_1_processsed.to_csv(f"experiment_{i}_results_summary.csv")
-    # for i in range(1,3):
-    #     df_1 = load_and_concat_df(f'experiment_{i}_27')
+    #
+    #
+    # load_exotic_results('Clustered',"./benchs_sparse/res_ablation/",'Clustered_ablation')
+    # load_exotic_results('Brownian_Motion',"./benchs_sparse/res_ablation/",'Brownian_ablation')
+    # load_exotic_results('Fractional_Brownian_Motion',"./benchs_sparse/res_ablation/",'Fractional_Brownian_Motion_ablation')
+    #
+    # for i in range(1,4):
+    #     df_1 = load_and_concat_df(f'experiment_{i}_ablation')
     #     df_1_processsed = process_df(df_1)
-    #     df_1_processsed.to_csv(f"experiment_{i}_27_results_summary.csv")
-
-
+    #     df_1_processsed.to_csv(f"experiment_{i}_results_summary_ablation.csv")
+    #
     # for i in range(6,9):
-    df_1 = load_and_concat_df(f'experiment_7_hailmary')
-    df_1_processsed = process_df(df_1)
-    df_1_processsed.to_csv(f"experiment_7_results_summary.csv")
-    # list_cat =[]
+    #     df_1 = load_and_concat_df(f'exp{i}_ablation_2')
+    #     df_1_processsed = process_df(df_1)
+    #     df_1_processsed.to_csv(f"exp{i}_ablation_summary.csv")
+    #
+    # df_keops = load_and_concat_df('keops_ref_bench')
+    # df_keops.to_csv('df_keops.csv')
+    # for i in range(6,9):
+    #     df_1 = load_and_concat_df(f'experiment_{i}_new')
+    #     df_1_processsed = process_df(df_1)
+    #     df_1_processsed.to_csv(f"experiment_{i}_results_summary.csv")
+    #     list_cat =[]
+
+    list_cat = []
+    for i in range(1,4):
+        df_1 = load_and_concat_df(f'experiment_{i}_78D_uniform')
+        df_1_processsed = process_df(df_1)
+        df_1_processsed.to_csv(f"experiment_{i}_78D_uniform.csv")
+
     # for i in range(1,4):
     #     df_1 = load_and_concat_df(f'experiment_10_{i}')
     #     df_1_processsed = process_df(df_1)
