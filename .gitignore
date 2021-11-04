@@ -3,6 +3,7 @@ cmake-build-debug
 cmake-build-release
 cmake-build-remote
 *.idea*
+*.txt
 *.csv
 *.nvprof
 .metadata

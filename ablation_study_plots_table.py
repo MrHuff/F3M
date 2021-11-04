@@ -80,7 +80,7 @@ def do_3d():
     # big_df = big_df[big_df['dataset_name_2']=='Uniform']
     # big_df = big_df[big_df['effective_variance'].isin([0.1,1,10])]
     mean = group_on(big_df)
-    mean['3-FM time (s)'] = '$'+ mean['time (s)'].astype(str)+'\pm '+ mean['time (s) std'].astype(str)+'$'
+    mean[r'$\text{F}^3$M time (s)'] = '$'+ mean['time (s)'].astype(str)+'\pm '+ mean['time (s) std'].astype(str)+'$'
     # mean=mean.reset_index()
 
     keops_df = pd.read_csv('df_keops.csv',index_col=0)
@@ -93,11 +93,11 @@ def do_3d():
           suffixes=('_left', '_right'),how='left')
     mean['KeOps time (s)'][3] = mean['KeOps time (s)'][2]*25
     mean['KeOps time (s)'][4] = mean['KeOps time (s)'][2]*100
-    mean[r'\makecell{3-FM speedup\\vs FFM(GPU)}'] =  round(mean['time (s)_right']/mean['time (s)_left'],2)
-    mean[r'\makecell{3-FM speedup\\ vs KeOps}'] =  round(mean['KeOps time (s)']/mean['time (s)_left'],2)
+    mean[r'\makecell{$\text{F}^3$M speedup\\vs FFM(GPU)}'] =  round(mean['time (s)_right']/mean['time (s)_left'],2)
+    mean[r'\makecell{$\text{F}^3$M speedup\\ vs KeOps}'] =  round(mean['KeOps time (s)']/mean['time (s)_left'],2)
     # mean[r'$\log(n)$'] = str(np.log10(mean['n']))
     mean['n'] = mean['n'].apply(lambda x:str(int(x)))
-    mean = mean[['n','3-FM time (s)','FFM(GPU) time (s)','KeOps time (s)',r'\makecell{3-FM speedup\\vs FFM(GPU)}',r'\makecell{3-FM speedup\\ vs KeOps}']]
+    mean = mean[['n',r'$\text{F}^3$M time (s)','FFM(GPU) time (s)','KeOps time (s)',r'\makecell{$\text{F}^3$M speedup\\vs FFM(GPU)}',r'\makecell{$\text{F}^3$M speedup\\ vs KeOps}']]
     mean.loc[-1] = [r'\makecell{Theoretical \\Complexity}', r'$\mathcal{O}(n\cdot \log_2\left(\frac{D \cdot  \mathcal{E}^2}{\gamma^2 \cdot 4 \cdot \eta} \right))$', '$\mathcal{O}(n \log{(n)})$','$\mathcal{O}(n^2)$','NaN','NaN']  # adding a row
     mean.index = mean['n']
     mean = mean.drop(['n'],axis=1)
@@ -147,7 +147,7 @@ def plot_barplots():
         df['dataset_name_2'] = names_3[j]
         list_1.append(df)
     big_df = pd.concat(list_1, ignore_index=True)
-    big_df['Method'] = '3-FM'
+    big_df['Method'] = r'$F^3$M'
     super_df = pd.concat([big_df,big_df_ablation],ignore_index=True)
     super_group = super_df.groupby(['Method','n','dataset_name_2'])[meanstd].mean().reset_index()
     # print(super_group)
@@ -201,7 +201,7 @@ def do_4d_(d):
     big_df = big_df[big_df['dataset_name_2'].isin(['Uniform','Uniform and Normal'])]
 
     mean = group_on(big_df)
-    mean['3-FM time (s)'] = '$'+ mean['time (s)'].astype(str)+'\pm '+ mean['time (s) std'].astype(str)+'$'
+    mean[r'$\text{F}^3$M time (s)'] = '$'+ mean['time (s)'].astype(str)+'\pm '+ mean['time (s) std'].astype(str)+'$'
     # mean=mean.reset_index()
 
     keops_df = pd.read_csv('df_keops.csv',index_col=0)
@@ -214,11 +214,11 @@ def do_4d_(d):
           suffixes=('_left', '_right'),how='left')
     mean['KeOps time (s)'][3] = mean['KeOps time (s)'][2]*6.25
     mean['KeOps time (s)'][4] = mean['KeOps time (s)'][2]*25
-    mean[r'\makecell{3-FM speedup\\vs FFM(GPU)}'] =  round(mean['time (s)_right']/mean['time (s)_left'],2)
-    mean[r'\makecell{3-FM speedup\\ vs KeOps}'] =  round(mean['KeOps time (s)']/mean['time (s)_left'],2)
+    mean[r'\makecell{$\text{F}^3$M speedup\\vs FFM(GPU)}'] =  round(mean['time (s)_right']/mean['time (s)_left'],2)
+    mean[r'\makecell{$\text{F}^3$M speedup\\ vs KeOps}'] =  round(mean['KeOps time (s)']/mean['time (s)_left'],2)
     # mean[r'$\log(n)$'] = str(np.log10(mean['n']))
     mean['n'] = mean['n'].apply(lambda x:str(int(x)))
-    mean = mean[['n','3-FM time (s)','FFM(GPU) time (s)','KeOps time (s)',r'\makecell{3-FM speedup\\vs FFM(GPU)}',r'\makecell{3-FM speedup\\ vs KeOps}']]
+    mean = mean[['n',r'$\text{F}^3$M time (s)','FFM(GPU) time (s)','KeOps time (s)',r'\makecell{$\text{F}^3$M speedup\\vs FFM(GPU)}',r'\makecell{$\text{F}^3$M speedup\\ vs KeOps}']]
     mean.loc[-1] = [r'\makecell{Theoretical \\Complexity}', r'$\mathcal{O}(n\cdot \log_2\left(\frac{D \cdot  \mathcal{E}^2}{\gamma^2 \cdot 4 \cdot \eta} \right))$', '$\mathcal{O}(n \log{(n)})$','$\mathcal{O}(n^2)$','NaN','NaN']  # adding a row
     mean.index = mean['n']
     mean = mean.drop(['n'],axis=1)
@@ -248,7 +248,7 @@ def plot_barplots_4d(d):
         df['dataset_name_2'] = names_3[i-6]
         list_1.append(df)
     big_df = pd.concat(list_1,ignore_index=True)
-    big_df['Method'] = '3-FM'
+    big_df['Method'] = r'$\text{F}^3$M'
 
     super_df = pd.concat([big_df,big_df_ablation],ignore_index=True)
     super_group = super_df.groupby(['Method','n','dataset_name_2'])[meanstd].mean().reset_index()
@@ -339,9 +339,9 @@ def plot_complexity_3d():
     keops_Y = keops_df['calc_time'].values
     keops_m,keops_b = fit(keops_X,keops_Y)
 
-
+    F='{F}'
     arr = np.arange(min(np.log10(X)), max(np.log10(X))+1, step=1)
-    plt.plot(arr,arr+b,c='b',label=f'3-FM, slope={round(1.00,2)}', linewidth=4)
+    plt.plot(arr,arr+b,c='b',label=rf'$R^3$M, slope={round(1.00,2)}', linewidth=4)
     plt.plot(arr,arr*ablation_m+ablation_b,c='g',label=f'FFM, slope={round(ablation_m,2)}', linewidth=4)
     plt.plot(arr,arr*keops_m+keops_b,c='r',label=f'KeOps, slope={round(keops_m,2)}', linewidth=4)
     plt.plot(arr,arr*M_nlogn+b,c='k',linestyle='dashed',label='$\mathcal{O}(n\log n)$ curve, slope=1.11')
@@ -393,9 +393,9 @@ def plot_complexity_4d(d):
     keops_Y = keops_df['calc_time'].values
     keops_m,keops_b = fit(keops_X,keops_Y)
 
-
+    F='{F}'
     arr = np.arange(min(np.log10(X)), max(np.log10(X))+1, step=1)
-    plt.plot(arr,0.96*arr+b,c='b',label=f'3-FM, slope={round(0.96,2)}', linewidth=4)
+    plt.plot(arr,0.96*arr+b,c='b',label=rf'$F^3$M, slope={round(0.96,2)}', linewidth=4)
     plt.plot(arr,arr*ablation_m+ablation_b,c='g',label=f'FFM, slope={round(ablation_m,2)}', linewidth=4)
     plt.plot(arr,arr*keops_m+keops_b,c='r',label=f'KeOps, slope={round(keops_m,2)}', linewidth=4)
     plt.plot(arr,arr*M_nlogn+b,c='k',linestyle='dashed',label='$\mathcal{O}(n\log n)$ curve, slope=1.11')
@@ -454,13 +454,13 @@ def eta_plot():
 
     plt.clf()
 if __name__ == '__main__':
-    eta_plot()
+    # eta_plot()
     # plot_complexity_3d()
-    plot_complexity_4d(4)
-    plot_complexity_4d(5)
-    do_4d_(4)
-    do_4d_(5)
-    plot_barplots_4d(4)
-    plot_barplots_4d(5)
+    # plot_complexity_4d(4)
+    # plot_complexity_4d(5)
+    # do_4d_(4)
+    # do_4d_(5)
+    # plot_barplots_4d(4)
+    # plot_barplots_4d(5)
     # do_3d()
-    # plot_barplots()
+    plot_barplots()
