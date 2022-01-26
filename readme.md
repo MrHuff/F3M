@@ -1,6 +1,6 @@
-*3F-M* (Triple-FM)
+*F^3M* (Faster- Fast and Free Memory Method)
 
-To able to run anything with 3F-M you will need:
+To able to run anything with F^3M you will need:
 
 1. A pytorch v1.8>= with either CUDA 10.2 or 11.1.
 2. A GCC compiler. It's recommended to use the https://anaconda.org/omgarcia/gcc-6 compiler that comes with conda, it works for all dependencies.
