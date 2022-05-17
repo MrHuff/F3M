@@ -11,7 +11,7 @@ plt.rcParams['figure.figsize'] = 1.5*x, x
 
 font_size = 60
 plt.rcParams['font.size'] = font_size
-plt.rcParams['legend.fontsize'] = 45
+plt.rcParams['legend.fontsize'] = 70
 plt.rcParams['axes.labelsize'] = font_size
 plt.rcParams['text.usetex'] = True
 plt.rcParams['font.family'] = "serif"
@@ -67,13 +67,13 @@ def error_plot_4(savefig, df, X, Y,Y_2, slice,label_nice):
         plt.plot([], [], 's' ,label=f'{label_nice}: {label_df}',color=color)
 
     # plt.tight_layout()
-    legend = plt.legend(frameon=True,loc='lower left')
+    legend = plt.legend(frameon=True,loc='upper right',framealpha=0.0)
     for legend_handle in legend.legendHandles:
         legend_handle._legmarker.set_markersize(25)
         # handle.set_sizes([100.0])
 
-    legend_elements = [Line2D([0], [0],markerfacecolor='k',marker='o', color='w', label='Rel Error', markersize=50),
-                          Line2D([0], [0],markerfacecolor='k', marker='*',color='w', label='Abs Error',markersize=50),
+    legend_elements = [Line2D([0], [0],markerfacecolor='k',marker='o', color='w', label='Rel Error', markersize=40),
+                          Line2D([0], [0],markerfacecolor='k', marker='*',color='w', label='Abs Error',markersize=40),
                        ]
     ax1.legend(handles=legend_elements)
 
@@ -87,7 +87,7 @@ if __name__ == '__main__':
         sub_df = df[df['d']==d]
         # error_plot_2(f"rbf_2_error_d={d}.png",sub_df,'eff_far_field','rel_error','nodes','nodes')
         # error_plot_3(f"rbf_2_error_d_abs={d}.png",sub_df,'eff_far_field','abs_error','nodes','nodes')
-        error_plot_4(f"rbf_3_error_d_abs={d}.png",sub_df,'eff_far_field','rel_error','abs_error','nodes','Nodes')
+        error_plot_4(f"rbf_3_error_d_abs={d}.png",sub_df,'eff_far_field','rel_error','abs_error','nodes','r')
 
 
 

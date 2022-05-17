@@ -103,7 +103,7 @@ void benchmark_1(int n,float min_points, int threshold,float a,float b,float ls,
 //    torch::Tensor X_train = torch::rand({n,nd}).toType(dtype<scalar_t>()).to(device_cuda); //Something fishy going on here, probably the boxes stuff... //Try other distributions for pathological distributions!
     torch::Tensor b_train = torch::randn({n,1}).toType(dtype<scalar_t>()).to(device_cuda);
 //    torch::Tensor b_train = torch::ones({n,1}).toType(dtype<scalar_t>()).to(device_cuda);
-    torch::Tensor res,res_ref;
+    torch::Tensor res,res_ref,res_ref_2;
     FFM_object<scalar_t,nd> ffm_obj = FFM_object<scalar_t, nd>(X_train, X_train, ls_in, device_cuda, min_points,
                                                                nr_of_interpolation_points,
                                                                var_comp, var_eff, small_field_limit); //FMM object
@@ -114,23 +114,27 @@ void benchmark_1(int n,float min_points, int threshold,float a,float b,float ls,
     auto duration_2 = std::chrono::duration_cast<std::chrono::milliseconds>(end_2-start_2);
     std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
     std::cout<<"------------- "<<"Uniform distribution : "<< "a "<<a<<" b "<<b<<" n: "<<n<<" min_points: "<< min_points <<" nr_interpolation_points: "<<nr_of_interpolation_points <<" -------------"<<std::endl;
-//    torch::Tensor subsampled_X = X_train.slice(0,0,threshold);
-//    exact_MV<scalar_t,nd> exact_ref =exact_MV<scalar_t,nd>(subsampled_X, X_train, ls_in);
-//    auto start = std::chrono::high_resolution_clock::now();
-//    res_ref = exact_ref *b_train;
-//    auto end = std::chrono::high_resolution_clock::now();
-//    auto duration_1 = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
-//    std::cout<<"Full matmul time (ms): "<<duration_1.count()<<std::endl;
-//
-//    torch::Tensor res_compare = res.slice(0,0,threshold);
-//    torch::Tensor rel_error  = (res_ref-res_compare).abs().sum()/res_ref.abs().sum();
-//    torch::Tensor abs_error  = (res_ref-res_compare).abs_().mean();
-//    auto rel_error_float = rel_error.item<scalar_t>();
-//    std::cout<<res_ref.slice(0,0,21)<<std::endl;
-//    std::cout<<res.slice(0,0,21)<<std::endl;
-//    std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
-//    std::cout<<"Relative error: "<<rel_error_float<<std::endl;
-//    std::cout<<"Abs error: "<<abs_error<<std::endl;
+    torch::Tensor subsampled_X = X_train.slice(0,0,threshold);
+    exact_MV<scalar_t,nd> exact_ref =exact_MV<scalar_t,nd>(subsampled_X, X_train, ls_in);
+    auto start = std::chrono::high_resolution_clock::now();
+    res_ref = exact_ref *b_train;
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration_1 = std::chrono::duration_cast<std::chrono::milliseconds>(end-start);
+    std::cout<<"Full matmul time (ms): "<<duration_1.count()<<std::endl;
+
+    torch::Tensor res_compare = res.slice(0,0,threshold);
+    torch::Tensor rel_error  = (res_ref-res_compare).abs().sum()/res_ref.abs().sum();
+    torch::Tensor abs_error  = (res_ref-res_compare).abs_().mean();
+    auto rel_error_float = rel_error.item<scalar_t>();
+    std::cout<<res_ref.slice(0,0,21)<<std::endl;
+    std::cout<<res.slice(0,0,21)<<std::endl;
+    std::cout<<"FFM time (ms): "<<duration_2.count()<<std::endl;
+    std::cout<<"Relative error: "<<rel_error_float<<std::endl;
+    std::cout<<"Abs error: "<<abs_error<<std::endl;
+
+    res_ref_2 = exact_ref & b_train;
+
+
 //    writeOnfile_exp_1(fname,a,b,n,nd,min_points,nr_of_interpolation_points,duration_2.count(),rel_error_float);
 
 }
@@ -248,9 +252,10 @@ void benchmark_4(int n,float min_points, int threshold,float mean,float var,floa
     const std::string device_cpu = "cpu";
     scalar_t ls_in = (scalar_t) ls;
 
-    torch::jit::script::Module container = torch::jit::load("./faulty_data_2.pt");
+    torch::jit::script::Module container = torch::jit::load("./taxi_debug.pt");
     torch::Tensor X_train = container.attr("X").toTensor();
-    torch::Tensor b_train = container.attr("b").toTensor();
+    torch::Tensor b_train = torch::randn({n,1}).toType(dtype<scalar_t>()).to(device_cuda);
+//    torch::Tensor b_train = container.attr("b").toTensor();
     X_train = X_train.slice(0,0,n);
     b_train = b_train.slice(0,0,n);
     X_train = X_train.toType(dtype<scalar_t>()).to(device_cuda);

@@ -1,18 +1,18 @@
 import pickle
 import pandas as pd
-
+D_LIST = [6,7]
 def generate_jobs_normal():
     counter=0
     dict_list = []
     for seed in [0]:
-        for d in [4, 5]:
-            for nr_of_interpolation in [256,512,1024]:
+        for d in D_LIST:
+            for nr_of_interpolation in [256,512,1024,2048]:
                 for r2 in [0.1, 1, 10]:
                     for eff_var_limit in [0.1,0.3,0.5]:
-                        for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 500000000],
-                                                                    [5000, 5000, 20000, 20000],
+                        for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000],
+                                                                    [5000, 5000, 20000],
                                                                     [nr_of_interpolation, 2500,
-                                                                     10000, 15000]):
+                                                                     10000]):
                             if d > 4 and n == 500000000:
                                 n = 500000000 // 2
                             dict_param = {
@@ -24,7 +24,8 @@ def generate_jobs_normal():
                                 'small_field_limit':small_field_limit,
                                 'r2':r2,
                                 'eff_var_limit':d*eff_var_limit,
-                                'counter':counter
+                                'counter':counter,
+                                'mode':1
                             }
                             dict_list.append(dict_param)
                             counter+=1
@@ -35,14 +36,14 @@ def generate_jobs_uniform():
     counter=0
     dict_list = []
     for seed in [0]:
-        for d in [4, 5]:
+        for d in D_LIST:
             for nr_of_interpolation in [256,512,1024]:
                 for r2 in [0.1, 1, 10]:
                     for eff_var_limit in [0.1,0.3,0.5]:
-                        for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 500000000],
-                                                                    [2500, 2500, 10000, 20000],
+                        for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000],
+                                                                    [2500, 2500, 10000],
                                                                     [nr_of_interpolation, nr_of_interpolation,
-                                                                     nr_of_interpolation, nr_of_interpolation]):
+                                                                     nr_of_interpolation]):
                             dict_param = {
                                 'eff_var':seed,
                                 'd':d,
@@ -52,7 +53,8 @@ def generate_jobs_uniform():
                                 'small_field_limit':small_field_limit,
                                 'r2':r2,
                                 'eff_var_limit':d*eff_var_limit,
-                                'counter': counter
+                                'counter': counter,
+                                'mode': 2
 
                             }
                             dict_list.append(dict_param)
@@ -64,15 +66,15 @@ def generate_jobs_mix():
     counter=0
     dict_list = []
     for seed in [0]:
-        for d in [4, 5]:
+        for d in D_LIST:
             for nr_of_interpolation in [256,512,1024]:
                 for r2 in [0.1, 1, 10]:
                     for eff_var_limit in [0.1,0.3,0.5]:
-                        for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 250000000],
-                                                                    [2500, 2500, 5000, 10000],
+                        for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000],
+                                                                    [2500, 2500, 5000],
                                                                     [nr_of_interpolation, nr_of_interpolation,
-                                                                     nr_of_interpolation,
-                                                                     nr_of_interpolation]):
+                                                                     nr_of_interpolation
+                                                                     ]):
                             dict_param = {
                                 'eff_var':seed,
                                 'd':d,
@@ -82,7 +84,8 @@ def generate_jobs_mix():
                                 'small_field_limit':small_field_limit,
                                 'r2':r2,
                                 'eff_var_limit':d*eff_var_limit,
-                                'counter': counter
+                                'counter': counter,
+                                'mode': 3
 
                             }
                             dict_list.append(dict_param)
@@ -95,13 +98,13 @@ def generate_jobs_normal_ablation():
     counter=0
     dict_list = []
     for seed in [0]:
-        for d in [4, 5]:
+        for d in D_LIST:
             for nr_of_interpolation in [256,512,1024]:
                 for r2 in [0.1, 1, 10]:
                     for eff_var_limit in [1.0]:
-                        for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 500000000],
-                                                                    [5000, 5000, 20000, 20000],
-                                                                    [0,0,0,0]):
+                        for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000],
+                                                                    [5000, 5000, 20000,],
+                                                                    [0,0,0]):
                             if d > 4 and n == 500000000:
                                 n = 500000000 // 2
                             dict_param = {
@@ -113,24 +116,26 @@ def generate_jobs_normal_ablation():
                                 'small_field_limit':small_field_limit,
                                 'r2':r2,
                                 'eff_var_limit':eff_var_limit,
-                                'counter':counter
+                                'counter':counter,
+                                'mode': 2
+
                             }
                             dict_list.append(dict_param)
                             counter+=1
-    with open('normal_jobs.pkl', 'wb') as f:
+    with open('normal_jobs_ablation.pkl', 'wb') as f:
         pickle.dump(dict_list, f)
 
 def generate_jobs_uniform_ablation():
     counter=0
     dict_list = []
     for seed in [0]:
-        for d in [4, 5]:
+        for d in D_LIST:
             for nr_of_interpolation in [256,512,1024]:
                 for r2 in [0.1, 1, 10]:
                     for eff_var_limit in [1.0]:
-                        for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 500000000],
-                                                                    [2500, 2500, 10000, 20000],
-                                                                    [0,0,0,0]):
+                        for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000],
+                                                                    [2500, 2500, 10000, ],
+                                                                    [0,0,0]):
                             dict_param = {
                                 'eff_var':seed,
                                 'd':d,
@@ -140,25 +145,26 @@ def generate_jobs_uniform_ablation():
                                 'small_field_limit':small_field_limit,
                                 'r2':r2,
                                 'eff_var_limit':eff_var_limit,
-                                'counter': counter
+                                'counter': counter,
+                                'mode': 1
 
                             }
                             dict_list.append(dict_param)
                             counter+=1
-    with open('uniform_jobs.pkl', 'wb') as f:
+    with open('uniform_jobs_ablation.pkl', 'wb') as f:
         pickle.dump(dict_list, f)
 
 def generate_jobs_mix_ablation():
     counter=0
     dict_list = []
     for seed in [0]:
-        for d in [4, 5]:
+        for d in D_LIST:
             for nr_of_interpolation in [256,512,1024]:
                 for r2 in [0.1, 1, 10]:
                     for eff_var_limit in [1.0]:
-                        for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 250000000],
-                                                                    [2500, 2500, 5000, 10000],
-                                                                    [0,0,0,0]):
+                        for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000],
+                                                                    [2500, 2500, 5000],
+                                                                    [0,0,0,]):
                             dict_param = {
                                 'eff_var':seed,
                                 'd':d,
@@ -168,14 +174,59 @@ def generate_jobs_mix_ablation():
                                 'small_field_limit':small_field_limit,
                                 'r2':r2,
                                 'eff_var_limit':eff_var_limit,
-                                'counter': counter
+                                'counter': counter,
+                                'mode': 3
 
                             }
                             dict_list.append(dict_param)
                             counter+=1
-    with open('mix_jobs.pkl', 'wb') as f:
+    with open('mix_jobs_ablation.pkl', 'wb') as f:
         pickle.dump(dict_list, f)
-# if __name__ == '__main__':
-#     generate_jobs_uniform()
-#     generate_jobs_normal()
-#     generate_jobs_mix()
+def generate_jobs_real_KMVM():
+    node_list = [4,5,6]
+    counter=0
+    dict_list = []
+    dict_list_ablation=[]
+    counter_ablation=0
+    for s in [1]:
+            for r2 in [0.1, 1, 10]:
+                for node_nr in node_list:
+
+                    for n, min_points in zip([1000000, 10000000, 100000000, 1000000000],
+                                             [1000, 1000, 5000, 5000]):
+                        dict_param_ablation = {
+                            'node_nr': node_nr,
+                            'seed': s,
+                            'n': n,
+                            'min_points': min(n//20,500000),
+                            'r2': r2,
+                            'eff_var_limit': 1.0,
+                            'counter': counter_ablation
+                        }
+                        dict_list_ablation.append(dict_param_ablation)
+                        for evarlimit in [0.1, 0.3, 0.5]:
+                            dict_param = {
+                                'node_nr':node_nr,
+                                'seed': s,
+                                'n': n,
+                                'min_points': min_points,
+                                'r2': r2,
+                                'eff_var_limit': evarlimit,
+                                'counter': counter
+                            }
+                            dict_list.append(dict_param)
+                            counter += 1
+                        counter_ablation+=1
+    with open('real_kmvm_jobs.pkl', 'wb') as f:
+        pickle.dump(dict_list, f)
+    with open('real_kmvm_jobs_ablation.pkl', 'wb') as f:
+        pickle.dump(dict_list_ablation, f)
+if __name__ == '__main__':
+    # generate_jobs_real_KMVM()
+    generate_jobs_uniform()
+    generate_jobs_normal()
+    generate_jobs_mix()
+
+    generate_jobs_uniform_ablation()
+    generate_jobs_normal_ablation()
+    generate_jobs_mix_ablation()

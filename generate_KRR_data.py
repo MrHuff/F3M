@@ -4,7 +4,7 @@ from FFM_classes import *
 import numpy as np
 torch.manual_seed(0)
 d=3
-N=1000000000
+N=1000000
 for eff_var in [0.1, 1, 10]:
     ls = 1/(2 ** 0.5 * eff_var ** 0.5)
     perm = torch.arange(0,1000)

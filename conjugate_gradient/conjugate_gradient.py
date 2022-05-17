@@ -1,8 +1,8 @@
 import numpy as np
 
 from pykeops.common.utils import get_tools
-
-
+import torch
+import tqdm
 # Some advance operations defined at user level use in fact other reductions.
 def preprocess(reduction_op, formula2):
     reduction_op = reduction_op
@@ -80,150 +80,129 @@ def postprocess(out, binding, reduction_op, nout, opt_arg, dtype):
     return out
 
 
-def ConjugateGradientSolver(binding, linop, b, eps=1e-6):
+
+def subsample_inducing_points(X,m_fac=1.0):
+    sqrt_n = X.shape[0]**0.5
+    M = int(round(m_fac*sqrt_n))
+    idx = torch.randperm(X.shape[0])[:M]
+    X_M = torch.clone(X[idx])
+    return X_M
+
+class nystrom_preconditioner:
+    def __init__(self,X,m_fac=1.0,lamb=1e-2):
+        self.X = X
+        self.x_m = subsample_inducing_points(self.X,m_fac)
+        self.lamb=lamb
+    def calculate_constants(self,memory_kernel):
+        self.k_X_x_m = memory_kernel(self.X,self.x_m).evaluate()
+        self.small_in_mem = memory_kernel(self.x_m).evaluate() + self.k_X_x_m.t()@self.k_X_x_m/self.lamb
+        # self.L = torch.linalg.cholesky(small_in_mem)
+        self.inside_inverse = torch.inverse(self.small_in_mem)
+        # self.inside_inverse = torch.cholesky_inverse(L)
+
+    def apply_predcond(self,ffm_obj,b):
+        right = ffm_obj.forward(self.x_m,self.X,b)/self.lamb
+        mid = self.inside_inverse@right
+        # mid = torch.linalg.solve(self.small_in_mem,right)
+        left = ffm_obj.forward(self.X,self.x_m,mid)
+        P_inv_vec = (b-left)/self.lamb
+        return P_inv_vec
+
+def PreConditionedConjugateGradientSolver(binding,preconditioner,kmvm_object, b,lamb=1e-3, eps=1e-6,max_its=1000):
+    def linop(b):
+        return kmvm_object@b+lamb*b
+    tools = get_tools(binding)
+    delta = eps
+    u = 0
+    r = tools.copy(b)
+    z = preconditioner.apply_predcond(ffm_obj=kmvm_object,b=r)
+    d = tools.copy(z)
+    rel_err = b.abs().sum().item()
+    nz2 = (z * r).mean(dim=0,keepdim=True)
+    alpha_matrix = []
+    beta_matrix  = []
+    for i in tqdm.tqdm(range(max_its)):
+        error = torch.abs(r).sum() / rel_err
+        print(error.mean().item())
+        if error.mean().item() < delta:
+            print(error)
+            break
+        v = linop(d)
+        alp = (nz2) / (d * v).mean(dim=0,keepdim=True)
+        u += alp * d
+        r -= alp * v
+
+        z = preconditioner.apply_predcond(ffm_obj=kmvm_object, b=r)
+        nz2new = (z * r).mean(dim=0,keepdim=True)  # mean square residual... #can do z as well for some reason...
+        d = z + (nz2new / nz2) * d
+        nz2 = torch.clone(nz2new)
+    alpha_matrix = torch.cat(alpha_matrix,dim=0)
+    beta_matrix = torch.cat(beta_matrix,dim=0)
+    return u,alpha_matrix,beta_matrix
+
+def get_GP_likelihood(alpha,y,alpha_mat,beta_mat):
+    t_mat = build_tridiagonalization_matrices(alpha_mat,beta_mat)
+    log_kXX=calculate_log_kxx(t_mat)
+    NLL =log_kXX - torch.sum(alpha*y).item()
+    return NLL
+def calculate_log_kxx(T_list):
+    a = torch.linalg.eigvalsh(T_list)
+    val, ind = a.max(1)
+    return val.log().mean().item()
+
+
+def build_tridiagonalization_matrices(alphas,betas):
+    d = alphas.shape[1]
+    T_matrices = []
+    for i in range(d):
+        # alpha_minus_1 = torch.cat([torch.zeros_like(alphas[0,:]),alphas[1:]])
+        # beta_minus_1 = torch.cat([torch.zeros_like(betas[0,:]),betas[1:]])
+        alpha_minus_1 = torch.clone(alphas[:,i])
+        alpha_minus_1[0]=0.0
+        beta_minus_1 = torch.clone(betas[:,i])
+        beta_minus_1[0]=0.0
+        diag = 1/alphas[:,i] + torch.nan_to_num(beta_minus_1/alpha_minus_1,nan=0.0)
+        off_diag = betas[1:,i]**0.5/alphas[1:,i]
+        s= torch.diag(off_diag,1)
+        T= torch.diag(diag)+s+s.t()
+        T_matrices.append(T)
+    T_matrices = torch.stack(T_matrices,dim=0)
+    return T_matrices
+
+def ConjugateGradientSolver(binding, kmvm_object, b,lamb=1e-2 ,eps=1e-6,max_its=1000):
     # Conjugate gradient algorithm to solve linear system of the form
     # Ma=b where linop is a linear operation corresponding
     # to a symmetric and positive definite matrix
+    def linop(b):
+        return kmvm_object@b+lamb*b
     tools = get_tools(binding)
-    delta = tools.size(b) * eps ** 2
+    delta = eps
     a = 0
     r = tools.copy(b)
-    nr2 = (r ** 2).sum()
-    if nr2 < delta:
-        return 0 * r
+    nr2 = (r ** 2).mean(dim=0,keepdim=True)
+
     p = tools.copy(r)
     k = 0
-    while True:
+    rel_err = b.abs().sum(dim=0,keepdim=True)
+    alpha_matrix = []
+    beta_matrix  = []
+    for i in tqdm.tqdm(range(max_its)):
         Mp = linop(p)
-        alp = nr2 / (p * Mp).sum()
+        alp = nr2 / (p * Mp).mean(dim=0,keepdim=True)
         a += alp * p
         r -= alp * Mp
-        nr2new = (r ** 2).sum()
-        print(nr2new)
-        if nr2new < delta:
+        error = torch.abs(r).sum(dim=0,keepdim=True)/rel_err
+        print(error.mean().item())
+        if error.mean().item() < delta:
+            print(error)
             break
-        p = r + (nr2new / nr2) * p
+        nr2new = (r ** 2).mean(dim=0,keepdim=True)
+        beta = (nr2new / nr2)
+        p = r +  beta * p
         nr2 = nr2new
+        alpha_matrix.append(alp)
+        beta_matrix.append(beta)
         k += 1
-    return a
-
-
-def KernelLinearSolver(FFM_obj,
-    binding, K, x, b, alpha=0, eps=1e-6, precond=False, precondKernel=None
-):
-    tools = get_tools(binding)
-    dtype = 'float32'
-
-    def PreconditionedConjugateGradientSolver(linop, b, invprecondop, eps=1e-6):
-        # Preconditioned conjugate gradient algorithm to solve linear system of the form
-        # Ma=b where linop is a linear operation corresponding
-        # to a symmetric and positive definite matrix
-        # invprecondop is linear operation corresponding to the inverse of the preconditioner matrix
-        a = 0
-        r = tools.copy(b)
-        z = invprecondop(r)
-        p = tools.copy(z)
-        rz = (r * z).sum()
-        k = 0
-        while True:
-            linop_res = linop(p)
-            alp = rz / (p * linop_res).sum()
-            a += alp * p
-            r -= alp *linop_res
-            print(k,(r**2).sum())
-            if (r ** 2).sum() < eps:
-                break
-            z = invprecondop(r)
-            rznew = (r * z).sum()
-            p = z + (rznew / rz) * p
-            rz = rznew
-            k += 1
-        return a
-
-    def NystromInversePreconditioner(K, Kspec, x, alpha):
-        N, D = x.shape
-        m = int(np.sqrt(N))
-        ind = np.random.choice(range(N), m, replace=False)
-        u = x[ind, :]
-        M = K(u, u) + Kspec(
-            tools.tile(u, (m, 1)), tools.tile(u, (1, m)).reshape(-1, D), x
-        ).reshape(m, m)
-
-        def invprecondop(r):
-            a = tools.solve(M, K(u, x, r))
-            return (r - K(x, u, a)) / alpha
-
-        return invprecondop
-
-    def KernelLinOp(a):
-        return FFM_obj@a + alpha * a
-
-    def GaussKernel(D, Dv, sigma):
-        formula = "Exp(-oos2*SqDist(x,y))*b"
-        variables = [
-            "x = Vi(" + str(D) + ")",  # First arg   : i-variable, of size D
-            "y = Vj(" + str(D) + ")",  # Second arg  : j-variable, of size D
-            "b = Vj(" + str(Dv) + ")",  # Third arg  : j-variable, of size Dv
-            "oos2 = Pm(1)",
-        ]  # Fourth arg  : scalar parameter
-        my_routine = tools.Genred(
-            formula, variables, reduction_op="Sum", axis=1, dtype=dtype
-        )
-        oos2 = tools.array([1.0 / sigma ** 2], dtype=dtype).cuda()
-        KernelMatrix = GaussKernelMatrix(sigma)
-
-        def K(x, y, b=None):
-            if b is None:
-                return KernelMatrix(x, y)
-            else:
-                return my_routine(x, y, b, oos2)
-
-        return K
-
-    def GaussKernelNystromPrecond(D, sigma):
-        formula = "Exp(-oos2*(SqDist(u,x)+SqDist(v,x)))"
-        variables = [
-            "u = Vi(" + str(D) + ")",  # First arg   : i-variable, of size D
-            "v = Vi(" + str(D) + ")",  # Second arg  : i-variable, of size D
-            "x = Vj(" + str(D) + ")",  # Third arg  : j-variable, of size D
-            "oos2 = Pm(1)",
-        ]  # Fourth arg  : scalar parameter
-        my_routine = tools.Genred(
-            formula, variables, reduction_op="Sum", axis=1, dtype=dtype
-        )
-        oos2 = tools.array([0.5 / sigma ** 2], dtype=dtype).cuda()
-        KernelMatrix = GaussKernelMatrix(sigma)
-
-        def K(u, v, x):
-            return my_routine(u, v, x, oos2)
-
-        return K
-
-    def GaussKernelMatrix(sigma):
-        oos2 = 1.0 / sigma ** 2
-
-        def f(x, y):
-            D = x.shape[1]
-            sqdist = 0
-            for k in range(D):
-                sqdist += (x[:, k][:, None] - tools.transpose(y[:, k][:, None])) ** 2
-            return tools.exp(-oos2 * sqdist)
-
-        return f
-
-    if type(K) == tuple:
-        if K[0] == "gaussian":
-            D = K[1] #dimension d
-            Dv = K[2] #dimension of b
-            sigma = K[3] #lengthscale remember to take square root
-            K = GaussKernel(D, Dv, sigma)
-            if precond:
-                precondKernel = GaussKernelNystromPrecond(D, sigma)
-
-    if precond:
-        invprecondop = NystromInversePreconditioner(K, precondKernel, x, alpha)
-        a = PreconditionedConjugateGradientSolver(KernelLinOp, b, invprecondop, eps)
-    else:
-        a = ConjugateGradientSolver(binding, KernelLinOp, b, eps=eps)
-
-    return a
+    alpha_matrix = torch.cat(alpha_matrix,dim=0)
+    beta_matrix = torch.cat(beta_matrix,dim=0)
+    return a,alpha_matrix,beta_matrix

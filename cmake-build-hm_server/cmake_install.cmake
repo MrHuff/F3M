@@ -1,4 +1,4 @@
-# Install script for directory: /home/haaluser/phd_projects/cuda_n_body_cpp
+# Install script for directory: /home/haaluser/phd_projects/cuda_n_body
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -50,5 +50,5 @@ endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-file(WRITE "/home/haaluser/phd_projects/cuda_n_body_cpp/cmake-build-hm_server/${CMAKE_INSTALL_MANIFEST}"
+file(WRITE "/home/haaluser/phd_projects/cuda_n_body/cmake-build-hm_server/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")

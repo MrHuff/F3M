@@ -11,19 +11,33 @@ from conjugate_gradient.custom_falkon import custom_Falkon
 from conjugate_gradient.custom_gaussian_kernel import custom_GaussianKernel
 import argparse
 import  pykeops
+
 # pykeops.clean_pykeops()
 # pykeops.test_torch_bindings()
+from sklearn.metrics import roc_auc_score
+
+def auc(true,pred):
+    true=true.cpu().numpy()
+    pred=pred.cpu().numpy()
+    true_zero_one = np.clip(true,0,1)
+    pred_zero_one = pred>0
+    auc = roc_auc_score(true_zero_one,pred_zero_one)
+    return auc
+
 def job_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('--idx', type=int, nargs='?', default=-1, help='which dataset to run')
-    parser.add_argument('--penalty_in', type=float, nargs='?', default=-1, help='which dataset to run')
-    parser.add_argument('--eff_var', type=int, nargs='?', default=-1, help='which dataset to run')
+    parser.add_argument('--seed', type=int, nargs='?', default=-1, help='which dataset to run')
+    parser.add_argument('--penalty', type=float, nargs='?', default=-1, help='which dataset to run')
     return parser
 def calc_R2(true,pred):
     var = true.var()
     mse = torch.mean((true-pred)**2)
     r2 = 1-(mse/var)
     return r2.item()
+
+
+
 def calculate_results(seed,n,d,ls,effective_variance,min_points,small_field,nr_of_node_points,eff_var_limit,R_2,time_GC,time_full,time_inference,penalty):
     df = pd.DataFrame(
         [[seed,n,d,ls,effective_variance,min_points,small_field,nr_of_node_points,eff_var_limit,R_2,time_GC,time_full,time_inference,penalty]], columns=columns)
@@ -138,14 +152,73 @@ def dataset_X_bench(penalty_in, seed):
     counter += 1
     print('counter: ', counter)
 
+
+
+def dataset_taxi_F3M(dirname,penalty_in, seed,bench):
+    M = 100000
+    d = 3
+    dirname = f'{dirname}_bench={bench}'
+    if not os.path.exists(dirname):
+        os.makedirs(dirname)
+    N=1000000000
+    nr_of_interpolation = 64
+    penalty = penalty_in
+    eff_var_limit = 2.0
+    if not os.path.exists(f'{dirname}/{dirname}_lambda={penalty_in}_seed={seed}.csv'):
+        torch.cuda.synchronize()
+        problem_set = torch.load('krr_taxi.pt')
+        X = problem_set['X'][:N,:].contiguous()
+        Y = problem_set['y'][:N,:].contiguous()
+        ls = problem_set['ls']
+        if bench:
+            kernel = falkon.kernels.GaussianKernel(sigma=ls)
+            options = falkon.FalkonOptions(use_cpu=False, debug=True, keops_memory_slack=0.25)
+            model = custom_Falkon(kernel=kernel, penalty=penalty, M=M, options=options)
+
+        else:
+            kernel = custom_GaussianKernel(sigma=ls, min_points=1000,
+                                           var_compression=True,
+                                           interpolation_nr=nr_of_interpolation, eff_var_limit=eff_var_limit)
+
+            options = falkon.FalkonOptions(use_cpu=False, debug=True)
+            model = custom_Falkon(kernel=kernel, penalty=penalty, M=M, options=options)
+
+        start = time.time()
+        model.fit(X, Y)
+        end = time.time()
+        TOTAL_TIME = end - start
+        CG_TIME = model.conjugate_gradient_time
+
+        start = time.time()
+        preds = model.predict(X)
+        end = time.time()
+        INFERENCE_TIME = end - start
+
+        # print(preds[:1000])
+        # print(Y[:1000])
+        r2 = auc(Y, preds)
+
+        df = calculate_results(seed, X.shape[0], d, ls ** 2, 1 / ls ** 2, nr_of_interpolation, nr_of_interpolation,
+                               nr_of_interpolation, eff_var_limit, r2, CG_TIME, TOTAL_TIME,
+                               INFERENCE_TIME, penalty)
+        print(df)
+        df.to_csv(f'{dirname}/{dirname}_lambda={penalty_in}_seed={seed}.csv')
+        del kernel, preds, model
+        torch.cuda.empty_cache()
+
+
 if __name__ == '__main__':
     input_args = vars(job_parser().parse_args())
     idx = input_args['idx']
-    penalty_in = input_args['penalty_in']
-    seed = input_args['eff_var']
+    seed = input_args['seed']
+    penalty_in = input_args['penalty']
     if idx==0:
         for seed,penalty_in in zip([1,2,3],[0.0075,0.01,0.0075]):
             dataset_X(penalty_in,seed)
     elif idx==1:
         for seed,penalty_in in zip([1,2,3],[1e-3,0.025,1e-3]):
             dataset_X_bench(penalty_in,seed)
+    elif idx==2:
+        dataset_taxi_F3M('taxi_krr_class_2_optimized_chunks',penalty_in,seed,False)
+    elif idx==3:
+        dataset_taxi_F3M('taxi_krr_class_2_9',penalty_in,seed,True)

@@ -48,7 +48,53 @@ class FFM:
     def __matmul__(self, b):
         self.b = b.float().to(self.device)
         return self.forward(self.X,self.Y,self.b)
+    def grad(self,b):
+        self.b = b.float().to(self.device)
+        return self.forward_grad(self.X,self.Y,self.b)
+    def chunk_forward_transpose(self,b,chunks=10):
+        self.b = b.float().to(self.device)
+        b_chunked = torch.chunk(self.b, dim=0, chunks=chunks)
+        Y_chunked = torch.chunk(self.X, dim=0, chunks=chunks)
+        res = 0.0
+        for b, y in zip(b_chunked, Y_chunked):
+            res += self.forward(self.Y, y, b)
+        return res
 
+    def chunk_forward_example(self,b,chunks=10):
+        self.b = b.float().to(self.device)
+        b_chunked = torch.chunk(self.b, dim=0, chunks=chunks)
+        Y_chunked = torch.chunk(self.Y, dim=0, chunks=chunks)
+        res = 0.0
+        for b, y in zip(b_chunked, Y_chunked):
+            res += self.forward(self.X, y, b)
+        return res
+    def forward_grad(self,X,Y,b):
+        try:
+            assert Y.shape[1]==X.shape[1]
+            assert Y.shape[0]==b.shape[0]
+        except AssertionError:
+            print('hey check the shapes of your tensor X,Y and b they dont match up!')
+            raise AssertionError
+        if self.d==1:
+            return load_obj.rbf_float_1_grad(X,Y,b,self.ls,True)
+        if self.d==2:
+            return load_obj.rbf_float_2_grad(X,Y,b,self.ls,True)
+        if self.d==3:
+            return load_obj.rbf_float_3_grad(X,Y,b,self.ls,True)
+        if self.d==4:
+            return load_obj.rbf_float_4_grad(X,Y,b,self.ls,True)
+        if self.d==5:
+            return load_obj.rbf_float_5_grad(X,Y,b,self.ls,True)
+        if self.d==6:
+            return load_obj.rbf_float_6_grad(X,Y,b,self.ls,True)
+        if self.d==7:
+            return load_obj.rbf_float_7_grad(X,Y,b,self.ls,True)
+        if self.d==8:
+            return load_obj.rbf_float_8_grad(X,Y,b,self.ls,True)
+        if self.d==9:
+            return load_obj.rbf_float_9_grad(X,Y,b,self.ls,True)
+        if self.d==10:
+            return load_obj.rbf_float_10_grad(X,Y,b,self.ls,True)
     def forward(self,X,Y,b):
         assert X.device==Y.device==b.device==torch.device(self.device)
         self.device = str(self.device)

@@ -199,24 +199,47 @@ torch::Tensor rbf_call(
     int memory;
     std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(nd, cuda_X_job.size(0));
 
-    if(shared){
-        rbf_1d_reduce_shared_torch<scalar_t,nd><<<gridSize,blockSize,memory>>>(cuda_X_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                               cuda_Y_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                               cuda_b_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                               output_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                               d_ls
-        );
-    }else{
-        rbf_1d_reduce_simple_torch<scalar_t,nd><<<gridSize,blockSize,memory>>>(cuda_X_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                               cuda_Y_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                               cuda_b_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                               output_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
-                                                                               d_ls
-        );
-    }
+    rbf_1d_reduce_shared_torch<scalar_t,nd><<<gridSize,blockSize,memory>>>(cuda_X_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                           cuda_Y_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                           cuda_b_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                           output_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                           d_ls
+    );
+
     cudaDeviceSynchronize();
     return output_job;
 }
+
+template <typename scalar_t, int nd>
+torch::Tensor rbf_call_grad(
+        torch::Tensor & cuda_X_job,
+        torch::Tensor & cuda_Y_job,
+        torch::Tensor & cuda_b_job,
+        scalar_t & ls,
+        bool shared = true
+){
+
+    scalar_t lcs = 1/(2*ls*ls);
+    scalar_t inv_ls = 1/(ls*ls*ls);
+    torch::Tensor output_job = torch::zeros({cuda_X_job.size(0), cuda_b_job.size(1)}).toType(dtype<scalar_t>()).to(cuda_X_job.device());
+    auto d_ls = allocate_scalar_to_cuda<scalar_t>(lcs);
+
+    dim3 blockSize,gridSize;
+    int memory;
+    std::tie(blockSize,gridSize,memory) = get_kernel_launch_params<scalar_t>(nd, cuda_X_job.size(0));
+
+    rbf_1d_reduce_shared_torch_grad<scalar_t,nd><<<gridSize,blockSize,memory>>>(cuda_X_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                           cuda_Y_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                           cuda_b_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                           output_job.packed_accessor64<scalar_t,2,torch::RestrictPtrTraits>(),
+                                                                           d_ls
+    );
+
+    cudaDeviceSynchronize();
+    output_job = output_job*inv_ls;
+    return output_job;
+}
+
 
 
 int optimal_blocksize(int &min_box_size){
@@ -1155,6 +1178,15 @@ struct exact_MV{
     };
     torch::Tensor operator* (torch::Tensor & b) {
         return  rbf_call<scalar_t,nd>(
+                X_data,
+                Y_data,
+                b,
+                ls,
+                true
+        );
+    };
+    torch::Tensor operator& (torch::Tensor & b) {
+        return  rbf_call_grad<scalar_t,nd>(
                 X_data,
                 Y_data,
                 b,

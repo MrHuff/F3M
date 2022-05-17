@@ -73,11 +73,13 @@ __device__ inline static T rbf(T x[],T y[],const T *ls){
 };
 
 
-//template<typename T, int nd>
-//__device__ rbf_pointer<T> rbf_pointer_func = rbf<T>;
-//template<typename T, int nd>
-//__device__ rbf_pointer<T> rbf_pointer_grad = rbf_grad<T>;
-//
+template<typename T, int nd>
+__device__ inline static T rbf_grad(T x[],T y[],const T *ls){
+    T dist=square_dist<T,nd>(x,y);
+    return expf(-dist*(*ls))*dist;
+};
+
+
 
 template <typename scalar_t,int nd>
 __device__ inline static void torch_load_y(int index, scalar_t *shared_mem, torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> y){
@@ -120,6 +122,52 @@ __device__ inline static void torch_load_b_v2(
 
 
 //Consider caching the kernel value if b is in Nxd.
+
+template <typename scalar_t,int nd>
+__global__ void rbf_1d_reduce_shared_torch_grad(
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> Y_data,
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> b_data, //also put b's in shared mem for maximum perform.
+        torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> output,
+        scalar_t * ls){
+    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
+    unsigned int x_n = X_data.size(0);
+    scalar_t x_i[nd];
+    if (i<x_n) {
+        for (int k = 0; k < nd; k++) {
+            x_i[k] = X_data[i][k];
+        }
+    }
+    unsigned int y_n = Y_data.size(0);
+    extern __shared__ __align__(sizeof(scalar_t)) unsigned char my_smem[];
+    scalar_t *buffer = reinterpret_cast<scalar_t *>(my_smem);
+    scalar_t *yj = &buffer[0];
+    scalar_t *bj = &buffer[blockDim.x*nd];
+    scalar_t acc;
+    for (int b_ind=0; b_ind<output.size(1); b_ind++) {
+        acc=0;
+        for (int jstart = 0, tile = 0; jstart < y_n; jstart += blockDim.x, tile++) {
+            int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
+            if (j < y_n) { // we load yj from device global memory only if j<ny
+                torch_load_y<scalar_t,nd>(j, yj, Y_data);
+                torch_load_b<scalar_t>(b_ind ,j, bj, b_data);
+            }
+            __syncthreads();
+            if (i < x_n) { // we compute x1i only if needed
+                scalar_t *yjrel = yj; // Loop on the columns of the current block.
+                for (int jrel = 0; (jrel < blockDim.x) && (jrel < y_n - jstart); jrel++, yjrel += nd) {
+                    acc += rbf_grad<scalar_t,nd>(x_i, yjrel,ls) * bj[jrel];
+                }
+            }
+            __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
+        };
+        if (i < x_n) {
+            output[i][b_ind] = acc;
+        }
+        __syncthreads();
+    };
+}
+
 template <typename scalar_t,int nd>
 __global__ void rbf_1d_reduce_shared_torch(
         const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
@@ -165,36 +213,6 @@ __global__ void rbf_1d_reduce_shared_torch(
     };
 }
 
-template <typename scalar_t,int nd>
-__global__ void rbf_1d_reduce_simple_torch(const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
-                                           const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> Y_data,
-                                           const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> b_data, //also put b's in shared mem for maximum perform.
-                                           torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> output,
-                                           scalar_t * ls){
-
-    int i = blockIdx.x * blockDim.x + threadIdx.x; // current thread
-    unsigned int x_n = X_data.size(0);
-    if (i>x_n-1){return;}
-    unsigned int y_n = Y_data.size(0);
-    scalar_t x_i[nd];
-    scalar_t y_j[nd];
-    scalar_t acc;
-    for (int k=0;k<nd;k++){
-        x_i[k] = X_data[i][k];
-    }
-    for (int b_ind=0; b_ind < b_data.size(1); b_ind++){
-        acc=0;
-        for (int p=0;p<y_n;p++){
-            for (int k=0;k<nd;k++){
-                y_j[k] = Y_data[p][k];
-            };
-            acc+= rbf<scalar_t,nd>(x_i,y_j,ls)*b_data[p][b_ind];
-        };
-        output[i][b_ind]=acc;
-    }
-    __syncthreads();
-
-};
 
 template <typename scalar_t,int nd>
 __device__ __forceinline__ scalar_t calculate_barycentric_lagrange(//not sure this is such a great idea, when nan how avoid...
@@ -301,6 +319,88 @@ __global__ void skip_conv_1d_shared(const torch::PackedTensorAccessor64<scalar_t
                     scalar_t *yjrel = yj; // Loop on the columns of the current block.
                     for (int jrel = 0; (jrel < blockDim.x) && (jrel < end - jstart); jrel++, yjrel += nd) {
                         acc += rbf<scalar_t, nd>(x_i, yjrel, ls) *
+                               bj[jrel];
+                    }
+                }
+                __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
+            };
+
+        }
+        if (i < b) {
+            output[x_idx_reorder][b_ind] += acc;
+        }
+    }
+    __syncthreads();
+//    }
+}
+
+template <typename scalar_t,int nd>
+__global__ void skip_conv_1d_shared_grad(const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> X_data,
+                                    const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> Y_data,
+                                    const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> b_data,
+                                    torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> output,
+                                    scalar_t * ls,
+                                    const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> x_boxes_count,
+                                    const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> y_boxes_count,
+                                    const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> block_box_indicator,
+                                    const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> box_block_indicator,
+                                    const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> x_idx_reordering,
+                                    const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> y_idx_reordering,
+                                    const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions_x_parsed,
+                                    const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> interactions_y,
+                                    KeyValue* hash_list,
+                                    int * hash_list_size
+
+){
+    int i,box_ind,start,end,a,b,int_m,x_idx_reorder,b_size,interactions_a,interactions_b;
+    box_ind = block_box_indicator[blockIdx.x];
+    a = x_boxes_count[box_ind];
+    b = x_boxes_count[box_ind+1];
+//    printf("box ind 1 %i\n",box_ind);
+
+    i = a + threadIdx.x+box_block_indicator[blockIdx.x]*blockDim.x; // Use within box, block index i.e. same size as indicator...
+    scalar_t x_i[nd];
+    scalar_t acc;
+    extern __shared__ int int_buffer[];
+    extern __shared__ __align__(sizeof(scalar_t)) unsigned char my_smem[];
+    scalar_t *buffer = reinterpret_cast<scalar_t *>(my_smem);
+    int *map_back = &int_buffer[0];
+    scalar_t *yj = &buffer[1];
+    scalar_t *bj = &buffer[blockDim.x*nd+1];
+    //Load these points only... the rest gets no points... threadIdx.x +a to b. ...
+    b_size = b_data.size(1);
+    if (i<b) {
+        x_idx_reorder = x_idx_reordering[i];
+        for (int k = 0; k < nd; k++) {
+            x_i[k] = X_data[x_idx_reorder][k];
+        }
+    }
+    if(threadIdx.x==0){
+        map_back[0] = device_lookup(hash_list,box_ind,hash_list_size);
+    }
+    __syncthreads();
+//    printf("box ind %i, map back %i\n",box_ind,map_back[0]);
+    interactions_a = interactions_x_parsed[map_back[0]][0]; //get your hashlist...
+    interactions_b= interactions_x_parsed[map_back[0]][1]; //
+//    if (interactions_a>-1) {
+    for (int b_ind = 0; b_ind < b_size; b_ind++) { //for all dims of b
+        acc = 0;
+        for (int m = interactions_a; m < interactions_b; m++) {
+            //Pass near field interactions...
+            int_m = interactions_y[m];
+            start = y_boxes_count[int_m]; // 0 to something
+            end = y_boxes_count[int_m + 1]; // seomthing
+            for (int jstart = start, tile = 0; jstart < end; jstart += blockDim.x, tile++) {
+                int j = start + tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
+                if (j < end) { // we load yj from device global memory only if j<ny
+                    torch_load_y_v2<scalar_t, nd>(y_idx_reordering[j], yj, Y_data);
+                    torch_load_b_v2<scalar_t, nd>(b_ind, y_idx_reordering[j], bj, b_data);
+                }
+                __syncthreads();
+                if (i < b) { // we compute x1i only if needed
+                    scalar_t *yjrel = yj; // Loop on the columns of the current block.
+                    for (int jrel = 0; (jrel < blockDim.x) && (jrel < end - jstart); jrel++, yjrel += nd) {
+                        acc += rbf_grad<scalar_t, nd>(x_i, yjrel, ls) *
                                bj[jrel];
                     }
                 }
@@ -561,6 +661,83 @@ __global__ void laplace_shared_transpose(
 //[[0,1],[0,2],[0,3],[0,4],[0,5]...] ~ O(n_b^2x2)
 //Move to shared mem experiment!
 //Thrust
+template <typename scalar_t,int nd>
+__global__ void skip_conv_far_boxes_opt_grad(//needs rethinking
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> cheb_data_X,
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> cheb_data_Y,
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> b_data,
+        torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> output,
+        scalar_t * ls,
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> centers_X,
+        const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> centers_Y,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> indicator,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> box_block_indicator,
+        const torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> interactions_x_parsed,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> interactions_y,
+        KeyValue* hash_list_x,
+        int * hash_list_size_x,
+        const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> interactions_y_hash
+
+){
+    int box_ind,a,cheb_data_size,int_m,interactions_a,interactions_b,b_size,box_ind_hash;
+    cheb_data_size = cheb_data_X.size(0);
+    box_ind = indicator[blockIdx.x];
+    box_ind_hash  = device_lookup(hash_list_x,box_ind,hash_list_size_x);
+    a = box_ind_hash* cheb_data_size;
+    int i = a + threadIdx.x+box_block_indicator[blockIdx.x]*blockDim.x; // Use within box, block index i.e. same size as indicator...
+    int i_calc = threadIdx.x+box_block_indicator[blockIdx.x]*blockDim.x;
+    scalar_t x_i[nd];
+    scalar_t acc;
+    extern __shared__ __align__(sizeof(scalar_t)) unsigned char my_smem[];
+    scalar_t *buffer = reinterpret_cast<scalar_t *>(my_smem);
+    scalar_t *yj = &buffer[0];
+    scalar_t *bj = &buffer[blockDim.x*nd];
+
+    //Load these points only... the rest gets no points... threadIdx.x +a to b. ...
+    if (i_calc<cheb_data_size) {
+        for (int k = 0; k < nd; k++) {
+            x_i[k] = cheb_data_X[i_calc][k]+centers_X[box_ind][k];
+        }
+    }
+    __syncthreads();
+    interactions_a = interactions_x_parsed[box_ind_hash][0];//first hashing... for x
+    interactions_b= interactions_x_parsed[box_ind_hash][1];
+
+    int box_ind_hash_y;
+    b_size = b_data.size(1);
+    for (int b_ind = 0;b_ind <b_size ; b_ind++) { //for all dims of b A*b, b \in \mathbb{R}^{n\times d}, d>=1.
+        acc = 0;
+        for (int m = interactions_a; m < interactions_b; m++) {
+            int_m = interactions_y[m];
+            box_ind_hash_y = interactions_y_hash[m];
+            for (int jstart = 0, tile = 0; jstart < cheb_data_size; jstart += blockDim.x, tile++) {
+                int j = tile * blockDim.x + threadIdx.x; //periodic threadIdx.x you dumbass. 0-3 + 0-2*4
+                if (j < cheb_data_size) {
+                    for (int k = 0; k < nd; k++) {
+                        yj[nd * threadIdx.x+k] = cheb_data_Y[j][k]+centers_Y[int_m][k]; //Error also occurs here!
+                    }
+                    bj[threadIdx.x] = b_data[j + box_ind_hash_y * cheb_data_size][b_ind];//second hashing for Y
+                }
+                __syncthreads(); //Need to be smart with this, don't slow down the others!
+                if (i_calc < cheb_data_size) { // we compute x1i only if needed
+                    scalar_t *yjrel = yj; // Loop on the columns of the current block.
+                    for (int p = 0; (p < blockDim.x) && (p < cheb_data_size - jstart); p++, yjrel += nd) {
+                        acc += rbf_grad<scalar_t,nd>(x_i, yjrel, ls)* bj[p];
+                    }
+                }
+                __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
+            }
+            __syncthreads(); //Lesson learned! Thread synching really important for cuda programming and memory loading when indices are dependent on threadIdx.x!
+
+        }
+        if (i_calc < cheb_data_size) { // we compute x1i only if needed
+            output[i][b_ind] = acc;
+        }
+        __syncthreads();
+
+    }
+    __syncthreads();
+}
 template <typename scalar_t,int nd>
 __global__ void skip_conv_far_boxes_opt(//needs rethinking
         const torch::PackedTensorAccessor64<scalar_t,2,torch::RestrictPtrTraits> cheb_data_X,

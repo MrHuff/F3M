@@ -6,14 +6,14 @@ def experiment_1(device="cuda:0"):
     k(X,X) - uniform distribution with varying effective variance, N and d.
     :return:
     """
-    dirname = 'experiment_1_ablation'
+    dirname = 'experiment_1_ablation_test'
     ref_points = 5000
     ls = float(1.0)/2**0.5 #lengthscale
     counter = 0
     if not os.path.exists(dirname):
         os.makedirs(dirname)
     for seed in [1]:
-        for d in [3]:
+        for d in [2]:
             for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000, 1000000000],
                                                             [1000, 1000, 5000, 5000],
                                                             [0, 0, 0,

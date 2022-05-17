@@ -15,6 +15,15 @@ plt.rcParams['text.usetex'] = True
 plt.rcParams['font.family'] = "serif"
 font_size = 12
 plt.rcParams['font.size'] = font_size
+
+def build_df(folder):
+    files = os.listdir(folder)
+    rows = []
+    for f in files:
+        row=pd.read_csv(folder+'/'+f,index_col=0)
+        rows.append(row)
+    df=pd.concat(rows,axis=0).reset_index()
+    return df
 def group_on(big_df):
     group_on=['n']
     mean = big_df.groupby(group_on)[meanstd].mean()
@@ -23,86 +32,102 @@ def group_on(big_df):
     mean_2 = mean_2.reset_index()
     std = big_df.groupby(group_on)[meanstd].std()
     std = std.reset_index()
-    mean['relative error 2 std'] = round(std['relative error 2'],3)
-    mean['time (s) std'] = round(std['time (s)'],2)
+    mean['relative error 2 std'] = round(std['relative error 2'],6)
+    mean['time (s) std'] = round(std['time (s)'],1)
     mean['relative error 2'] = round(mean['relative error 2'],4)
-    mean['time (s)'] = round(mean['time (s)'],2)
+    mean['time (s)'] = round(mean['time (s)'],1)
     mean['Counts'] =mean_2['relative error 2']
     return mean
 
-def do_3d():
-    names_3 = ['Uniform', 'Normal', 'Uniform and Normal']
-    names = ['Standard'] * 3
-    list_1 = []
-    for i in range(1, 4):
-        df = pd.read_csv(f"experiment_{i}_results_summary_ablation.csv")
-        df = df[df['effective_variance'] < 100]
-        df['dataset_name'] = names[i - 1]
-        df['dataset_name_2'] = names_3[i - 1]
-        list_1.append(df)
-    names_3 = ['Brownian Motion', 'Clustered', 'Fractional Brownian Motion']
-    names_2 = ['Pathological'] * 3
-    exotic = ['Brownian_ablation.csv', 'Clustered_ablation.csv', 'Fractional_Brownian_Motion_ablation.csv']
-    for j, el in enumerate(exotic):
-        df = pd.read_csv(el)
-        df['effective_variance'] = round(df['effective_variance'], 2)
-        df = df[df['effective_variance'] < 100]
-        df['dataset_name'] = names_2[j]
-        df['dataset_name_2'] = names_3[j]
-        list_1.append(df)
-    big_df_ablation = pd.concat(list_1, ignore_index=True)
-    # big_df_ablation = big_df_ablation[big_df_ablation['dataset_name_2']=='Uniform']
-    # big_df_ablation = big_df_ablation[big_df_ablation['effective_variance'].isin([0.1,1,10])]
-    mean_ablation = group_on(big_df_ablation)
-    mean_ablation['FFM(GPU) time (s)'] = '$'+ mean_ablation['time (s)'].astype(str)+'\pm '+ mean_ablation['time (s) std'].astype(str)+'$'
-    # mean_ablation=mean_ablation.reset_index()
-
-    names_3 = ['Uniform', 'Normal', 'Uniform and Normal']
-    names = ['Standard'] * 3
-    list_1 = []
-    for i in range(1, 4):
-        df = pd.read_csv(f"experiment_{i}_results_summary.csv")
-        df = df[df['effective_variance'] < 100]
-        df['dataset_name'] = names[i - 1]
-        df['dataset_name_2'] = names_3[i - 1]
-        list_1.append(df)
-    names_3 = ['Brownian Motion', 'Clustered', 'Fractional Brownian Motion']
-    names_2 = ['Pathological'] * 3
-    exotic = ['Brownian_Motion.csv', 'Clustered.csv', 'Fractional_Brownian_Motion.csv']
-    for j, el in enumerate(exotic):
-        df = pd.read_csv(el)
-        df['effective_variance'] = round(df['effective_variance'], 2)
-        df = df[df['effective_variance'] < 100]
-        df['dataset_name'] = names_2[j]
-        df['dataset_name_2'] = names_3[j]
-        list_1.append(df)
-    big_df = pd.concat(list_1, ignore_index=True)
-    # big_df = big_df[big_df['dataset_name_2']=='Uniform']
-    # big_df = big_df[big_df['effective_variance'].isin([0.1,1,10])]
+def load_data(d,ablation):
+    if d in ['osm','taxi']:
+        fold = f'{d}_ablation={ablation}'
+        big_df = build_df(fold)
+    elif d==3:
+        names_3 = ['Uniform', 'Normal', 'Uniform and Normal']
+        names = ['Standard'] * 3
+        list_1 = []
+        for i in range(1, 4):
+            df = pd.read_csv(f"experiment_{i}_results_summary_ablation.csv") if ablation else pd.read_csv(f"experiment_{i}_results_summary.csv")
+            df['dataset_name'] = names[i - 1]
+            df['dataset_name_2'] = names_3[i - 1]
+            list_1.append(df)
+        names_3 = ['Brownian Motion', 'Clustered', 'Fractional Brownian Motion']
+        names_2 = ['Pathological'] * 3
+        exotic = ['Brownian_ablation.csv', 'Clustered_ablation.csv', 'Fractional_Brownian_Motion_ablation.csv'] if ablation else ['Brownian_Motion.csv', 'Clustered.csv', 'Fractional_Brownian_Motion.csv']
+        for j, el in enumerate(exotic):
+            df = pd.read_csv(el)
+            df['effective_variance'] = round(df['effective_variance'], 2)
+            df['dataset_name'] = names_2[j]
+            df['dataset_name_2'] = names_3[j]
+            list_1.append(df)
+        big_df = pd.concat(list_1, ignore_index=True)
+    else:
+        names_3 = ['Uniform','Normal', 'Uniform and Normal']
+        list_1 = []
+        for i in range(6, 9):
+            df = pd.read_csv(f"exp{i}_ablation_summary.csv", index_col=0) if ablation else pd.read_csv(f"experiment_{i}_results_summary.csv",index_col=0)
+            df = df[df['d'] == d]
+            df['dataset_name'] = names_3[i - 6]
+            df['dataset_name_2'] = names_3[i - 6]
+            list_1.append(df)
+        big_df = pd.concat(list_1, ignore_index=True)
+        big_df = big_df[big_df['dataset_name'].isin(['Uniform', 'Uniform and Normal'])]
+    mask = (big_df['relative error 2']<=1e-2) & (big_df['relative error 2']>1e-6)
+    big_df = big_df[mask]
     mean = group_on(big_df)
-    mean[r'$\text{F}^3$M time (s)'] = '$'+ mean['time (s)'].astype(str)+'\pm '+ mean['time (s) std'].astype(str)+'$'
-    # mean=mean.reset_index()
+    mean = mean.reset_index(drop=True)
+    return mean
 
-    keops_df = pd.read_csv('df_keops.csv',index_col=0)
-    keops_df = keops_df[keops_df['d']==3]
-    keops_df['KeOps time (s)'] = keops_df['calc_time'].apply(lambda x: round(x,2))
+def create_comparison_table(d):
+    mean_ablation = load_data(d, True)
+    mean_ablation['FFM(GPU) time (s)'] = r'$\makecell{' + mean_ablation['time (s)'].astype(str) + r'\\ \pm ' + mean_ablation[
+        'time (s) std'].astype(str) + '}$'
 
-    mean = mean.merge(mean_ablation,left_on='n', right_on='n',
-          suffixes=('_left', '_right'),how='left')
-    mean = mean.merge(keops_df,left_on='n', right_on='n',
-          suffixes=('_left', '_right'),how='left')
-    mean['KeOps time (s)'][3] = mean['KeOps time (s)'][2]*25
-    mean['KeOps time (s)'][4] = mean['KeOps time (s)'][2]*100
-    mean[r'\makecell{$\text{F}^3$M speedup\\vs FFM(GPU)}'] =  round(mean['time (s)_right']/mean['time (s)_left'],2)
-    mean[r'\makecell{$\text{F}^3$M speedup\\ vs KeOps}'] =  round(mean['KeOps time (s)']/mean['time (s)_left'],2)
+    err_abl = mean_ablation['relative error 2'].mean()
+
+    mean = load_data(d, False)
+    mean[r'$\text{F}^3$M time (s)'] = r'$\makecell{' + mean['time (s)'].astype(str) + r'\\ \pm ' + mean[
+        'time (s) std'].astype(str) + '}$'
+    err = mean['relative error 2'].mean()
+
+    keops_df = pd.read_csv('df_keops.csv', index_col=0)
+    keops_df = keops_df[keops_df['d'] == d]
+    keops_df['KeOps time (s)'] = keops_df['calc_time'].apply(lambda x: round(x, 2))
+
+    mean = mean.merge(mean_ablation, left_on='n', right_on='n',
+                      suffixes=('_left', '_right'), how='left')
+    mean = mean.merge(keops_df, left_on='n', right_on='n',
+                      suffixes=('_left', '_right'), how='left')
+
+    if d in [3,'osm','taxi']:
+        mean['KeOps time (s)'][3] = mean['KeOps time (s)'][2] * 25
+        mean['KeOps time (s)'][4] = mean['KeOps time (s)'][2] * 100
+    else:
+        mean['KeOps time (s)'][3] = mean['KeOps time (s)'][2] * 6.25
+        mean['KeOps time (s)'][4] = mean['KeOps time (s)'][2] * 25
+
+    mean[r'\makecell{$\text{F}^3$M speedup\\vs FFM(GPU)}'] = round(mean['time (s)_right'] / mean['time (s)_left'], 1)#.astype(int)
+    mean[r'\makecell{$\text{F}^3$M speedup\\ vs KeOps}'] = round(mean['KeOps time (s)'] / mean['time (s)_left'], 0)#.astype(int)
     # mean[r'$\log(n)$'] = str(np.log10(mean['n']))
-    mean['n'] = mean['n'].apply(lambda x:str(int(x)))
-    mean = mean[['n',r'$\text{F}^3$M time (s)','FFM(GPU) time (s)','KeOps time (s)',r'\makecell{$\text{F}^3$M speedup\\vs FFM(GPU)}',r'\makecell{$\text{F}^3$M speedup\\ vs KeOps}']]
-    mean.loc[-1] = [r'\makecell{Theoretical \\Complexity}', r'$\mathcal{O}(n\cdot \log_2\left(\frac{D \cdot  \mathcal{E}^2}{\gamma^2 \cdot 4 \cdot \eta} \right))$', '$\mathcal{O}(n \log{(n)})$','$\mathcal{O}(n^2)$','NaN','NaN']  # adding a row
-    mean.index = mean['n']
-    mean = mean.drop(['n'],axis=1)
+    mean['n'] = mean['n'].apply(lambda x: str(int(x)))
+    mean = mean[['n', r'$\text{F}^3$M time (s)', 'FFM(GPU) time (s)', 'KeOps time (s)',
+                 r'\makecell{$\text{F}^3$M speedup\\vs FFM(GPU)}', r'\makecell{$\text{F}^3$M speedup\\ vs KeOps}']]
+    mean.loc[-1] = [r'Error',
+                    err,
+                    err_abl,0, 'NaN', 'NaN']  # adding a row
+    mean.loc[-2] = [r'\makecell{Theoretical \\Complexity}',
+                    r'$\mathcal{O}(n\cdot \log_2\left(\frac{D \cdot  \mathcal{E}^2}{\gamma^2 \cdot 4 \cdot \eta} \right))$',
+                    '$\mathcal{O}(n \log{(n)})$', '$\mathcal{O}(n^2)$', 'NaN', 'NaN']  # adding a row
+    print(mean)
+    # mean.index = mean['n']
+    # mean = mean.drop(['n'], axis=1)
 
-    mean.to_latex('3d_rebuttal_table.tex',escape=False)
+    mean.columns = pd.MultiIndex.from_tuples([tuple([c,d]) for c in mean.columns])
+
+    mean.to_latex(f'{d}d_rebuttal_table.tex', escape=False)
+
+    return mean
 
 def plot_barplots():
     names_3 = ['Unif', 'Norm', r'Unif \& Norm']
@@ -169,61 +194,6 @@ def plot_barplots():
         plt.savefig(f'3d_compare_{n}.png', bbox_inches='tight', pad_inches=0.2)
         plt.clf()
 
-def do_4d_(d):
-    names_3 = ['Uniform', 'Normal', 'Uniform and Normal']
-    list_1 = []
-    for i in range(6, 9):
-        df = pd.read_csv(f"exp{i}_ablation_summary.csv", index_col=0)
-        df = df[df['effective_variance'] < 100]
-        df = df[df['d'] == d]
-        df['dataset_name'] = names_3[i - 6]
-        df['dataset_name_2'] = names_3[i - 6]
-        list_1.append(df)
-    big_df_ablation = pd.concat(list_1, ignore_index=True)
-    big_df_ablation = big_df_ablation[big_df_ablation['dataset_name_2'].isin(['Uniform','Uniform and Normal'])]
-    # big_df_ablation = big_df_ablation[big_df_ablation['effective_variance'].isin([0.1,1,10])]
-    mean_ablation = group_on(big_df_ablation)
-    mean_ablation['FFM(GPU) time (s)'] = '$'+ mean_ablation['time (s)'].astype(str)+'\pm '+ mean_ablation['time (s) std'].astype(str)+'$'
-    # mean_ablation=mean_ablation.reset_index()
-
-    names_3 = ['Uniform','Normal', 'Uniform and Normal']
-    list_1=[]
-    for i in range(6,9):
-        df = pd.read_csv(f"experiment_{i}_results_summary.csv",index_col=0)
-        df = df[df['effective_variance']<100]
-        # df = df[df['effective variance limit'] == 0.5]
-
-        df = df[df['d']==d]
-        df['dataset_name'] = names_3[i-6]
-        df['dataset_name_2'] = names_3[i-6]
-        list_1.append(df)
-    big_df = pd.concat(list_1,ignore_index=True)
-    big_df = big_df[big_df['dataset_name_2'].isin(['Uniform','Uniform and Normal'])]
-
-    mean = group_on(big_df)
-    mean[r'$\text{F}^3$M time (s)'] = '$'+ mean['time (s)'].astype(str)+'\pm '+ mean['time (s) std'].astype(str)+'$'
-    # mean=mean.reset_index()
-
-    keops_df = pd.read_csv('df_keops.csv',index_col=0)
-    keops_df = keops_df[keops_df['d']==d]
-    keops_df['KeOps time (s)'] = keops_df['calc_time'].apply(lambda x: round(x,2))
-
-    mean = mean.merge(mean_ablation,left_on='n', right_on='n',
-          suffixes=('_left', '_right'),how='left')
-    mean = mean.merge(keops_df,left_on='n', right_on='n',
-          suffixes=('_left', '_right'),how='left')
-    mean['KeOps time (s)'][3] = mean['KeOps time (s)'][2]*6.25
-    mean['KeOps time (s)'][4] = mean['KeOps time (s)'][2]*25
-    mean[r'\makecell{$\text{F}^3$M speedup\\vs FFM(GPU)}'] =  round(mean['time (s)_right']/mean['time (s)_left'],2)
-    mean[r'\makecell{$\text{F}^3$M speedup\\ vs KeOps}'] =  round(mean['KeOps time (s)']/mean['time (s)_left'],2)
-    # mean[r'$\log(n)$'] = str(np.log10(mean['n']))
-    mean['n'] = mean['n'].apply(lambda x:str(int(x)))
-    mean = mean[['n',r'$\text{F}^3$M time (s)','FFM(GPU) time (s)','KeOps time (s)',r'\makecell{$\text{F}^3$M speedup\\vs FFM(GPU)}',r'\makecell{$\text{F}^3$M speedup\\ vs KeOps}']]
-    mean.loc[-1] = [r'\makecell{Theoretical \\Complexity}', r'$\mathcal{O}(n\cdot \log_2\left(\frac{D \cdot  \mathcal{E}^2}{\gamma^2 \cdot 4 \cdot \eta} \right))$', '$\mathcal{O}(n \log{(n)})$','$\mathcal{O}(n^2)$','NaN','NaN']  # adding a row
-    mean.index = mean['n']
-    mean = mean.drop(['n'],axis=1)
-
-    mean.to_latex(f'{d}d_rebuttal_table.tex',escape=False)
 
 def plot_barplots_4d(d):
     names_3 = ['Uniform', 'Normal', 'Uniform and Normal']
@@ -458,9 +428,21 @@ if __name__ == '__main__':
     # plot_complexity_3d()
     # plot_complexity_4d(4)
     # plot_complexity_4d(5)
-    # do_4d_(4)
-    # do_4d_(5)
     # plot_barplots_4d(4)
     # plot_barplots_4d(5)
-    # do_3d()
-    plot_barplots()
+    base = create_comparison_table(3)
+
+    for d in [3,4,5,'taxi','osm']:
+        df = create_comparison_table(d)
+        print(df)
+        for el in ['n', r'$\text{F}^3$M time (s)', 'FFM(GPU) time (s)', 'KeOps time (s)',
+                 r'\makecell{$\text{F}^3$M speedup\\vs FFM(GPU)}', r'\makecell{$\text{F}^3$M speedup\\ vs KeOps}']:
+            base.loc[:,(el,d)]=df[el][d]
+    base.sort_index(axis=1, level=[0, 1], ascending=[True, False], inplace=True)
+    base.index = base['n'][3]
+    base = base.drop(['n'], axis=1)
+    print(base)
+    base.to_latex(f'big_run_table.tex', escape=False)
+
+
+    # plot_barplots()

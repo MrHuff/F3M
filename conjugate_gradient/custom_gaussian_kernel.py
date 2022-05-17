@@ -24,6 +24,7 @@ class custom_GaussianKernel(GaussianKernel):
             self.FFM_obj = FFM(X=X1, Y=X2, ls=self.ls, min_points=self.min_points, nr_of_interpolation=self.interpolation_nr,
                           eff_var_limit=self.eff_var_limit, var_compression=self.var_compression, device=self.device,
                           small_field_points=self.interpolation_nr)
+            self.FFM_obj_2 = benchmark_matmul(X=X1[:1,:], ls=self.ls)
             self.ffm_initialized = True
 
         return self.mmv_
@@ -36,6 +37,8 @@ class custom_GaussianKernel(GaussianKernel):
             self.FFM_obj = FFM(X=X1, Y=X2, ls=self.ls, min_points=self.min_points, nr_of_interpolation=self.interpolation_nr,
                           eff_var_limit=self.eff_var_limit, var_compression=self.var_compression, device=self.device,
                           small_field_points=self.interpolation_nr)
+            self.FFM_obj_2 = benchmark_matmul(X=X1[:1,:], ls=self.ls)
+
             self.ffm_initialized = True
 
         return self.dmmv_
@@ -76,9 +79,12 @@ class custom_GaussianKernel(GaussianKernel):
                 res = self.FFM_obj.forward(self.FFM_obj.X,self.FFM_obj.Y,v) + w
                 end = time.time()
                 print("FFM actual time 1 (2) : ", end-start)
+        # print(res.device)
         start=time.time()
         #weirdest thing ever... why is it so slow on consequtive loads???
-        res_2 = self.FFM_obj.forward(self.FFM_obj.Y,self.FFM_obj.X,res)
+        # res_2 = self.FFM_obj.forward(self.FFM_obj.Y,self.FFM_obj.X,res)
+        res_2 = self.FFM_obj.chunk_forward_transpose(res,chunks=48)
+        # res_2 = self.FFM_obj_2.forward(self.FFM_obj.Y,self.FFM_obj.X,res)
         end = time.time()
         print("FFM actual time 2 : ", end-start)
         print("total FFM time: ", end-s_all)

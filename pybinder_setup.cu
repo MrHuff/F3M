@@ -37,6 +37,19 @@ m.def("FFM_XY_FLOAT_1", &FFM_XY<float,1>, "xy 1");
 /*
  * RBF benchmark
  * */
+
+m.def("rbf_float_10_grad", &rbf_call_grad<float,10>, "rbf xy grad 10 dim float");
+m.def("rbf_float_9_grad", &rbf_call_grad<float,9>, "rbf xy grad 9 dim float");
+m.def("rbf_float_8_grad", &rbf_call_grad<float,8>, "rbf xy grad 8 dim float");
+m.def("rbf_float_7_grad", &rbf_call_grad<float,7>, "rbf xy grad 7 dim float");
+m.def("rbf_float_6_grad", &rbf_call_grad<float,6>, "rbf xy grad 6 dim float");
+m.def("rbf_float_5_grad", &rbf_call_grad<float,5>, "rbf xy grad 5 dim float");
+m.def("rbf_float_4_grad", &rbf_call_grad<float,4>, "rbf xy grad 4 dim float");
+m.def("rbf_float_3_grad", &rbf_call_grad<float,3>, "rbf xy grad 3 dim float");
+m.def("rbf_float_2_grad", &rbf_call_grad<float,2>, "rbf xy grad 2 dim float");
+m.def("rbf_float_1_grad", &rbf_call_grad<float,1>, "rbf xy grad 1 dim float");
+
+
 m.def("rbf_float_10", &rbf_call<float,10>, "rbf xy 10 dim float");
 m.def("rbf_float_9", &rbf_call<float,9>, "rbf xy 9 dim float");
 m.def("rbf_float_8", &rbf_call<float,8>, "rbf xy 8 dim float");
