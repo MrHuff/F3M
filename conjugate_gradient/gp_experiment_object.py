@@ -1,8 +1,10 @@
-import hyperopt
-from hyperopt import STATUS_OK,Trials
+import os.path
+
+from hyperopt import STATUS_OK,Trials,hp, tpe,fmin
 import gpytorch
 import numpy as np
 import torch
+
 from sklearn.model_selection import StratifiedKFold,KFold
 from sklearn.model_selection import train_test_split
 from sklearn.decomposition import PCA,KernelPCA
@@ -10,8 +12,10 @@ from sklearn.preprocessing import MinMaxScaler,StandardScaler
 from FFM_classes import *
 from conjugate_gradient.conjugate_gradient import ConjugateGradientSolver,PreConditionedConjugateGradientSolver,nystrom_preconditioner,get_GP_likelihood
 from gpytorch.kernels.rbf_kernel import RBFKernel
-
+import pickle
+import dill
 import tqdm
+import time
 def sq_dist( x1, x2):
     adjustment = x1.mean(-2, keepdim=True)
     x1 = x1 - adjustment
@@ -91,6 +95,7 @@ class StratifiedKFold3(KFold):
             # yield train_indxs, cv_indxs, test_indxs
             fold_indices.append((train_indxs, cv_indxs, test_indxs))
         return fold_indices
+
 class experiment_object_gp():
     def __init__(self,job_parameters):
         self.fold = job_parameters['fold']
@@ -103,7 +108,9 @@ class experiment_object_gp():
         self.nr_of_its = job_parameters['nr_of_its']
         self.do_pca = job_parameters['do_pca']
         self.use_precond = job_parameters['use_precond']
-
+        self.save_path = f'{self.model_string}/{self.ds_name}_{self.fold}_{self.nr_of_its}/'
+        if not os.path.exists(self.save_path):
+            os.makedirs(self.save_path)
     def preprocess_data(self):
         X = np.load(self.ds_name + '/X.npy', allow_pickle=True)
         y = np.load(self.ds_name + '/y.npy', allow_pickle=True)
@@ -142,6 +149,14 @@ class experiment_object_gp():
         self.Y_val = torch.from_numpy(val_Y).float().to(self.device)
         self.Y_tst = torch.from_numpy(test_Y).float().to(self.device)
 
+    def dump_model(self):
+        model_copy = dill.dumps(self.model)
+        torch.save(model_copy, self.save_path+f'best_model.pt')
+
+    def load_model(self):
+        model_copy=torch.load(self.save_path+f'best_model.pt')
+        self.model=dill.loads(model_copy)
+
     def rsme(self,pred,Y):
         mse =torch.nn.MSELoss()
         loss = mse(pred.squeeze(),Y.squeeze())
@@ -161,18 +176,18 @@ class experiment_object_gp():
             mean = observed_pred.mean
         test_rsme = self.rsme(mean,y)
         return test_rsme
-    def run_ski(self):
+
+    def run_ski(self,parameters):
         self.likelihood = gpytorch.likelihoods.GaussianLikelihood()
         self.model = GPRegressionModel(self.X_tr, self.Y_tr, self.likelihood, self.X_tr.shape[1])
         self.model = self.model.to(self.device)
         self.model.train()
         self.likelihood.train()
         optimizer = torch.optim.Adam(self.model.parameters(), lr=0.1)  # Includes GaussianLikelihood parameters
-
         # "Loss" for GPs - the marginal log likelihood
         mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self.model)
-
         best=np.inf
+        start = time.time()
         for i in tqdm.tqdm(range(self.nr_of_its)):
             self.model.train()
             self.likelihood.train()
@@ -182,15 +197,34 @@ class experiment_object_gp():
             print(loss.item())
             loss.backward()
             optimizer.step()
-            if i%5==0:
-                val_error = self.ski_validate('val')
-                print(val_error.item())
-                if val_error.item()<best:
-                    best=val_error.item()
+            val_error = self.ski_validate('val')
+            print(val_error)
+            if val_error<best:
+                best=val_error
+                self.dump_model()
+        end = time.time()
+        self.load_model()
         test_rsme = self.ski_validate('test')
-        return test_rsme
+        return {'loss':best,'status':STATUS_OK,'test_rsme':test_rsme,'params':parameters,'timing':end-start}
 
 
+    def optimize_cg_reg(self):
+        space = {
+            'ls_scale': hp.uniform('ls_scale', 5e-3,50),
+            'lamb': hp.uniform('lamb', 0.0, 10.),
+        }
+        self.trials = Trials()
+        best = fmin(fn=self.run_F3M if self.model_string=='f3m' else self.run_ski,
+                    space=space,
+                    algo=tpe.suggest,
+                    max_evals=self.nr_of_its if self.model_string=='f3m' else 1,
+                    trials=self.trials,
+                    verbose=True
+                    )
+        model_copy = dill.dumps(self.trials)
+        pickle.dump(model_copy,
+                    open(self.save_path + 'hyperopt_database.p',
+                         "wb"))
 
     def run_F3M(self,parameters):
         base_ls = get_median_ls(self.X_tr)
@@ -200,6 +234,7 @@ class experiment_object_gp():
         # ffm_obj = benchmark_matmul(X=self.X_tr,ls=base_ls) #ill-conditioned...
         bindings = 'torch'
         if self.use_precond:
+            start = time.time()
             pre_cond_kernel = RBFKernel()
             pre_cond_kernel._set_lengthscale(base_ls)
             pre_cond_kernel = pre_cond_kernel.cuda()
@@ -207,9 +242,11 @@ class experiment_object_gp():
             precond.calculate_constants(pre_cond_kernel)
             alpha,alpha_mat,beta_mat = PreConditionedConjugateGradientSolver(preconditioner=precond, binding=bindings, kmvm_object=ffm_obj,
                                                         lamb=l, eps=1e-2, b=self.Y_tr.unsqueeze(-1))
+
         # Preconditioner needed...
         else:
-            alpha,alpha_mat,beta_mat = ConjugateGradientSolver(binding=bindings,kmvm_object=ffm_obj,eps=1e-3,b=self.Y_tr.unsqueeze(-1),lamb=l)
+            start = time.time()
+            alpha,alpha_mat,beta_mat = ConjugateGradientSolver(binding=bindings,kmvm_object=ffm_obj,eps=1e-3,b=self.Y_tr.unsqueeze(-1),lamb=l,max_its=250)
         if alpha_mat.shape[1]>1:
             alpha_mat, beta_mat = alpha_mat[:,1:],beta_mat[:,1:]
             alpha=alpha[:,0]
@@ -217,10 +254,11 @@ class experiment_object_gp():
 
         pred = ffm_obj.forward(self.X_tst,self.X_tr,b=alpha)
         test_rsme = self.rsme(pred,self.Y_tst)
+        end = time.time()
 
         pred = ffm_obj.forward(self.X_val,self.X_tr,b=alpha)
         val_rsme = self.rsme(pred,self.Y_val)
 
-        return {'status':STATUS_OK,'val_rsme':val_rsme,'test_rsme':test_rsme}
+        return {'loss':val_rsme,'status':STATUS_OK,'test_rsme':test_rsme,'params':parameters,'timing':end-start}
 
 

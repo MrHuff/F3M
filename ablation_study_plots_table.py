@@ -13,8 +13,9 @@ import seaborn as sns
 meanstd = ['relative error 2', 'time (s)']
 plt.rcParams['text.usetex'] = True
 plt.rcParams['font.family'] = "serif"
-font_size = 12
-plt.rcParams['font.size'] = font_size
+# font_size = 12
+plt.rcParams['font.size'] = 15
+plt.rcParams['figure.figsize'] = 14.7,8.27
 
 def build_df(folder):
     files = os.listdir(folder)
@@ -130,7 +131,7 @@ def create_comparison_table(d):
     return mean
 
 def plot_barplots():
-    names_3 = ['Unif', 'Norm', r'Unif \& Norm']
+    names_3 = ['Unif', 'Norm', r'U \& N']
     names = ['Standard'] * 3
     list_1 = []
     for i in range(1, 4):
@@ -150,9 +151,9 @@ def plot_barplots():
         df['dataset_name_2'] = names_3[j]
         list_1.append(df)
     big_df_ablation = pd.concat(list_1, ignore_index=True)
-    big_df_ablation['Method'] = 'FFM'
+    big_df_ablation['Method'] = 'FFM on GPU'
 
-    names_3 = ['Unif', 'Norm', r'Unif \& Norm']
+    names_3 = ['Unif', 'Norm',  r'U \& N']
     names = ['Standard'] * 3
     list_1 = []
     for i in range(1, 4):
@@ -185,14 +186,26 @@ def plot_barplots():
     # keops_df = keops_df[['Method','n', 'dataset_name_2',  'relative error 2','time (s)']]
     # super_group = pd.concat([super_group,keops_df],ignore_index=True)
     super_group = super_group.rename(columns={"dataset_name_2": "Dataset","time (s)": "Time (s)"}, errors="raise")
-    Ns = [1e6,1e7,1e8,5e8,1e9]
-    for n in Ns:
-        slice = super_group[super_group['n']==n]
-        sns.catplot(x="Dataset", y="Time (s)", hue="Method", kind="bar", data=slice)
-        log = int(np.log10(n))
-        plt.suptitle(f'n = $10^{log}$')
-        plt.savefig(f'3d_compare_{n}.png', bbox_inches='tight', pad_inches=0.2)
-        plt.clf()
+    super_group = super_group[super_group['n'].isin([1e8,1e9])]
+
+    super_group['n'] = super_group['n'].apply(lambda x: int(np.log10(x))).apply(lambda x :f'$10^{x}$')
+    # sns.set(font_scale=2)  # crazy big
+
+    g = sns.catplot(x="Dataset", y="Time (s)",col='n', hue="Method", kind="bar", data=super_group)
+    # plt.legend([], [], frameon=False)
+    g.legend.remove()
+    # plt.title(fontsize=20)
+    # b.axes.set_title("Title", fontsize=50)
+    g.set_axis_labels(x_var="Datasets", y_var="Time (s)",fontsize=30)
+    g.axes[0][0].set_title('n = $10^8$',fontsize=40)
+    g.axes[0][1].set_title('n = $10^9$',fontsize=40)
+    plt.xticks(fontsize=15)
+    # g.ylabels.set_size(20)
+    # plt.legend(prop={'size': 10})
+    # plt.legend('', frameon=False)
+    # plt.savefig(f'3d_compare_{n}.png', bbox_inches='tight', pad_inches=0.05)
+    plt.savefig(f'3d_compare_ablation.png', bbox_inches='tight', pad_inches=0.05)
+    plt.clf()
 
 
 def plot_barplots_4d(d):
@@ -428,21 +441,22 @@ if __name__ == '__main__':
     # plot_complexity_3d()
     # plot_complexity_4d(4)
     # plot_complexity_4d(5)
+    plot_barplots()
     # plot_barplots_4d(4)
     # plot_barplots_4d(5)
-    base = create_comparison_table(3)
-
-    for d in [3,4,5,'taxi','osm']:
-        df = create_comparison_table(d)
-        print(df)
-        for el in ['n', r'$\text{F}^3$M time (s)', 'FFM(GPU) time (s)', 'KeOps time (s)',
-                 r'\makecell{$\text{F}^3$M speedup\\vs FFM(GPU)}', r'\makecell{$\text{F}^3$M speedup\\ vs KeOps}']:
-            base.loc[:,(el,d)]=df[el][d]
-    base.sort_index(axis=1, level=[0, 1], ascending=[True, False], inplace=True)
-    base.index = base['n'][3]
-    base = base.drop(['n'], axis=1)
-    print(base)
-    base.to_latex(f'big_run_table.tex', escape=False)
+    # base = create_comparison_table(3)
+    #
+    # for d in [3,4,5,'taxi','osm']:
+    #     df = create_comparison_table(d)
+    #     print(df)
+    #     for el in ['n', r'$\text{F}^3$M time (s)', 'FFM(GPU) time (s)', 'KeOps time (s)',
+    #              r'\makecell{$\text{F}^3$M speedup\\vs FFM(GPU)}', r'\makecell{$\text{F}^3$M speedup\\ vs KeOps}']:
+    #         base.loc[:,(el,d)]=df[el][d]
+    # base.sort_index(axis=1, level=[0, 1], ascending=[True, False], inplace=True)
+    # base.index = base['n'][3]
+    # base = base.drop(['n'], axis=1)
+    # print(base)
+    # base.to_latex(f'big_run_table.tex', escape=False)
 
 
     # plot_barplots()

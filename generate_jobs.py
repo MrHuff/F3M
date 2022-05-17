@@ -1,5 +1,6 @@
 import pickle
 import pandas as pd
+import os
 D_LIST = [6,7]
 def generate_jobs_normal():
     counter=0
@@ -10,9 +11,9 @@ def generate_jobs_normal():
                 for r2 in [0.1, 1, 10]:
                     for eff_var_limit in [0.1,0.3,0.5]:
                         for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000],
-                                                                    [5000, 5000, 20000],
-                                                                    [nr_of_interpolation, 2500,
-                                                                     10000]):
+                                                                    [5000, 10000, 50000],
+                                                                    [1000, 15000,
+                                                                     25000]):
                             if d > 4 and n == 500000000:
                                 n = 500000000 // 2
                             dict_param = {
@@ -25,12 +26,13 @@ def generate_jobs_normal():
                                 'r2':r2,
                                 'eff_var_limit':d*eff_var_limit,
                                 'counter':counter,
-                                'mode':1
+                                'mode':2
                             }
                             dict_list.append(dict_param)
                             counter+=1
     with open('normal_jobs.pkl', 'wb') as f:
         pickle.dump(dict_list, f)
+    return dict_list
 
 def generate_jobs_uniform():
     counter=0
@@ -41,7 +43,7 @@ def generate_jobs_uniform():
                 for r2 in [0.1, 1, 10]:
                     for eff_var_limit in [0.1,0.3,0.5]:
                         for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000],
-                                                                    [2500, 2500, 10000],
+                                                                    [2500, 5000, 50000],
                                                                     [nr_of_interpolation, nr_of_interpolation,
                                                                      nr_of_interpolation]):
                             dict_param = {
@@ -54,13 +56,14 @@ def generate_jobs_uniform():
                                 'r2':r2,
                                 'eff_var_limit':d*eff_var_limit,
                                 'counter': counter,
-                                'mode': 2
+                                'mode': 1
 
                             }
                             dict_list.append(dict_param)
                             counter+=1
     with open('uniform_jobs.pkl', 'wb') as f:
         pickle.dump(dict_list, f)
+    return dict_list
 
 def generate_jobs_mix():
     counter=0
@@ -71,7 +74,7 @@ def generate_jobs_mix():
                 for r2 in [0.1, 1, 10]:
                     for eff_var_limit in [0.1,0.3,0.5]:
                         for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000],
-                                                                    [2500, 2500, 5000],
+                                                                    [2500, 10000, 50000],
                                                                     [nr_of_interpolation, nr_of_interpolation,
                                                                      nr_of_interpolation
                                                                      ]):
@@ -92,7 +95,7 @@ def generate_jobs_mix():
                             counter+=1
     with open('mix_jobs.pkl', 'wb') as f:
         pickle.dump(dict_list, f)
-
+    return dict_list
 
 def generate_jobs_normal_ablation():
     counter=0
@@ -223,10 +226,25 @@ def generate_jobs_real_KMVM():
         pickle.dump(dict_list_ablation, f)
 if __name__ == '__main__':
     # generate_jobs_real_KMVM()
-    generate_jobs_uniform()
-    generate_jobs_normal()
-    generate_jobs_mix()
+    a=generate_jobs_uniform()
+    b=generate_jobs_normal()
+    c= generate_jobs_mix()
+    all_jobs = a+b+c
+    NR_OF_GPUS=8
+    os_name = 'high_dim_jobs'
+    for i in range(NR_OF_GPUS):
+        fn = f'{os_name}/batch_{i}'
+        if not os.path.exists(fn):
+            os.makedirs(fn)
 
-    generate_jobs_uniform_ablation()
-    generate_jobs_normal_ablation()
-    generate_jobs_mix_ablation()
+    sorted_jobs = sorted(all_jobs, key=lambda x: x['n'], reverse=False)
+    for i,el in enumerate(sorted_jobs):
+        box = i%8
+        fn_i = f'{os_name}/batch_{box}/job_{i}.pkl'
+        with open(fn_i, 'wb') as f:
+            pickle.dump(el, f)
+
+
+    # generate_jobs_uniform_ablation()
+    # generate_jobs_normal_ablation()
+    # generate_jobs_mix_ablation()
