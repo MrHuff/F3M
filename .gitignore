@@ -4,6 +4,8 @@ cmake-build-release
 cmake-build-remote
 *.idea*
 *.txt
+*.p
+*.pickle
 *.csv
 *.nvprof
 .metadata

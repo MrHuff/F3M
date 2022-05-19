@@ -1,9 +1,10 @@
 loop () {
   echo $1
-  for file in high_dim_jobs/batch_$1/*
+  for file in low_dim_jobs/batch_$1/*
   do
-    CUDA_VISIBLE_DEVICES="$1" python experiments_distributed.py --idx=8 --chunk=0 --fn="$file" --dn='larger_dims'
+    CUDA_VISIBLE_DEVICES="$1" python experiments_distributed.py --idx=8 --chunk=0 --fn="$file" --dn='lower_dims'
     #whatever you need with "$file"
+    wait
   done
 }
 loop 0 &

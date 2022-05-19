@@ -441,22 +441,22 @@ if __name__ == '__main__':
     # plot_complexity_3d()
     # plot_complexity_4d(4)
     # plot_complexity_4d(5)
-    plot_barplots()
+    # plot_barplots()
     # plot_barplots_4d(4)
     # plot_barplots_4d(5)
-    # base = create_comparison_table(3)
-    #
-    # for d in [3,4,5,'taxi','osm']:
-    #     df = create_comparison_table(d)
-    #     print(df)
-    #     for el in ['n', r'$\text{F}^3$M time (s)', 'FFM(GPU) time (s)', 'KeOps time (s)',
-    #              r'\makecell{$\text{F}^3$M speedup\\vs FFM(GPU)}', r'\makecell{$\text{F}^3$M speedup\\ vs KeOps}']:
-    #         base.loc[:,(el,d)]=df[el][d]
-    # base.sort_index(axis=1, level=[0, 1], ascending=[True, False], inplace=True)
-    # base.index = base['n'][3]
-    # base = base.drop(['n'], axis=1)
-    # print(base)
-    # base.to_latex(f'big_run_table.tex', escape=False)
+    base = create_comparison_table(3)
+
+    for d in [3,4,5,'taxi','osm']:
+        df = create_comparison_table(d)
+        print(df)
+        for el in ['n', r'$\text{F}^3$M time (s)', 'FFM(GPU) time (s)', 'KeOps time (s)',
+                 r'\makecell{$\text{F}^3$M speedup\\vs FFM(GPU)}', r'\makecell{$\text{F}^3$M speedup\\ vs KeOps}']:
+            base.loc[:,(el,d)]=df[el][d]
+    base.sort_index(axis=1, level=[0, 1], ascending=[True, False], inplace=True)
+    base.index = base['n'][3]
+    base = base.drop(['n'], axis=1)
+    print(base)
+    base.to_latex(f'big_run_table.tex', escape=False)
 
 
     # plot_barplots()

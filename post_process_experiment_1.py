@@ -59,7 +59,32 @@ def process_df(df_1):
     mean['time (s) std'] = std['time (s)']
     return mean
 
+
+mode_ref = {3:'Uniform and Normal',2:'Normal',1:'Uniform'}
+
+def process_df_2(job_folder,results_folder):
+    all_job_paths = []
+    for el in os.listdir(job_folder):
+        for el_2 in os.listdir(job_folder + '/' + el):
+            all_job_paths.append(job_folder + '/' + el +'/'+el_2)
+
+    data = []
+    for j in all_job_paths:
+        d = pickle.load(open(j, "rb"))
+        index = d['counter']
+        result_path = f'{results_folder}/{results_folder}_{index}.csv'
+        if os.path.exists(result_path):
+            row = pd.read_csv(result_path)
+            data.append([mode_ref[d['mode']],d['n'],d['d'],d['nr_of_interpolation'], d['small_field_limit'],row['effective_variance'].values[0],row['effective variance limit'].values[0],row['relative error 2'].values[0],row['time (s)'].values[0]])
+    all_df = pd.DataFrame(data,columns=['dataset_name','n','d','nr of node points','small field limit','effective_variance','effective variance limit','relative error 2','time (s)']).reset_index(drop=True)
+    all_df.to_csv(f'{results_folder}.csv')
+    return all_df
 if __name__ == '__main__':
+    df_1 = process_df_2('high_dim_jobs','larger_dims')
+    df_2 = process_df_2('low_dim_jobs','lower_dims')
+
+
+
     # load_exotic_results('Clustered',"./benchs_sparse/results/",'Clustered')
     # load_exotic_results('Brownian_Motion',"./benchs_sparse/results/",'Brownian_Motion')
     # load_exotic_results('Fractional_Brownian_Motion',"./benchs_sparse/results/",'Fractional_Brownian_Motion')
@@ -92,11 +117,6 @@ if __name__ == '__main__':
     #     df_1_processsed.to_csv(f"experiment_{i}_results_summary.csv")
     #     list_cat =[]
 
-    list_cat = []
-    for i in range(1,4):
-        df_1 = load_and_concat_df(f'experiment_{i}_78D_uniform')
-        df_1_processsed = process_df(df_1)
-        df_1_processsed.to_csv(f"experiment_{i}_78D_uniform.csv")
 
     # for i in range(1,4):
     #     df_1 = load_and_concat_df(f'experiment_10_{i}')

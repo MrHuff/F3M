@@ -1,19 +1,20 @@
 import pickle
 import pandas as pd
 import os
-D_LIST = [6,7]
+D_LIST = [1,2]
 def generate_jobs_normal():
     counter=0
     dict_list = []
     for seed in [0]:
         for d in D_LIST:
-            for nr_of_interpolation in [256,512,1024,2048]:
+            for nr_of_interpolation in [3,4,5]:
+                nr_of_interpolation = nr_of_interpolation**d
                 for r2 in [0.1, 1, 10]:
                     for eff_var_limit in [0.1,0.3,0.5]:
-                        for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000],
-                                                                    [5000, 10000, 50000],
-                                                                    [1000, 15000,
-                                                                     25000]):
+                        for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000,1000000000],
+                                                                    [1000, 1000, 1000,5000],
+                                                                    [nr_of_interpolation, nr_of_interpolation,
+                                                                     nr_of_interpolation,nr_of_interpolation]):
                             if d > 4 and n == 500000000:
                                 n = 500000000 // 2
                             dict_param = {
@@ -39,13 +40,14 @@ def generate_jobs_uniform():
     dict_list = []
     for seed in [0]:
         for d in D_LIST:
-            for nr_of_interpolation in [256,512,1024]:
+            for nr_of_interpolation in [3,4,5]:
+                nr_of_interpolation = nr_of_interpolation**d
                 for r2 in [0.1, 1, 10]:
                     for eff_var_limit in [0.1,0.3,0.5]:
-                        for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000],
-                                                                    [2500, 5000, 50000],
+                        for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000,1000000000],
+                                                                    [1000, 1000, 1000,5000],
                                                                     [nr_of_interpolation, nr_of_interpolation,
-                                                                     nr_of_interpolation]):
+                                                                     nr_of_interpolation,nr_of_interpolation]):
                             dict_param = {
                                 'eff_var':seed,
                                 'd':d,
@@ -70,14 +72,14 @@ def generate_jobs_mix():
     dict_list = []
     for seed in [0]:
         for d in D_LIST:
-            for nr_of_interpolation in [256,512,1024]:
+            for nr_of_interpolation in [3,4,5]:
+                nr_of_interpolation = nr_of_interpolation**d
                 for r2 in [0.1, 1, 10]:
                     for eff_var_limit in [0.1,0.3,0.5]:
-                        for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000],
-                                                                    [2500, 10000, 50000],
+                        for n, min_points, small_field_limit in zip([1000000, 10000000, 100000000,1000000000],
+                                                                    [1000, 1000, 1000,5000],
                                                                     [nr_of_interpolation, nr_of_interpolation,
-                                                                     nr_of_interpolation
-                                                                     ]):
+                                                                     nr_of_interpolation,nr_of_interpolation]):
                             dict_param = {
                                 'eff_var':seed,
                                 'd':d,
@@ -231,14 +233,17 @@ if __name__ == '__main__':
     c= generate_jobs_mix()
     all_jobs = a+b+c
     NR_OF_GPUS=8
-    os_name = 'high_dim_jobs'
+    os_name = 'low_dim_jobs'
     for i in range(NR_OF_GPUS):
         fn = f'{os_name}/batch_{i}'
         if not os.path.exists(fn):
             os.makedirs(fn)
 
     sorted_jobs = sorted(all_jobs, key=lambda x: x['n'], reverse=False)
+    print(len(sorted_jobs))
     for i,el in enumerate(sorted_jobs):
+        el['counter']=i
+        print(el['counter'])
         box = i%8
         fn_i = f'{os_name}/batch_{box}/job_{i}.pkl'
         with open(fn_i, 'wb') as f:

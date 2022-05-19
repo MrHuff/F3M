@@ -11,6 +11,7 @@ from pylatex.base_classes import Environment
 from pylatex.package import Package
 import seaborn as sns
 from post_process_experiment_1 import *
+from build_summary_table import load_data
 class subfigure(Environment):
     """A class to wrap LaTeX's alltt environment."""
     packages = [Package('subcaption')]
@@ -89,6 +90,7 @@ def complexity_plots(savefig, df, X, Y, slice,label_nice):
     plt.ylabel(r'$\log_{10}(T)$ seconds')
     plt.savefig(savefig,bbox_inches = 'tight',pad_inches = 0)
     plt.clf()
+    return m
 
 def complexity_plots_2(folder, df, X, Y, slice,label_nice):
     fig, ax = plt.subplots()
@@ -145,32 +147,47 @@ def complexity_plots_3(folder, df, X, Y, slice,label_nice):
         slope_dict[label_df]=m
 
     df['log_mean'] = np.log10(df[mean])
-    df['log_X']  = np.log10(df[X])
+    df['log_X']  = df[X].apply(lambda x: round(np.log10(x),1))
     if (slice=='dataset_name_2'):
         df[slice] = df[slice].apply(lambda x: f'{x}, slope={round(slope_dict[x],2)}')
     # dd = pd.melt(df, id_vars=X,var_name=slice,)
-    g = sns.boxplot(x='log_X', y='log_mean', data=df, hue=slice)
-    el = df['log_X'].unique().tolist()
-    el = [round(e,1) for e in el]
-    g.set(xticklabels=sorted(el))
-    g.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-    coords = get_x_coordinates_of_seaborn_boxplot(g,'x')
-    coords_Y = get_x_coordinates_of_seaborn_boxplot(g,'y')
+    # df_1 = df[df['dataset_name_2']!='Uniform & Normal']
+    g=sns.lineplot(x='log_X', y='log_mean', data=df, hue=slice,linewidth = 7,markersize=25)
+    # h.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+
+    # plt.show()
+    # g = sns.boxplot(x='log_X', y='log_mean', data=df, hue=slice)
+    # plt.show()
+    # el = df['log_X'].unique().tolist()
+    # el = [round(e,1) for e in el]
+    # g.set(xticklabels=sorted(el))
+    # g.set_xticks([0, 1, 2, 2.5,3])
+    # g.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+    # coords = get_x_coordinates_of_seaborn_boxplot(g,'x')
+    # coords_Y = get_x_coordinates_of_seaborn_boxplot(g,'y')
     big_X,big_Y = df[X],df[Y]
     m, b = np.polyfit(np.log10(big_X), np.log10(big_Y), 1)
-    m_2, b_2 = np.polyfit(np.array(sorted(coords)),np.array(sorted(coords_Y)), 1)
-    colors = ['tab:blue','tab:orange','tab:green','tab:red','tab:purple','tab:brown']
+    # colors = ['tab:blue','tab:orange','tab:green','tab:red','tab:purple','tab:brown']
 
-    for i,label_df in enumerate(els):
-        g.plot(np.array(sorted(coords)),
-               np.array(sorted(coords)) * (slope_dict[label_df]*m_2) + b_2-0.05, c=colors[i], linewidth=2)
-    g.plot(np.array(sorted(coords)),
-           np.array(sorted(coords)) * M_nlogn*(m_2/m) + b_2+0.05, c='k', linestyle='dashed',
-             label='$\mathcal{O}(n\log n)$ curve, slope=1.11')
-    plt.legend(loc='center left',bbox_to_anchor=(1, 0.5))
+    # for i,label_df in enumerate(els):
+    #     g.plot(np.array(sorted(coords)),
+    #            np.array(sorted(coords)) * (m_2) + b_2-0.05, c=colors[i], linewidth=2)
+    x_vals=np.log10(np.array(sorted(big_X.unique())))
+    g=g.plot(x_vals,
+           x_vals * M_nlogn + b-0.5, c='k', linestyle='dashed',
+             label='$\mathcal{O}(n\log n)$ curve, slope=1.11',linewidth = 4)
+
+
+    leg=plt.legend(loc='center left',bbox_to_anchor=(1, 0.5))
+
+    for l in leg.legendHandles:
+        l._legmarker.set_marker('s')
+
+        l._legmarker.set_markersize(40)
     plt.xlabel('$\log_{10}(N)$')
     plt.ylabel(r'$\log_{10}(T)$ seconds')
     # plt.legend(loc=0)
+    # return g
     plt.savefig(folder+'complexity_plot_3D.png',bbox_inches = 'tight',pad_inches = 0)
     plt.clf()
 
@@ -203,6 +220,7 @@ def error_plot(savefig, df, X, Y, slice,label_nice):
     plt.clf()
 
 def error_plot_2(savefig, df, X, Y, slice,label_nice):
+    fig = plt.figure(figsize=(30,20))
     mean = Y
     std = Y+' std'
     els = df[slice].unique().tolist()
@@ -216,7 +234,10 @@ def error_plot_2(savefig, df, X, Y, slice,label_nice):
     el = df['log_X'].unique().tolist()
     el = [round(e,1) for e in el]
     g.set(xticklabels=sorted(el))
-    g.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+    plt.legend([], [], frameon=False)
+
+    # g.legend(False)
+    # g.legend(loc='center left', bbox_to_anchor=(1, 0.5))
 
     # for label_df in els:
 
@@ -228,9 +249,12 @@ def error_plot_2(savefig, df, X, Y, slice,label_nice):
     # plt.xticks(np.arange(min(np.log10(df[X])), max(np.log10(df[X]))+1, step=1))
     plt.xlabel('$\log_{10}(N)$')
     plt.ylabel(r'Relative Error $\log_{10}(x)$')
-    # plt.legend(loc=0)
     plt.savefig(savefig,bbox_inches = 'tight',pad_inches = 0)
     plt.clf()
+    # return g
+
+
+
 def get_worse_best(save_tex,df,X,Y):
     max = df.loc[df.groupby([X])[Y].idxmax()][['effective_variance','nr of node points',
             'effective variance limit','relative error 2', 'time (s)','dataset_name_2']]
@@ -257,7 +281,7 @@ def build_plot(df,plot_name):
         shutil.rmtree(plot_name)
         os.makedirs(plot_name)
 
-    complexity_plots(f'{plot_name}/test_{1}.png', df, 'n', meanstd[1], 'effective variance limit','$\eta$')
+    m=complexity_plots(f'{plot_name}/test_{1}.png', df, 'n', meanstd[1], 'effective variance limit','$\eta$')
     error_plot(f'{plot_name}/test_{2}.png', df, 'n', meanstd[0], 'nr of node points','Nodes') #Show independence of n
     complexity_plots(f'{plot_name}/test_{3}.png', df, 'n', meanstd[1], 'dataset_name','Group')
     error_plot(f'{plot_name}/test_{4}.png', df, 'n', meanstd[0], 'dataset_name','Group') #Show independence of n
@@ -275,112 +299,64 @@ def build_plot(df,plot_name):
                     doc.append(string_append)
                 string_append=''
     doc.generate_tex()
-
+    return m
 if __name__ == '__main__':
 
-    names_3 = ['Uniform','Normal', 'Uniform and Normal']
-    names = ['Standard']*3
-    list_1=[]
-    dict_translate = {0.8999999999999999: 0.3,
-                      0.3: 0.1,
-                      1.5: 0.5}
-    for i in range(1,4):
-        df = pd.read_csv(f"experiment_{i}_results_summary.csv")
-        df = df[df['effective_variance']<100]
-        df['effective variance limit'] = df['effective variance limit'].apply(lambda x: dict_translate[x])
+    big_df = load_data(3, False)
 
-        df['dataset_name'] = names[i-1]
-        df['dataset_name_2'] = names_3[i-1]
-        list_1.append(df)
-    names_3  = ['Brownian Motion','Clustered', 'Fractional Brownian Motion']
-    names_2 = ['Pathological']*3
-    exotic = ['Brownian_Motion.csv','Clustered.csv','Fractional_Brownian_Motion.csv']
-    for j,el in enumerate(exotic):
-        df = pd.read_csv(el)
-        df['effective_variance'] = round(df['effective_variance'],2)
-        df = df[df['effective_variance']<100]
-        df['dataset_name'] = names_2[j]
-        df['dataset_name_2'] = names_3[j]
-        list_1.append(df)
-    big_df = pd.concat(list_1,ignore_index=True)
-    build_plot(big_df,f'plot_1')
-    plot_name = 'plot_1'
+    # fig, axs = plt.subplots(ncols=2,figsize=(20,10))
+    plot_name='plot_1'
+    # g_1 = error_plot_2(f'{plot_name}/test_{6}.png', big_df, 'n', meanstd[0], 'dataset_name_2','Dataset') #
+
+    g_2 = complexity_plots_3(f'{plot_name}/', big_df, 'n', meanstd[1], 'dataset_name_2','Dataset')
 
 
-    complexity_plots_3(f'{plot_name}/', big_df, 'n', meanstd[1], 'dataset_name_2','Dataset')
-    error_plot_2(f'{plot_name}/test_{6}.png', big_df, 'n', meanstd[0], 'dataset_name_2','Dataset') #
+    # #
+    # # #
+    # # #
+    # # #
     #
-    # #
-    # #
-    # #
-
-
-    dict_translate = {1.2: 0.3,
-                      0.4: 0.1,
-                      2.0: 0.5}
-
-    names_3 = ['Uniform','Normal', 'Uniform and Normal']
-    names = ['4D']*3
-    list_1=[]
-    for i in range(6,9):
-        df = pd.read_csv(f"experiment_{i}_results_summary.csv",index_col=0)
-        df = df[df['effective_variance']<100]
-        df = df[df['d']==4]
-        df['effective variance limit'] = df['effective variance limit'].apply(lambda x: dict_translate[x])
-
-        df['dataset_name'] = names_3[i-6]
-        df['dataset_name_2'] = names_3[i-6]
-        list_1.append(df)
-    big_df = pd.concat(list_1,ignore_index=True)
-    print(big_df)
-    build_plot(big_df,f'plot_2')
     #
-    dict_translate = {1.5: 0.3,
-                      0.5: 0.1,
-                      2.5: 0.5}
-    names_3 = ['Uniform','Normal', 'Uniform and Normal']
-    names = ['5D']*3
-    list_1=[]
-    for i in range(6,9):
-        df = pd.read_csv(f"experiment_{i}_results_summary.csv",index_col=0)
-        df = df[df['effective_variance']<100]
-        df = df[df['d']==5]
-        df['effective variance limit'] = df['effective variance limit'].apply(lambda x: dict_translate[x])
-
-        df['dataset_name'] = names_3[i-6]
-        df['dataset_name_2'] = names_3[i-6]
-        list_1.append(df)
-    big_df = pd.concat(list_1,ignore_index=True)
-    # big_df = big_df[big_df['dataset_name'].isin(['Normal','Uniform'])]
-    # big_df = big_df[big_df['time (s)']<1300]
-    print(big_df)
-    build_plot(big_df,f'plot_3')
-
-    # dict_translate = {0.7000000000000001: 0.1,
-    #                   2.1: 0.3,
-    #                   3.5: 0.5}
-    # names_3 = ['Uniform', 'Normal', 'Uniform and Normal']
-    # names = ['7D'] * 3
-    # list_1 = []
-    # for i in range(1, 4):
-    #     df = pd.read_csv(f"experiment_{i}_78D_uniform.csv", index_col=0)
-    #     df = df[df['effective_variance'] < 100]
-    #     df = df[df['d'] == 7]
+    # dict_translate = {1.2: 0.3,
+    #                   0.4: 0.1,
+    #                   2.0: 0.5}
+    #
+    # names_3 = ['Uniform','Normal', 'Uniform and Normal']
+    # names = ['4D']*3
+    # list_1=[]
+    # for i in range(6,9):
+    #     df = pd.read_csv(f"experiment_{i}_results_summary.csv",index_col=0)
+    #     df = df[df['effective_variance']<100]
+    #     df = df[df['d']==4]
     #     df['effective variance limit'] = df['effective variance limit'].apply(lambda x: dict_translate[x])
     #
-    #     df['dataset_name'] = names_3[i - 1]
-    #     df['dataset_name_2'] = names_3[i - 1]
+    #     df['dataset_name'] = names_3[i-6]
+    #     df['dataset_name_2'] = names_3[i-6]
     #     list_1.append(df)
-    # big_df = pd.concat(list_1, ignore_index=True)
-    #
-    # print(big_df.groupby('n')[meanstd].mean())
-    # print(big_df.groupby('n')[meanstd].std())
-    #
-    # # print(big_df)
-    # build_plot(big_df, f'plot_7D')
-
-
-
+    # big_df = pd.concat(list_1,ignore_index=True)
+    # m_4=build_plot(big_df,f'plot_2')
     # #
-    # #
+    # dict_translate = {1.5: 0.3,
+    #                   0.5: 0.1,
+    #                   2.5: 0.5}
+    # names_3 = ['Uniform','Normal', 'Uniform and Normal']
+    # names = ['5D']*3
+    # list_1=[]
+    # for i in range(6,9):
+    #     df = pd.read_csv(f"experiment_{i}_results_summary.csv",index_col=0)
+    #     df = df[df['effective_variance']<100]
+    #     df = df[df['d']==5]
+    #     df['effective variance limit'] = df['effective variance limit'].apply(lambda x: dict_translate[x])
     #
+    #     df['dataset_name'] = names_3[i-6]
+    #     df['dataset_name_2'] = names_3[i-6]
+    #     list_1.append(df)
+    # big_df = pd.concat(list_1,ignore_index=True)
+    # print(big_df)
+    # # big_df = big_df[big_df['dataset_name'].isin(['Normal','Uniform'])]
+    # # big_df = big_df[big_df['time (s)']<1300]
+    # m_5=build_plot(big_df,f'plot_3')
+    # print(m_3,m_4,m_5)
+
+
+
