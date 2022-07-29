@@ -56,12 +56,16 @@ def experiment_real(dataset,ablation,chunk_idx,device="cuda:0"):
     if not os.path.exists(dirname):
         os.makedirs(dirname)
     ls = float(1.0 / 2 ** 0.5)
-    if ablation:
+    if ablation==False:
         with open('real_kmvm_jobs_ablation.pkl', 'rb') as f:
             job_list_full = pickle.load(f)
-    else:
+    elif ablation==True:
         with open('real_kmvm_jobs.pkl', 'rb') as f:
             job_list_full = pickle.load(f)
+    elif ablation==25:
+        with open('real_kmvm_jobs.pkl', 'rb') as f:
+            job_list_full = pickle.load(f)
+
     jobs_len = len(job_list_full)
     per_chunk = jobs_len//8
     chunked_list = [job_list_full[i:i + per_chunk] for i in range(0, len(job_list_full), per_chunk)]
@@ -92,15 +96,19 @@ def experiment_real(dataset,ablation,chunk_idx,device="cuda:0"):
             torch.cuda.empty_cache()
             print("benchmarks done\n")
             torch.cuda.synchronize()
-            if ablation:
+            if ablation==True:
                 small_field_limit=int(0)
                 FFM_obj = FFM(X=X, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
                               eff_var_limit=eff_var_limit, var_compression=False,
                               device=device, small_field_points=small_field_limit)
-            else:
+            elif ablation==25:
                 FFM_obj= FFM(X=X, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
-                              eff_var_limit=eff_var_limit, var_compression=True,
+                              eff_var_limit=eff_var_limit, var_compression=False,
                               device=device, small_field_points=small_field_limit)
+            elif ablation ==False:
+                FFM_obj= FFM(X=X, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
+                             eff_var_limit=eff_var_limit, var_compression=True,
+                             device=device, small_field_points=small_field_limit)
             torch.cuda.synchronize()
             start = time.time()
             res_0 = FFM_obj @ b

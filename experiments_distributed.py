@@ -12,7 +12,7 @@ import os
 import pickle
 from generate_jobs import *
 
-VAR_COMP=True
+VAR_COMP=False
 
 def job_parser():
     parser = argparse.ArgumentParser()

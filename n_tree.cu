@@ -1014,13 +1014,18 @@ torch::Tensor far_field_run(
             eff_var_limit,
             small_field_limit
     );
+    int num_nodes;
     if (small_field.numel()>0) {
         near_field_run<scalar_t, nd>(ntree_X, ntree_Y, small_field, output, b, ls, gpu_device);
     }
     if (far_field.numel()>0) {
-        torch::Tensor effective_far_field_distance_tensor =  ntree_X.edge*ntree_X.edge*ls;
-        scalar_t effective_far_field_distance = effective_far_field_distance_tensor.item<scalar_t>();
-        int num_nodes = get_interpolation_rule<scalar_t,nd>(effective_far_field_distance,nr_of_interpolation_points);
+        if (var_compression){
+            torch::Tensor effective_far_field_distance_tensor =  ntree_X.edge*ntree_X.edge*ls;
+            scalar_t effective_far_field_distance = effective_far_field_distance_tensor.item<scalar_t>();
+            num_nodes = get_interpolation_rule<scalar_t,nd>(effective_far_field_distance,nr_of_interpolation_points);
+        }else{
+            num_nodes =nr_of_interpolation_points;
+        }
         std::tie(cheb_data, laplace_combinations, node_list_cum, chebnodes_1D, cheb_w) = smolyak_grid<scalar_t, nd>(
                 num_nodes, gpu_device);
         std::tie(interactions_x, interactions_y) = unbind_sort(far_field);
