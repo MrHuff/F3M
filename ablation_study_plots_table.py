@@ -40,6 +40,36 @@ def group_on(big_df):
     mean['Counts'] =mean_2['relative error 2']
     return mean
 
+def load_data_25(d,ablation):
+    if d in ['osm','taxi']:
+        fold = f'{d}_ablation={ablation}'
+        big_df = build_df(fold)
+    elif d==3:
+        list_1 = []
+        df = pd.read_csv("3d_jobs_25_results.csv")
+        df['dataset_name_2'] = 'Standard'
+        # for i in range(1, 4):
+        #     df = pd.read_csv(f"experiment_{i}_results_summary_ablation.csv") if ablation==25 else pd.read_csv(f"experiment_{i}_results_summary.csv")
+        #     df['dataset_name'] = names[i - 1]
+        #     df['dataset_name_2'] = names_3[i - 1]
+        list_1.append(df)
+        names_3 = ['Brownian Motion', 'Clustered', 'Fractional Brownian Motion']
+        names_2 = ['Pathological'] * 3
+        exotic = ['Brownian_Motion_25.csv', 'Clustered_ablation_25.csv', 'Fractional_Brownian_Motion_25.csv'] if ablation==25 else ['Brownian_Motion.csv', 'Clustered.csv', 'Fractional_Brownian_Motion.csv']
+        for j, el in enumerate(exotic):
+            df = pd.read_csv(el)
+            df['effective_variance'] = round(df['effective_variance'], 2)
+            df['dataset_name'] = names_2[j]
+            df['dataset_name_2'] = names_3[j]
+            list_1.append(df)
+        big_df = pd.concat(list_1, ignore_index=True)
+    mask = (big_df['relative error 2']<=1e-2) & (big_df['relative error 2']>1e-6)
+    big_df = big_df[mask]
+    mean = group_on(big_df)
+    mean = mean.reset_index(drop=True)
+    return mean
+
+
 def load_data(d,ablation):
     if d in ['osm','taxi']:
         fold = f'{d}_ablation={ablation}'
@@ -81,7 +111,7 @@ def load_data(d,ablation):
     return mean
 
 def create_comparison_table(d):
-    mean_ablation = load_data(d, True)
+    mean_ablation = load_data_25(d, 25)
     mean_ablation['FFM(GPU) time (s)'] = r'$\makecell{' + mean_ablation['time (s)'].astype(str) + r'\\ \pm ' + mean_ablation[
         'time (s) std'].astype(str) + '}$'
 
@@ -446,7 +476,7 @@ if __name__ == '__main__':
     # plot_barplots_4d(5)
     base = create_comparison_table(3)
 
-    for d in [3,4,5,'taxi','osm']:
+    for d in [3,'taxi','osm']:
         df = create_comparison_table(d)
         print(df)
         for el in ['n', r'$\text{F}^3$M time (s)', 'FFM(GPU) time (s)', 'KeOps time (s)',

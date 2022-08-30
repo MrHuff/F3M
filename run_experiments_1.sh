@@ -1,20 +1,20 @@
-#CUDA_VISIBLE_DEVICES=0 python experiments_KMVM_real_datasets.py --dataset=taxi --ablation=0 --chunk=0 &
-#CUDA_VISIBLE_DEVICES=1 python experiments_KMVM_real_datasets.py --dataset=taxi --ablation=0 --chunk=1 &
-#CUDA_VISIBLE_DEVICES=2 python experiments_KMVM_real_datasets.py --dataset=taxi --ablation=0 --chunk=2 &
-#CUDA_VISIBLE_DEVICES=3 python experiments_KMVM_real_datasets.py --dataset=taxi --ablation=0 --chunk=3 &
-#CUDA_VISIBLE_DEVICES=4 python experiments_KMVM_real_datasets.py --dataset=taxi --ablation=0 --chunk=4 &
-#CUDA_VISIBLE_DEVICES=5 python experiments_KMVM_real_datasets.py --dataset=taxi --ablation=0 --chunk=5 &
-#CUDA_VISIBLE_DEVICES=6 python experiments_KMVM_real_datasets.py --dataset=taxi --ablation=0 --chunk=6 &
-#CUDA_VISIBLE_DEVICES=7 python experiments_KMVM_real_datasets.py --dataset=taxi --ablation=0 --chunk=7 &
-#wait
-#CUDA_VISIBLE_DEVICES=0 python experiments_KMVM_real_datasets.py --dataset=osm --ablation=0 --chunk=0 &
-#CUDA_VISIBLE_DEVICES=1 python experiments_KMVM_real_datasets.py --dataset=osm --ablation=0 --chunk=1 &
-#CUDA_VISIBLE_DEVICES=2 python experiments_KMVM_real_datasets.py --dataset=osm --ablation=0 --chunk=2 &
-#CUDA_VISIBLE_DEVICES=3 python experiments_KMVM_real_datasets.py --dataset=osm --ablation=0 --chunk=3 &
-#CUDA_VISIBLE_DEVICES=4 python experiments_KMVM_real_datasets.py --dataset=osm --ablation=0 --chunk=4 &
-#CUDA_VISIBLE_DEVICES=5 python experiments_KMVM_real_datasets.py --dataset=osm --ablation=0 --chunk=5 &
-#CUDA_VISIBLE_DEVICES=6 python experiments_KMVM_real_datasets.py --dataset=osm --ablation=0 --chunk=6 &
-#CUDA_VISIBLE_DEVICES=7 python experiments_KMVM_real_datasets.py --dataset=osm --ablation=0 --chunk=7 &
+CUDA_VISIBLE_DEVICES=0 python experiments_KMVM_real_datasets.py --dataset=taxi --ablation=25 --chunk=0 &
+CUDA_VISIBLE_DEVICES=1 python experiments_KMVM_real_datasets.py --dataset=taxi --ablation=25 --chunk=1 &
+CUDA_VISIBLE_DEVICES=2 python experiments_KMVM_real_datasets.py --dataset=taxi --ablation=25 --chunk=2 &
+CUDA_VISIBLE_DEVICES=3 python experiments_KMVM_real_datasets.py --dataset=taxi --ablation=25 --chunk=3 &
+CUDA_VISIBLE_DEVICES=4 python experiments_KMVM_real_datasets.py --dataset=taxi --ablation=25 --chunk=4 &
+CUDA_VISIBLE_DEVICES=5 python experiments_KMVM_real_datasets.py --dataset=taxi --ablation=25 --chunk=5 &
+CUDA_VISIBLE_DEVICES=6 python experiments_KMVM_real_datasets.py --dataset=taxi --ablation=25 --chunk=6 &
+CUDA_VISIBLE_DEVICES=7 python experiments_KMVM_real_datasets.py --dataset=taxi --ablation=25 --chunk=7 &
+wait
+CUDA_VISIBLE_DEVICES=0 python experiments_KMVM_real_datasets.py --dataset=osm --ablation=25 --chunk=0 &
+CUDA_VISIBLE_DEVICES=1 python experiments_KMVM_real_datasets.py --dataset=osm --ablation=25 --chunk=1 &
+CUDA_VISIBLE_DEVICES=2 python experiments_KMVM_real_datasets.py --dataset=osm --ablation=25 --chunk=2 &
+CUDA_VISIBLE_DEVICES=3 python experiments_KMVM_real_datasets.py --dataset=osm --ablation=25 --chunk=3 &
+CUDA_VISIBLE_DEVICES=4 python experiments_KMVM_real_datasets.py --dataset=osm --ablation=25 --chunk=4 &
+CUDA_VISIBLE_DEVICES=5 python experiments_KMVM_real_datasets.py --dataset=osm --ablation=25 --chunk=5 &
+CUDA_VISIBLE_DEVICES=6 python experiments_KMVM_real_datasets.py --dataset=osm --ablation=25 --chunk=6 &
+CUDA_VISIBLE_DEVICES=7 python experiments_KMVM_real_datasets.py --dataset=osm --ablation=25 --chunk=7 &
 #wait
 #CUDA_VISIBLE_DEVICES=0 python experiments_KMVM_real_datasets.py --dataset=osm --ablation=1 --chunk=0 &
 #CUDA_VISIBLE_DEVICES=1 python experiments_KMVM_real_datasets.py --dataset=osm --ablation=1 --chunk=1 &
@@ -69,31 +69,31 @@
 #CUDA_VISIBLE_DEVICES=6 python experiments_distributed.py --idx=7 --chunk=6 &
 #CUDA_VISIBLE_DEVICES=7 python experiments_distributed.py --idx=7 --chunk=7 &
 #wait
-CUDA_VISIBLE_DEVICES=0 python experiments_distributed.py --idx=8 --chunk=0 --fn='uniform_jobs' --dn='larger_dims_uniform'&
-CUDA_VISIBLE_DEVICES=1 python experiments_distributed.py --idx=8 --chunk=1 --fn='uniform_jobs' --dn='larger_dims_uniform'&
-CUDA_VISIBLE_DEVICES=2 python experiments_distributed.py --idx=8 --chunk=2 --fn='uniform_jobs' --dn='larger_dims_uniform'&
-CUDA_VISIBLE_DEVICES=3 python experiments_distributed.py --idx=8 --chunk=3 --fn='uniform_jobs' --dn='larger_dims_uniform'&
-CUDA_VISIBLE_DEVICES=4 python experiments_distributed.py --idx=8 --chunk=4 --fn='uniform_jobs' --dn='larger_dims_uniform'&
-CUDA_VISIBLE_DEVICES=5 python experiments_distributed.py --idx=8 --chunk=5 --fn='uniform_jobs' --dn='larger_dims_uniform'&
-CUDA_VISIBLE_DEVICES=6 python experiments_distributed.py --idx=8 --chunk=6 --fn='uniform_jobs' --dn='larger_dims_uniform'&
-CUDA_VISIBLE_DEVICES=7 python experiments_distributed.py --idx=8 --chunk=7 --fn='uniform_jobs' --dn='larger_dims_uniform'&
-
+#CUDA_VISIBLE_DEVICES=0 python experiments_distributed.py --idx=8 --chunk=0 --fn='uniform_jobs' --dn='larger_dims_uniform'&
+#CUDA_VISIBLE_DEVICES=1 python experiments_distributed.py --idx=8 --chunk=1 --fn='uniform_jobs' --dn='larger_dims_uniform'&
+#CUDA_VISIBLE_DEVICES=2 python experiments_distributed.py --idx=8 --chunk=2 --fn='uniform_jobs' --dn='larger_dims_uniform'&
+#CUDA_VISIBLE_DEVICES=3 python experiments_distributed.py --idx=8 --chunk=3 --fn='uniform_jobs' --dn='larger_dims_uniform'&
+#CUDA_VISIBLE_DEVICES=4 python experiments_distributed.py --idx=8 --chunk=4 --fn='uniform_jobs' --dn='larger_dims_uniform'&
+#CUDA_VISIBLE_DEVICES=5 python experiments_distributed.py --idx=8 --chunk=5 --fn='uniform_jobs' --dn='larger_dims_uniform'&
+#CUDA_VISIBLE_DEVICES=6 python experiments_distributed.py --idx=8 --chunk=6 --fn='uniform_jobs' --dn='larger_dims_uniform'&
+#CUDA_VISIBLE_DEVICES=7 python experiments_distributed.py --idx=8 --chunk=7 --fn='uniform_jobs' --dn='larger_dims_uniform'&
 #
-wait
-CUDA_VISIBLE_DEVICES=0 python experiments_distributed.py --idx=8 --chunk=0 --fn='normal_jobs' --dn='larger_dims_normal'&
-CUDA_VISIBLE_DEVICES=1 python experiments_distributed.py --idx=8 --chunk=1 --fn='normal_jobs' --dn='larger_dims_normal'&
-CUDA_VISIBLE_DEVICES=2 python experiments_distributed.py --idx=8 --chunk=2 --fn='normal_jobs' --dn='larger_dims_normal'&
-CUDA_VISIBLE_DEVICES=3 python experiments_distributed.py --idx=8 --chunk=3 --fn='normal_jobs' --dn='larger_dims_normal'&
-CUDA_VISIBLE_DEVICES=4 python experiments_distributed.py --idx=8 --chunk=4 --fn='normal_jobs' --dn='larger_dims_normal'&
-CUDA_VISIBLE_DEVICES=5 python experiments_distributed.py --idx=8 --chunk=5 --fn='normal_jobs' --dn='larger_dims_normal'&
-CUDA_VISIBLE_DEVICES=6 python experiments_distributed.py --idx=8 --chunk=6 --fn='normal_jobs' --dn='larger_dims_normal'&
-CUDA_VISIBLE_DEVICES=7 python experiments_distributed.py --idx=8 --chunk=7 --fn='normal_jobs' --dn='larger_dims_normal'&
-wait
-CUDA_VISIBLE_DEVICES=0 python experiments_distributed.py --idx=8 --chunk=0 --fn='mix_jobs' --dn='larger_dims_mix'&
-CUDA_VISIBLE_DEVICES=1 python experiments_distributed.py --idx=8 --chunk=1 --fn='mix_jobs' --dn='larger_dims_mix'&
-CUDA_VISIBLE_DEVICES=2 python experiments_distributed.py --idx=8 --chunk=2 --fn='mix_jobs' --dn='larger_dims_mix'&
-CUDA_VISIBLE_DEVICES=3 python experiments_distributed.py --idx=8 --chunk=3 --fn='mix_jobs' --dn='larger_dims_mix'&
-CUDA_VISIBLE_DEVICES=4 python experiments_distributed.py --idx=8 --chunk=4 --fn='mix_jobs' --dn='larger_dims_mix'&
-CUDA_VISIBLE_DEVICES=5 python experiments_distributed.py --idx=8 --chunk=5 --fn='mix_jobs' --dn='larger_dims_mix'&
-CUDA_VISIBLE_DEVICES=6 python experiments_distributed.py --idx=8 --chunk=6 --fn='mix_jobs' --dn='larger_dims_mix'&
-CUDA_VISIBLE_DEVICES=7 python experiments_distributed.py --idx=8 --chunk=7 --fn='mix_jobs' --dn='larger_dims_mix'&
+##
+#wait
+#CUDA_VISIBLE_DEVICES=0 python experiments_distributed.py --idx=8 --chunk=0 --fn='normal_jobs' --dn='larger_dims_normal'&
+#CUDA_VISIBLE_DEVICES=1 python experiments_distributed.py --idx=8 --chunk=1 --fn='normal_jobs' --dn='larger_dims_normal'&
+#CUDA_VISIBLE_DEVICES=2 python experiments_distributed.py --idx=8 --chunk=2 --fn='normal_jobs' --dn='larger_dims_normal'&
+#CUDA_VISIBLE_DEVICES=3 python experiments_distributed.py --idx=8 --chunk=3 --fn='normal_jobs' --dn='larger_dims_normal'&
+#CUDA_VISIBLE_DEVICES=4 python experiments_distributed.py --idx=8 --chunk=4 --fn='normal_jobs' --dn='larger_dims_normal'&
+#CUDA_VISIBLE_DEVICES=5 python experiments_distributed.py --idx=8 --chunk=5 --fn='normal_jobs' --dn='larger_dims_normal'&
+#CUDA_VISIBLE_DEVICES=6 python experiments_distributed.py --idx=8 --chunk=6 --fn='normal_jobs' --dn='larger_dims_normal'&
+#CUDA_VISIBLE_DEVICES=7 python experiments_distributed.py --idx=8 --chunk=7 --fn='normal_jobs' --dn='larger_dims_normal'&
+#wait
+#CUDA_VISIBLE_DEVICES=0 python experiments_distributed.py --idx=8 --chunk=0 --fn='mix_jobs' --dn='larger_dims_mix'&
+#CUDA_VISIBLE_DEVICES=1 python experiments_distributed.py --idx=8 --chunk=1 --fn='mix_jobs' --dn='larger_dims_mix'&
+#CUDA_VISIBLE_DEVICES=2 python experiments_distributed.py --idx=8 --chunk=2 --fn='mix_jobs' --dn='larger_dims_mix'&
+#CUDA_VISIBLE_DEVICES=3 python experiments_distributed.py --idx=8 --chunk=3 --fn='mix_jobs' --dn='larger_dims_mix'&
+#CUDA_VISIBLE_DEVICES=4 python experiments_distributed.py --idx=8 --chunk=4 --fn='mix_jobs' --dn='larger_dims_mix'&
+#CUDA_VISIBLE_DEVICES=5 python experiments_distributed.py --idx=8 --chunk=5 --fn='mix_jobs' --dn='larger_dims_mix'&
+#CUDA_VISIBLE_DEVICES=6 python experiments_distributed.py --idx=8 --chunk=6 --fn='mix_jobs' --dn='larger_dims_mix'&
+#CUDA_VISIBLE_DEVICES=7 python experiments_distributed.py --idx=8 --chunk=7 --fn='mix_jobs' --dn='larger_dims_mix'&

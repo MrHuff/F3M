@@ -138,7 +138,7 @@ def generate_jobs_real_KMVM():
     with open('real_kmvm_jobs_ablation.pkl', 'wb') as f:
         pickle.dump(dict_list_ablation, f)
 if __name__ == '__main__':
-    # generate_jobs_real_KMVM()
+    generate_jobs_real_KMVM()
     a=generate_jobs_uniform()
     b=generate_jobs_normal()
     c= generate_jobs_mix()

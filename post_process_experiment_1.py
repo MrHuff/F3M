@@ -12,8 +12,6 @@ pd.set_option('display.max_colwidth', None)
 group_on = ['n', 'd', 'effective_variance', 'min_points', 'small field limit', 'nr of node points',
             'effective variance limit']
 meanstd = ['relative error 2','abs error','time (s)']
-
-
 def load_exotic_results(string_search,folder,save_name):
     files = os.listdir(folder)
     d=3
@@ -39,7 +37,8 @@ def load_exotic_results(string_search,folder,save_name):
                                            ],axis=1)
                 big_data.append(mini_dat)
     big_data = np.concatenate(big_data,axis=0)
-    df = pd.DataFrame(big_data,columns=['n', 'd', 'effective_variance','nr of node points','effective variance limit', 'min_points','var comp', 'small field limit','abs error','relative error 2', 'time (s)'])
+    # df = pd.DataFrame(big_data,columns=['n', 'd', 'effective_variance','nr of node points','effective variance limit', 'min_points','var comp', 'small field limit','abs error','relative error 2', 'time (s)'])
+    df = pd.DataFrame(big_data,columns=['n', 'd', 'effective_variance','nr of node points','effective variance limit', 'min_points','var comp','abs error','relative error 2', 'time (s)'])
     df.to_csv(f'{save_name}.csv')
 
 def load_and_concat_df(exp_folder):
@@ -80,19 +79,15 @@ def process_df_2(job_folder,results_folder):
     all_df.to_csv(f'{results_folder}.csv')
     return all_df
 if __name__ == '__main__':
-    df_1 = process_df_2('high_dim_jobs','larger_dims')
-    df_2 = process_df_2('low_dim_jobs','lower_dims')
+    df_2 = process_df_2('3d_jobs_25','3d_jobs_25_results')
 
-
-
-    # load_exotic_results('Clustered',"./benchs_sparse/results/",'Clustered')
-    # load_exotic_results('Brownian_Motion',"./benchs_sparse/results/",'Brownian_Motion')
-    # load_exotic_results('Fractional_Brownian_Motion',"./benchs_sparse/results/",'Fractional_Brownian_Motion')
+    load_exotic_results('Clustered',"./benchs_sparse/res_ablation_25/",'Clustered_ablation_25')
+    load_exotic_results('Brownian_Motion',"./benchs_sparse/res_ablation_25/",'Brownian_Motion_25')
+    load_exotic_results('Fractional_Brownian_Motion',"./benchs_sparse/res_ablation_25/",'Fractional_Brownian_Motion_25')
     # for i in range(1,4):
-    #     # df_1 = load_and_concat_df(f'old_experiments_3/experiment_{i}')
     #     df_1 = load_and_concat_df(f'experiment_{i}_aggresive')
     #     df_1_processsed = process_df(df_1)
-    #     df_1_processsed.to_csv(f"experiment_{i}_results_summary.csv")
+    #     df_1_processsed.to_csv(f"experiment_{i}_results_summary_25.csv")
     #
     #
     # load_exotic_results('Clustered',"./benchs_sparse/res_ablation/",'Clustered_ablation')

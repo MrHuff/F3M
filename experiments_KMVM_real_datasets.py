@@ -56,14 +56,14 @@ def experiment_real(dataset,ablation,chunk_idx,device="cuda:0"):
     if not os.path.exists(dirname):
         os.makedirs(dirname)
     ls = float(1.0 / 2 ** 0.5)
-    if ablation==False:
+    if ablation==1:
         with open('real_kmvm_jobs_ablation.pkl', 'rb') as f:
             job_list_full = pickle.load(f)
-    elif ablation==True:
+    elif ablation==0:
         with open('real_kmvm_jobs.pkl', 'rb') as f:
             job_list_full = pickle.load(f)
     elif ablation==25:
-        with open('real_kmvm_jobs.pkl', 'rb') as f:
+        with open('real_kmvm_jobs_ablation.pkl', 'rb') as f:
             job_list_full = pickle.load(f)
 
     jobs_len = len(job_list_full)
@@ -91,12 +91,12 @@ def experiment_real(dataset,ablation,chunk_idx,device="cuda:0"):
             keops_benchmark_0 = benchmark_matmul(x_ref,X, ls=ls,
                                                         device=device)  # get some references
             true_0 = keops_benchmark_0 @ b  # calculate reference
-            torch.cuda.synchronize()
+            # torch.cuda.synchronize()
             del keops_benchmark_0, x_ref
             torch.cuda.empty_cache()
             print("benchmarks done\n")
-            torch.cuda.synchronize()
-            if ablation==True:
+            # torch.cuda.synchronize()
+            if ablation==1:
                 small_field_limit=int(0)
                 FFM_obj = FFM(X=X, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
                               eff_var_limit=eff_var_limit, var_compression=False,
@@ -105,15 +105,15 @@ def experiment_real(dataset,ablation,chunk_idx,device="cuda:0"):
                 FFM_obj= FFM(X=X, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
                               eff_var_limit=eff_var_limit, var_compression=False,
                               device=device, small_field_points=small_field_limit)
-            elif ablation ==False:
+            elif ablation ==0:
                 FFM_obj= FFM(X=X, ls=ls, min_points=min_points, nr_of_interpolation=nr_of_interpolation,
                              eff_var_limit=eff_var_limit, var_compression=True,
                              device=device, small_field_points=small_field_limit)
-            torch.cuda.synchronize()
+            # torch.cuda.synchronize()
             start = time.time()
             res_0 = FFM_obj @ b
             end = time.time()
-            torch.cuda.synchronize()
+            # torch.cuda.synchronize()
             calc_time = end-start
             df = calculate_results(true_0,res_0,ref_points,s,X.shape[0],d,r2,min_points,small_field_limit,nr_of_interpolation, eff_var_limit,calc_time)
             df.to_csv(f'{dirname}/{dirname}_{counter}.csv')
@@ -128,6 +128,6 @@ def experiment_real(dataset,ablation,chunk_idx,device="cuda:0"):
 if __name__ == '__main__':
     input_args = vars(job_parser().parse_args())
     ds = input_args['dataset']
-    ablation = bool(input_args['ablation'])
+    ablation = input_args['ablation']
     chunk = input_args['chunk']
     experiment_real(ds,ablation,chunk)
