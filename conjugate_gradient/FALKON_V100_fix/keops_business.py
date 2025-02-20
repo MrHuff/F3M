@@ -12,7 +12,7 @@ from falkon.utils import decide_cuda
 from falkon.utils.helpers import sizeof_dtype, calc_gpu_block_sizes, check_same_device
 from pykeops.torch import Genred
 from falkon.mmv_ops.utils import _start_wait_processes
-from FFM_classes import benchmark_matmul
+from F3M_src.FFM_classes import benchmark_matmul
 
 @dataclass(frozen=True)
 class ArgsFmmv:

@@ -1,4 +1,4 @@
-from FFM_classes import *
+from F3M_src.FFM_classes import *
 import pandas as pd
 import time
 import numpy as np

@@ -4,7 +4,7 @@ from typing import Optional, Union, Tuple, Dict
 import torch
 from falkon.options import BaseOptions, FalkonOptions
 import functools
-from FFM_classes import *
+from F3M_src.FFM_classes import *
 
 
 class bench_GaussianKernel(GaussianKernel):

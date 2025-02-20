@@ -1,9 +1,8 @@
 import numpy as np
 # from thundersvm import SVC
-import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from sklearn.datasets import make_blobs, make_circles, make_moons
-from FFM_classes import *
+from F3M_src.FFM_classes import *
 import time
 tol = 0.01 # error tolerance
 eps = 0.01 # alpha tolerance

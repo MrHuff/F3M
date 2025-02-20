@@ -4,7 +4,6 @@ import torch
 import falkon
 from conjugate_gradient.custom_falkon import custom_Falkon
 from conjugate_gradient.custom_gaussian_kernel import custom_GaussianKernel
-from FFM_classes import *
 import pykeops
 # pykeops.clean_pykeops()
 # pykeops.test_torch_bindings()

@@ -1,8 +1,7 @@
 import torch
 #
-from FFM_classes import *
 import time
-from run_obj import *
+from experiments.run_obj import *
 
 
 # import pykeops

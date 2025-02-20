@@ -1,7 +1,7 @@
 from benchs_sparse.sparse_datasets import *
 import random
 import numpy as np
-from FFM_classes import *
+from F3M_src.FFM_classes import *
 
 random.seed(0)
 np.random.seed(0)

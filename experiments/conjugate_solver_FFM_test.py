@@ -1,8 +1,5 @@
-from FFM_classes import *
+from F3M_src.FFM_classes import *
 import time
-from conjugate_gradient.conjugate_gradient import *
-
-
 
 if __name__ == '__main__':
     n=1000000 #Nr of observations

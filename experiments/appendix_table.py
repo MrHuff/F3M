@@ -1,5 +1,3 @@
-from plots_KMVM_experiments import *
-
 if __name__ == '__main__':
     names_3 = ['Uniform','Normal', 'Uniform and Normal']
     names = ['Standard']*3

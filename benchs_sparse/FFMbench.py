@@ -13,8 +13,8 @@ def FFMbench(X, Y, b, sqls, title, Niter):
     sys.path.append(source_dir)
     os.chdir(source_dir)
 
-    from FFM_classes import FFM
-    from run_obj import benchmark_matmul, calc_rel_error_norm,benchmark_matmul_double,calc_abs_error
+    from F3M_src.FFM_classes import FFM
+    from experiments.run_obj import calc_rel_error_norm,benchmark_matmul_double,calc_abs_error
     import itertools
     import torch
     
@@ -82,7 +82,6 @@ def FFMbench(X, Y, b, sqls, title, Niter):
 def PlotBench(dict_res):
     import matplotlib.pyplot as plt
     from hover_scatter import hover_scatter
-    from sparse_datasets import PlotData
     elapsed = dict_res["elapsed"]
     rel_err = dict_res["rel_err"]
     kwargs_rec = dict_res["kwargs_rec"]

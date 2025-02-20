@@ -4,7 +4,7 @@ from typing import Optional, Union, Tuple, Dict
 import torch
 from falkon.options import BaseOptions, FalkonOptions
 import functools
-from FFM_classes import *
+from F3M_src.FFM_classes import *
 import time
 class custom_GaussianKernel(GaussianKernel):
     def __init__(self, sigma: Union[float, torch.Tensor], opt: Optional[FalkonOptions] = None,min_points: [float]=None,var_compression: [bool]=True,interpolation_nr: [int]=64,eff_var_limit: [float]=0.3):

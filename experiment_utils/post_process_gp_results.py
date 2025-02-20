@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from hyperopt import STATUS_OK,Trials,hp, tpe,fmin
 import os
-from run_gp_experiments_multi_gpu import load_obj,experiment_object_gp
+from experiments.run_gp_experiments_multi_gpu import load_obj,experiment_object_gp
 import dill
 if __name__ == '__main__':
     job_files = os.listdir('job')

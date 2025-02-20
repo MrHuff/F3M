@@ -1,6 +1,5 @@
 import pandas as pd
 import numpy as np
-from FFM_classes import *
 import torch
 from run_obj import *
 import os
@@ -10,7 +9,6 @@ import time
 import argparse
 import os
 import pickle
-from generate_jobs import *
 
 VAR_COMP=False
 

@@ -10,8 +10,8 @@ from pylatex import Document, Section, Figure, SubFigure, NoEscape,Command
 from pylatex.base_classes import Environment
 from pylatex.package import Package
 import seaborn as sns
-from post_process_experiment_1 import *
-from build_summary_table import load_data
+from experiment_utils.post_process_experiment_1 import *
+from experiments.experiments import load_data
 class subfigure(Environment):
     """A class to wrap LaTeX's alltt environment."""
     packages = [Package('subcaption')]

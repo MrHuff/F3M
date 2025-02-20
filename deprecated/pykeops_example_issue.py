@@ -1,4 +1,4 @@
-from FFM_classes import *
+from F3M_src.FFM_classes import *
 import pykeops
 # pykeops.clean_pykeops()
 import time

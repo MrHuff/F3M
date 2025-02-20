@@ -9,7 +9,7 @@ from sklearn.model_selection import StratifiedKFold,KFold
 from sklearn.model_selection import train_test_split
 from sklearn.decomposition import PCA,KernelPCA
 from sklearn.preprocessing import MinMaxScaler,StandardScaler
-from FFM_classes import *
+from F3M_src.FFM_classes import *
 from conjugate_gradient.conjugate_gradient import ConjugateGradientSolver,PreConditionedConjugateGradientSolver,nystrom_preconditioner,get_GP_likelihood
 from gpytorch.kernels.rbf_kernel import RBFKernel
 import pickle
