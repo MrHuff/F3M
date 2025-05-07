@@ -3,7 +3,7 @@ import os
 from torch.utils.cpp_extension import load
 from pykeops.torch import Genred
 import torch.multiprocessing as mp
-load_obj = load(name='ffm_3d_float', sources=['pybinder_setup.cu'])
+import ffm_3d_float as load_obj
 
 class FFM:
     def __init__(self,

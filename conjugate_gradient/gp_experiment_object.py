@@ -3,7 +3,6 @@ import os.path
 from hyperopt import STATUS_OK,Trials,hp, tpe,fmin
 import gpytorch
 import numpy as np
-import torch
 
 from sklearn.model_selection import StratifiedKFold,KFold
 from sklearn.model_selection import train_test_split

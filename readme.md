@@ -1,24 +1,49 @@
-*F^3M* (Faster- Fast and Free Memory Method)
+# F³M (Faster - Fast and Free Memory Method)
 
-To able to run anything with F^3M you will need:
+## Requirements
 
-1. A pytorch v1.8>= with either CUDA 10.2 or 11.1.
-2. A GCC compiler. It's recommended to use the https://anaconda.org/omgarcia/gcc-6 compiler that comes with conda, it works for all dependencies.
-3. CUDA 10.2 nvcc compiler, for pykeops and FALKON.
+To run anything with **F³M**, you will need:
 
-To run 3D experiments run the command:
+1. A version of **LibTorch ≥ 2.0**, compiled with **CUDA 10.2** or later
+2. A **NVIDIA `nvcc` compiler** that matches the CUDA version used in your LibTorch installation
 
-python experiments.py --idx={experiment number}
+## Installation
 
-To run 4,5D experiments run the command:
+To install the Python bindings, simply run:
 
-python experiments678.py --idx={experiment number}
+```bash
+uv pip install F3M_src/. --no-build-isolation
+```
 
-To run FALKON experiments: 
+> **Note:** You may need to modify the `CMakeLists.txt` file in `F3M_src/` to point to the correct LibTorch path.
 
-1. First generate the data by running python generate_KRR_data.py
-2. Then run python experiments_2.py --idx={experiment number}
+## Running Experiments
 
-To run FALKON experiments in the appendix:
+### 3D Experiments
 
+```bash
+python experiments.py --idx={experiment_number}
+```
+
+### 4D/5D Experiments
+
+```bash
+python experiments678.py --idx={experiment_number}
+```
+
+## FALKON Experiments
+
+1. Generate the dataset:
+    ```bash
+    python generate_KRR_data.py
+    ```
+2. Run the experiment:
+    ```bash
+    python experiments_2.py --idx={experiment_number}
+    ```
+
+### FALKON Experiments (Appendix)
+
+```bash
 python experiments_3.py --idx=1 --penalty_in=0 --seed=0
+```

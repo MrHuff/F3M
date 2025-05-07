@@ -58,7 +58,7 @@ std::tuple<torch::Tensor,torch::Tensor> CG(FFM_object<scalar_t,nd> & MV, torch::
 
 torch::Tensor calculate_one_lanczos_triag(torch::Tensor & tridiag_mat){
     torch::Tensor V,P,U;
-    std::tie(P,U) = torch::eig(tridiag_mat,true);
+    std::tie(P,U) = at::_linalg_eigh(tridiag_mat);
     P = P.slice(1,0,1);
     V = U.slice(0,0);
     return (V.pow_(2)*P.log_()).sum();

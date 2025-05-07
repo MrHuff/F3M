@@ -1,7 +1,6 @@
 import falkon
 from falkon.kernels import GaussianKernel
 from typing import Optional, Union, Tuple, Dict
-import torch
 from falkon.options import BaseOptions, FalkonOptions
 import functools
 from F3M_src.FFM_classes import *

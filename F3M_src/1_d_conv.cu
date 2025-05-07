@@ -1076,7 +1076,7 @@ __global__ void transpose_to_existing_only_tree(
     all_boxes[tid] -= i_max;
 }
 
-
+//TODO, go through intuition on what's going on!
 __global__ void repeat_within(
         const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> short_cumsum,
         const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> repeat_interleaved,
@@ -1108,7 +1108,7 @@ __global__ void repeat_within(
 
 }
 
-
+//TODO, go through intuition on what's going on!
 __global__ void repeat_add(
         const torch::PackedTensorAccessor64<int,1,torch::RestrictPtrTraits> arr,
         torch::PackedTensorAccessor64<int,2,torch::RestrictPtrTraits> new_interactions,
@@ -1140,10 +1140,10 @@ __global__ void box_division_cum_hash(
     if (i>X_data.size(0)-1){return;}
     int idx=0;
     for (int p = 0;p<nd;p++) {
-        idx += multiply[p]*(int)floor( *int_mult * (X_data[i][p] - alpha[p]) / *edge);
+        idx += multiply[p]*(int)floor( *int_mult * (X_data[i][p] - alpha[p]) / *edge); //give each point a box belonging by using coordinate representation
     }
     int perm_val = device_lookup(perm,idx,hash_size);
-    atomicAdd(&global_vector_counter_cum[perm_val+1],1);
+    atomicAdd(&global_vector_counter_cum[perm_val+1],1); //figure out how many points each box have!
 
 }
 
@@ -1187,7 +1187,7 @@ __global__ void box_division_assign_hash(
         idx += multiply[p]*(int)floor( *int_mult * (X_data[i][p] - alpha[p]) / *edge);
     }
     int perm_val = device_lookup(perm,idx,hash_size);
-    sorted_index[atomicAdd(&global_unique[perm_val],1)+global_vector_counter_cum[perm_val]] = i;
+    sorted_index[atomicAdd(&global_unique[perm_val],1)+global_vector_counter_cum[perm_val]] = i; //Ok finally assign a grouping for each point such that they're "grouped by each box"
 }
 
 __global__ void hash_into_natural_order(

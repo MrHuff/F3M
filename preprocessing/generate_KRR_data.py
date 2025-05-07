@@ -1,5 +1,3 @@
-import torch
-
 from F3M_src.FFM_classes import *
 import numpy as np
 torch.manual_seed(0)
